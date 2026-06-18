@@ -259,9 +259,10 @@ T033 → (T034 ∥ T035 ∥ T036) → T037 → T038
 - 파일: `core/notifier/base.py`
 - `NotifyLevel(Enum)`: DEBUG, INFO, WARNING, ERROR, KILL
 - `NotifyEvent(level, title, body, ticker?, pnl?)`: Dataclass
-- `Notifier(Protocol)`: `async def send(event: NotifyEvent) -> None`
-- 테스트: Protocol 준수 여부 타입 체크 (`typing.runtime_checkable` 활용)
-- 커밋: `feat: define Notifier Protocol and NotifyEvent types`
+- `Notifier(Protocol)`: `async def send(event: NotifyEvent) -> None`, `async def run() -> None`
+- `run()`은 내부 큐를 소비하는 상시 루프 — `asyncio.gather()`에 등록되는 진입점
+- 테스트: Protocol 준수 여부 타입 체크 (`typing.runtime_checkable` 활용), `send()`·`run()` 모두 포함
+- 커밋: `feat: define Notifier Protocol with send() and run()`
 
 **T034 — TelegramNotifier** _(T033 완료 후)_
 
@@ -277,8 +278,10 @@ T033 → (T034 ∥ T035 ∥ T036) → T037 → T038
 
 - 파일: `core/notifier/mock.py`
 - `MockNotifier`: `sent_events: list[NotifyEvent]` 누적, `async send()` 즉시 반환
+- `async run()`: 종료 신호(asyncio.Event) 대기 후 반환하는 no-op 루프 — `asyncio.gather()` 호환
 - 테스트용 assertion helper: `assert_sent(level, title_contains)`
-- 커밋: `feat: add MockNotifier for test and offline environments`
+- 테스트: `run()`이 블로킹 없이 취소 가능한지 확인
+- 커밋: `feat: add MockNotifier with run() stub for test and offline environments`
 
 **T036 — 메시지 템플릿** _(T033 완료 후, T034와 병렬)_
 
