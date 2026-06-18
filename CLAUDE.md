@@ -11,7 +11,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ⚠️ 현재 상태 (Bootstrapping)
 
-이 저장소는 아직 **코드가 없는 초기 상태**다 (README, LICENSE, .gitignore만 존재). 아래 "아키텍처"와 "명령어"는 **참고 API 기준의 계획/규약**이며, 실제 파일·빌드 설정은 작업하면서 만들어진다. 코드를 작성하기 전에 항상 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
+이 저장소는 아직 **코드가 거의 없는 초기 상태**다 (README, LICENSE, .gitignore + `specs/` 설계 문서만 존재). 아래 "아키텍처"와 "명령어"는 **참고 API 기준의 계획/규약**이며, 실제 파일·빌드 설정은 작업하면서 만들어진다. 코드를 작성하기 전에 항상 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
+
+## 📐 설계 & 작업 문서 (새 세션에서 먼저 읽을 것)
+
+아키텍처와 작업 계획이 확정되어 `specs/`에 문서화되어 있다. **작업 시작 전 반드시 확인.**
+
+- **[specs/2026-06-18-quanteo-architecture.md](specs/2026-06-18-quanteo-architecture.md)** — 확정된 아키텍처 설계서(단일 진실 공급원). 구현이 달라지면 이 문서를 갱신.
+- **[specs/tasks.md](specs/tasks.md)** — Phase·Task 단위 구현 작업 목록. "T{번호}/Phase 진행" 요청 시 이 파일 기준.
+
+### 확정된 핵심 결정 (요약)
+
+- **목표:** 완전 자동매매 봇 (시그널 → 주문까지 자동 실행)
+- **시장:** 국내 + 해외 주식 (시장 추상화)
+- **스택:** Python 매매 코어 + TypeScript 웹 대시보드
+- **전략:** 규칙 기반 지표 전략, 플러그인 교체형 (전략은 **시그널만** 생성)
+- **아키텍처(접근 B):** 모듈형 단일 Python 프로세스 + 얇은 Control API(FastAPI REST/WS) + TS 대시보드. 클라우드 확장 대비 모듈 경계 명확화.
+- **모듈:** KIS Adapter → Market Data → Strategy Engine → Risk Manager → Order Executor / State Store(SQLite) / Event Bus / Control API / Dashboard
+- **안전 원칙:** 모든 주문은 **반드시 Risk Manager 통과**. 기본 환경 `vps`(모의투자), `prod`는 명시 플래그로만.
 
 ## KIS API 핵심 개념 (반드시 숙지)
 
