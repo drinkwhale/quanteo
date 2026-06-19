@@ -12,7 +12,7 @@
 ## Phase 1 — 부트스트랩 & 인증
 
 - [x] **T001** `pyproject.toml` 생성, uv 환경 구성, 기본 디렉토리 스캐폴드(`core/`, `tests/`)
-- [ ] **T002** `core/config/` — 환경(prod/vps)·시장(domestic/overseas) 설정 로딩, `kis_devlp.yaml` 읽기 (기본값 `vps`)
+- [x] **T002** `core/config/` — 환경(prod/vps)·시장(domestic/overseas) 설정 로딩, `kis_devlp.yaml` 읽기 (기본값 `vps`)
 - [ ] **T003** `core/adapters/kis/auth.py` — 앱키/시크릿으로 access token 발급·캐싱·재발급
 - [ ] **T004** `core/adapters/kis/auth.py` — WebSocket 접속키 발급(`auth_ws` 패턴)
 - [ ] **T005** TR_ID·REST/WS 도메인 매핑 테이블(환경×시장) 정의
