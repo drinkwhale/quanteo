@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ⚠️ 현재 상태 (Bootstrapping)
 
-이 저장소는 아직 **코드가 거의 없는 초기 상태**다 (README, LICENSE, .gitignore + `specs/` 설계 문서만 존재). 아래 "아키텍처"와 "명령어"는 **참고 API 기준의 계획/규약**이며, 실제 파일·빌드 설정은 작업하면서 만들어진다. 코드를 작성하기 전에 항상 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
+이 저장소는 아직 **코드가 거의 없는 초기 상태**다 (README, LICENSE, .gitignore + `specs/` 설계 문서 + `PROJECT_INDEX.md`만 존재). 아래 "아키텍처"와 "명령어"는 **참고 API 기준의 계획/규약**이며, 실제 파일·빌드 설정은 작업하면서 만들어진다. 코드를 작성하기 전에 항상 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
 
 ## 📐 설계 & 작업 문서 (새 세션에서 먼저 읽을 것)
 
@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **스택:** Python 매매 코어 + TypeScript 웹 대시보드
 - **전략:** 규칙 기반 지표 전략, 플러그인 교체형 (전략은 **시그널만** 생성)
 - **아키텍처(접근 B):** 모듈형 단일 Python 프로세스 + 얇은 Control API(FastAPI REST/WS) + TS 대시보드. 클라우드 확장 대비 모듈 경계 명확화.
-- **모듈:** KIS Adapter → Market Data → Strategy Engine → Risk Manager → Order Executor / State Store(SQLite) / Event Bus / Control API / Dashboard
+- **모듈:** KIS Adapter → Market Data → Strategy Engine → Risk Manager → Order Executor / State Store(SQLite) / Event Bus / Notifier(Telegram) / Control API / Dashboard
 - **안전 원칙:** 모든 주문은 **반드시 Risk Manager 통과**. 기본 환경 `vps`(모의투자), `prod`는 명시 플래그로만.
 
 ## KIS API 핵심 개념 (반드시 숙지)
@@ -54,6 +54,80 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `auth/` — 토큰 발급(REST/WebSocket).
 
 샘플을 복사할 때는 출처 경로를 커밋 메시지나 주석에 남겨, 이후 공식 저장소 업데이트와 대조할 수 있게 할 것.
+
+## 🌿 브랜치 전략 (Branch Strategy)
+
+> **코드를 수정할 때는 반드시 아래 전략에 따라 브랜치를 만들고 작업한다.** `main`에 직접 커밋하지 않는다.
+
+### 브랜치 구조
+
+```
+main
+└── phase/{N}-{slug}          # Phase 단위 통합 브랜치
+    └── task/T{NNN}-{slug}    # 개별 Task 작업 브랜치
+```
+
+### 브랜치 명명 규칙
+
+| 유형         | 패턴                 | 예시                        |
+| ------------ | -------------------- | --------------------------- |
+| Phase 브랜치 | `phase/{N}-{slug}`   | `phase/1-bootstrap`         |
+| Task 브랜치  | `task/T{NNN}-{slug}` | `task/T001-pyproject`       |
+| 핫픽스       | `fix/{slug}`         | `fix/kis-auth-token-expiry` |
+| 문서         | `docs/{slug}`        | `docs/update-architecture`  |
+
+### 작업 절차 (Task 하나 = 브랜치 하나)
+
+```bash
+# 1. Phase 브랜치 생성 (Phase 시작 시 main 기반, 한 번만)
+git checkout main && git pull
+git checkout -b phase/1-bootstrap
+
+# 2. Task 브랜치 생성 (Phase 브랜치 기반)
+git checkout -b task/T001-pyproject
+
+# 3. 구현 + 테스트
+
+# 4. specs/tasks.md 체크박스 갱신 [ ] → [x]
+
+# 5. 커밋 (Conventional Commits)
+git add <files>
+git commit -m "feat: scaffold pyproject.toml and core/ directory"
+
+# 6. Task 브랜치 → Phase 브랜치로 Merge
+git checkout phase/1-bootstrap
+git merge --squash task/T001-pyproject
+git commit -m "feat(T001): scaffold project with uv and core/ structure"
+
+# 7. Phase 완료 시 Phase → main으로 PR
+gh pr create --base main --head phase/1-bootstrap
+```
+
+### 커밋 메시지 형식 (Conventional Commits)
+
+```
+<type>[scope]: <description>
+
+<optional body>
+```
+
+| type       | 용도                    |
+| ---------- | ----------------------- |
+| `feat`     | 새 기능·모듈            |
+| `fix`      | 버그 수정               |
+| `test`     | 테스트 추가·수정        |
+| `refactor` | 동작 변경 없는 리팩토링 |
+| `docs`     | 문서만 변경             |
+| `chore`    | 빌드·설정·의존성        |
+| `perf`     | 성능 개선               |
+
+예시:
+
+- `feat(kis): add access token auth with file caching`
+- `test(risk): add kill switch boundary case tests`
+- `chore: init uv project with Python 3.11`
+
+---
 
 ## 명령어 (참고 API 기준 — 프로젝트 부트스트랩 후 갱신 필요)
 
