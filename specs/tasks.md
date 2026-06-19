@@ -15,7 +15,7 @@
 - [x] **T002** `core/config/` — 환경(prod/vps)·시장(domestic/overseas) 설정 로딩, `kis_devlp.yaml` 읽기 (기본값 `vps`)
 - [x] **T003** `core/adapters/kis/auth.py` — 앱키/시크릿으로 access token 발급·캐싱·재발급
 - [x] **T004** `core/adapters/kis/auth.py` — WebSocket 접속키 발급(`auth_ws` 패턴)
-- [ ] **T005** TR_ID·REST/WS 도메인 매핑 테이블(환경×시장) 정의
+- [x] **T005** TR_ID·REST/WS 도메인 매핑 테이블(환경×시장) 정의
 
 ## Phase 2 — 시세 & 상태저장
 
