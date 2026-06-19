@@ -109,6 +109,54 @@ class Settings(BaseModel):
 
 _DEFAULT_CONFIG_PATH = Path.home() / "KIS" / "config" / "kis_devlp.yaml"
 
+# KIS 공식 kis_devlp.yaml 포맷의 환경별 키 접두어
+# prod: my_app / my_sec / my_acct / my_acct_stock / my_id
+# vps:  paper_app / paper_sec / paper_acct / paper_acct_stock / paper_id
+_KIS_KEY_PREFIX: dict[Env, str] = {
+    Env.PROD: "my",
+    Env.VPS: "paper",
+}
+
+
+def _extract_credentials(raw: dict[str, Any], env: Env, path: Path) -> "KisCredentials":
+    """kis_devlp.yaml에서 환경별 자격증명을 추출한다.
+
+    KIS 공식 포맷(flat keys: my_app / paper_app 등)과
+    커스텀 포맷(중첩 섹션: prod: / vps:) 모두 지원한다.
+    공식 포맷을 우선 시도하고, 없으면 커스텀 포맷을 시도한다.
+    """
+    prefix = _KIS_KEY_PREFIX[env]
+
+    # ── KIS 공식 포맷: my_app / paper_app 등 flat top-level keys ────────────
+    if f"{prefix}_app" in raw:
+        return KisCredentials(
+            app_key=raw[f"{prefix}_app"],
+            app_secret=raw[f"{prefix}_sec"],
+            account_no=raw[f"{prefix}_acct"],
+            account_code=raw.get(f"{prefix}_acct_stock", "01"),
+            hts_id=raw.get(f"{prefix}_id", ""),
+            user_agent=raw.get("user_agent", "Mozilla/5.0"),
+        )
+
+    # ── 커스텀 포맷: prod: / vps: 중첩 섹션 ──────────────────────────────────
+    env_key = env.value
+    if env_key in raw and isinstance(raw[env_key], dict):
+        creds_raw = raw[env_key]
+        return KisCredentials(
+            app_key=creds_raw["app_key"],
+            app_secret=creds_raw["app_secret"],
+            account_no=creds_raw["account_no"],
+            account_code=creds_raw.get("account_code", "01"),
+            hts_id=creds_raw.get("hts_id", ""),
+            user_agent=raw.get("user_agent", "Mozilla/5.0"),
+        )
+
+    raise ValueError(
+        f"설정 파일에서 '{env.value}' 환경의 자격증명을 찾을 수 없습니다: {path}\n"
+        f"KIS 공식 포맷('{prefix}_app' 키) 또는 커스텀 포맷('{env_key}:' 섹션)이 필요합니다.\n"
+        "kis_devlp.yaml.example을 참고하세요."
+    )
+
 
 def load_settings(
     env: Env = Env.VPS,
@@ -142,19 +190,7 @@ def load_settings(
     with path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f)
 
-    env_key = env.value  # "prod" or "vps"
-    if env_key not in raw:
-        raise ValueError(f"설정 파일에 '{env_key}' 섹션이 없습니다: {path}")
-
-    creds_raw = raw[env_key]
-    credentials = KisCredentials(
-        app_key=creds_raw["app_key"],
-        app_secret=creds_raw["app_secret"],
-        account_no=creds_raw["account_no"],
-        account_code=creds_raw.get("account_code", "01"),
-        hts_id=creds_raw.get("hts_id", ""),
-        user_agent=raw.get("user_agent", "Mozilla/5.0"),
-    )
+    credentials = _extract_credentials(raw, env, path)
 
     telegram_raw = raw.get("telegram", {})
     telegram = TelegramConfig(
