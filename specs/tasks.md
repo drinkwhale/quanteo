@@ -19,7 +19,7 @@
 
 ## Phase 2 — 시세 & 상태저장
 
-- [ ] **T006** `core/store/` — SQLite 스키마(positions/orders/fills/signals/settings/events_log) + 마이그레이션
+- [x] **T006** `core/store/` — SQLite 스키마(positions/orders/fills/signals/settings/events_log) + 마이그레이션
 - [ ] **T007** `core/adapters/kis/rest.py` — 현재가/잔고 조회 REST 호출
 - [ ] **T008** `core/adapters/kis/ws.py` — 실시간 시세/체결 WebSocket 구독
 - [ ] **T009** `core/marketdata/` — 수신 데이터를 내부 표준(Tick/Quote/Candle)으로 정규화·공급
