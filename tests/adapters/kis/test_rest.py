@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -40,7 +40,7 @@ def _mock_response(data: dict) -> httpx.Response:
 
 
 # ---------------------------------------------------------------------------
-# 현재가 조회
+# 현재가 조회 — 국내
 # ---------------------------------------------------------------------------
 
 
@@ -87,7 +87,55 @@ async def test_get_price_api_error():
 
 
 # ---------------------------------------------------------------------------
-# 잔고 조회
+# 현재가 조회 — 해외
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_overseas_price():
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_mock_response(
+            {
+                "rt_cd": "0",
+                "output": {
+                    "last": "185.50",
+                    "open": "183.00",
+                    "high": "186.00",
+                    "low": "182.50",
+                    "tvol": "987654",
+                },
+            }
+        )
+    )
+
+    client = KisRestClient(auth, env=Env.VPS, market=Market.OVERSEAS, http_client=mock_client)
+    result = await client.get_price("AAPL")
+
+    assert isinstance(result, PriceInfo)
+    assert result.symbol == "AAPL"
+    assert result.current_price == 185.50
+    assert result.open_price == 183.00
+    assert result.volume == 987654
+    assert result.market == Market.OVERSEAS
+
+
+@pytest.mark.asyncio
+async def test_get_overseas_price_api_error():
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_mock_response({"rt_cd": "7", "msg1": "해외 종목 조회 실패"})
+    )
+
+    client = KisRestClient(auth, market=Market.OVERSEAS, http_client=mock_client)
+    with pytest.raises(RuntimeError, match="KIS API 오류"):
+        await client.get_price("INVALID")
+
+
+# ---------------------------------------------------------------------------
+# 잔고 조회 — 국내
 # ---------------------------------------------------------------------------
 
 
@@ -149,5 +197,69 @@ async def test_get_balance_skips_zero_qty():
     )
 
     client = KisRestClient(auth, http_client=mock_client)
+    result = await client.get_balance()
+    assert result.items == []
+
+
+# ---------------------------------------------------------------------------
+# 잔고 조회 — 해외
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_overseas_balance():
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_mock_response(
+            {
+                "rt_cd": "0",
+                "output1": [
+                    {
+                        "ovrs_pdno": "AAPL",
+                        "ovrs_item_name": "Apple Inc",
+                        "ovrs_cblc_qty": "5",
+                        "pchs_avg_pric": "170.00",
+                        "now_pric2": "185.50",
+                        "ovrs_stck_evlu_amt": "927.50",
+                        "frcr_evlu_pfls_amt": "77.50",
+                        "evlu_pfls_rt": "9.12",
+                    }
+                ],
+                "output2": {
+                    "tot_evlu_amt": "1927.50",
+                    "ovrs_tot_pfls": "77.50",
+                    "frcr_dncl_amt_2": "1000.00",
+                },
+            }
+        )
+    )
+
+    client = KisRestClient(auth, market=Market.OVERSEAS, http_client=mock_client)
+    result = await client.get_balance()
+
+    assert isinstance(result, BalanceInfo)
+    assert len(result.items) == 1
+    assert result.items[0].symbol == "AAPL"
+    assert result.items[0].qty == 5
+    assert result.items[0].current_price == 185.50
+    assert result.deposit == 1000.00
+
+
+@pytest.mark.asyncio
+async def test_get_overseas_balance_skips_zero_qty():
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        return_value=_mock_response(
+            {
+                "rt_cd": "0",
+                "output1": [{"ovrs_pdno": "TSLA", "ovrs_cblc_qty": "0"}],
+                "output2": {},
+            }
+        )
+    )
+
+    client = KisRestClient(auth, market=Market.OVERSEAS, http_client=mock_client)
     result = await client.get_balance()
     assert result.items == []

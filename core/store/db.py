@@ -51,7 +51,8 @@ class StateStore:
 
     async def _migrate(self) -> None:
         """테이블과 인덱스를 생성한다 (IF NOT EXISTS — 멱등)."""
-        assert self._conn
+        if self._conn is None:
+            raise RuntimeError("StateStore가 열려 있지 않습니다. open()을 먼저 호출하세요.")
         for ddl in ALL_TABLES:
             await self._conn.execute(ddl)
         for idx in CREATE_INDEXES:

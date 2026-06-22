@@ -67,17 +67,11 @@ class EventBus:
     # ------------------------------------------------------------------
 
     async def publish(self, event: Event) -> None:
-        """이벤트를 큐에 넣는다. 큐가 가득 차면 가장 오래된 이벤트를 버린다."""
+        """이벤트를 큐에 넣는다. 큐가 가득 차면 새 이벤트를 버린다."""
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            # 가장 오래된 이벤트를 drop하고 새 이벤트 삽입
-            try:
-                self._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
-            await self._queue.put(event)
-            logger.warning("EventBus 큐 포화 — 오래된 이벤트 드롭 (type=%s)", event.type)
+            logger.warning("EventBus 큐 포화 — 이벤트 드롭 (type=%s)", event.type)
 
     def publish_nowait(self, event: Event) -> None:
         """동기 컨텍스트에서 이벤트를 발행한다."""
@@ -135,7 +129,12 @@ class EventBus:
                     event.type,
                     getattr(handler, "__name__", repr(handler)),
                     exc,
+                    exc_info=True,
                 )
+
+    async def join(self) -> None:
+        """큐의 모든 이벤트가 처리될 때까지 기다린다 (주로 테스트용)."""
+        await self._queue.join()
 
     @property
     def qsize(self) -> int:

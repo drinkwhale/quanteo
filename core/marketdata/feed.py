@@ -84,7 +84,10 @@ class MarketDataFeed:
     def _on_ws_message(self, msg: WsMessage) -> None:
         """WebSocket 메시지를 받아 정규화 후 핸들러로 전달한다."""
         tr_id = msg.tr_id
-        symbol = msg.tr_key
+        symbol = self._symbol_map.get(msg.tr_key)
+        if symbol is None:
+            logger.debug("미구독 tr_key 수신, 무시: %s", msg.tr_key)
+            return
 
         if tr_id == self._tr_ids.ws_price:
             if self._market == Market.DOMESTIC:

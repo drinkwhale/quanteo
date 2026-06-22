@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class Tick:
     price: float
     volume: int
     timestamp: datetime
-    market: str  # 'domestic' | 'overseas'
+    market: Literal["domestic", "overseas"]
 
 
 @dataclass(frozen=True)
@@ -44,5 +45,5 @@ class Candle:
     close: float
     volume: int
     timestamp: datetime
-    market: str
+    market: Literal["domestic", "overseas"]
     interval: str = "1d"  # 1m | 5m | 1d 등

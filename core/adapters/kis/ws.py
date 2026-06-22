@@ -166,7 +166,7 @@ class KisWsClient:
         """수신 메시지를 파싱하고 콜백을 호출한다."""
         text = raw if isinstance(raw, str) else raw.decode("utf-8")
 
-        # PINGPONG 무시
+        # 실시간 데이터 프레임 (0: 비암호화, 1: 암호화)
         if text.startswith("0|") or text.startswith("1|"):
             parts = text.split("|", 3)
             if len(parts) < 4:
@@ -195,24 +195,30 @@ class KisWsClient:
             try:
                 self.on_message(msg)
             except Exception as exc:
-                logger.error("on_message 콜백 예외: %s", exc)
+                logger.error("on_message 콜백 예외: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # AsyncIterator 인터페이스 (선택적 사용)
     # ------------------------------------------------------------------
 
     async def messages(self) -> AsyncIterator[WsMessage]:
-        """수신 메시지를 async generator로 yield한다 (단일 연결, 재연결 없음)."""
+        """수신 메시지를 async generator로 yield한다 (단일 연결, 재연결 없음).
+
+        재연결이 필요한 경우 run()을 사용할 것.
+        """
         ws_key = await self.auth.get_websocket_key()
-        async with websockets.connect(self._ws_url) as conn:
-            self._conn = conn
-            for tr_id, tr_key in self._subscriptions:
-                await self._send_subscribe(conn, ws_key.key, tr_id, tr_key)
-            async for raw_msg in conn:
-                text = raw_msg if isinstance(raw_msg, str) else raw_msg.decode("utf-8")
-                if text.startswith("0|") or text.startswith("1|"):
-                    parts = text.split("|", 3)
-                    if len(parts) >= 4:
-                        yield WsMessage(
-                            tr_id=parts[1], tr_key=parts[2], data_body=parts[3]
-                        )
+        try:
+            async with websockets.connect(self._ws_url) as conn:
+                self._conn = conn
+                for tr_id, tr_key in self._subscriptions:
+                    await self._send_subscribe(conn, ws_key.key, tr_id, tr_key)
+                async for raw_msg in conn:
+                    text = raw_msg if isinstance(raw_msg, str) else raw_msg.decode("utf-8")
+                    if text.startswith("0|") or text.startswith("1|"):
+                        parts = text.split("|", 3)
+                        if len(parts) >= 4:
+                            yield WsMessage(
+                                tr_id=parts[1], tr_key=parts[2], data_body=parts[3]
+                            )
+        finally:
+            self._conn = None
