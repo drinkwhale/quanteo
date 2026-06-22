@@ -56,3 +56,11 @@ def test_level_propagated_to_telegram():
     notifier = make_notifier(_settings(enabled=True, chat_id="-100", level="ERROR"))
     assert isinstance(notifier, TelegramNotifier)
     assert notifier._min_level == NotifyLevel.ERROR
+
+
+def test_warn_alias_resolves_to_warning():
+    """'WARN'은 설정 파일에서 흔히 쓰는 별칭 — WARNING으로 해석되어야 한다."""
+    from core.notifier.base import NotifyLevel
+    notifier = make_notifier(_settings(enabled=True, chat_id="-100", level="WARN"))
+    assert isinstance(notifier, TelegramNotifier)
+    assert notifier._min_level == NotifyLevel.WARNING

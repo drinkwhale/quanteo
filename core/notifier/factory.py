@@ -38,8 +38,11 @@ def make_notifier(settings: Settings) -> Notifier:
             )
             return MockNotifier()
 
+        # "WARN"은 설정 파일에서 흔히 쓰는 별칭 → "WARNING"으로 정규화
+        _ALIASES: dict[str, str] = {"WARN": "WARNING"}
+        raw_level = _ALIASES.get(tg.level.upper(), tg.level.upper())
         try:
-            min_level = NotifyLevel(tg.level.upper())
+            min_level = NotifyLevel(raw_level)
         except ValueError:
             logger.warning("알 수 없는 telegram.level=%r — INFO로 대체합니다.", tg.level)
             min_level = NotifyLevel.INFO

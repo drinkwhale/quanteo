@@ -15,6 +15,7 @@ from pathlib import Path
 
 from core.config.settings import Env, Market, load_settings
 from core.events.bus import EventBus
+from core.notifier.base import Notifier
 from core.notifier.factory import make_notifier
 from core.notifier.wiring import wire_notifier
 
@@ -60,14 +61,22 @@ async def run(
 async def _wait_for_stop(
     stop_event: asyncio.Event,
     bus: EventBus,
-    notifier: object,
+    notifier: Notifier,
 ) -> None:
-    """종료 이벤트를 기다렸다가 버스와 Notifier를 정상 종료한다."""
+    """종료 이벤트를 기다렸다가 버스와 Notifier를 정상 종료한다.
+
+    bus.stop()이 실패해도 notifier.stop()을 반드시 실행한다.
+    """
     await stop_event.wait()
     logger.info("종료 중...")
-    await bus.stop()
-    if hasattr(notifier, "stop"):
-        await notifier.stop()  # type: ignore[union-attr]
+    try:
+        await bus.stop()
+    except Exception as exc:
+        logger.error("EventBus 종료 중 오류: %s", exc, exc_info=True)
+    try:
+        await notifier.stop()
+    except Exception as exc:
+        logger.error("Notifier 종료 중 오류: %s", exc, exc_info=True)
 
 
 def main() -> None:
