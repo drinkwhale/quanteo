@@ -28,7 +28,7 @@
 ## Phase 2.5 — 알림 (Telegram)
 
 - [x] **T033** `core/notifier/base.py` — `Notifier` Protocol 정의 + `NotifyEvent`·`NotifyLevel` 타입
-- [ ] **T034** `core/notifier/telegram.py` — `TelegramNotifier` 구현 (aiogram v3, asyncio.Queue 기반 Rate limit)
+- [x] **T034** `core/notifier/telegram.py` — `TelegramNotifier` 구현 (aiogram v3, asyncio.Queue 기반 Rate limit)
 - [ ] **T035** `core/notifier/mock.py` — `MockNotifier` 구현 (테스트용, `sent_events` 리스트 누적)
 - [ ] **T036** `core/notifier/templates.py` — 이벤트별 메시지 템플릿 (Signal/Order/Fill/Risk/Error/Status)
 - [ ] **T037** Event Bus 구독 연결 + `app.py` 통합 (`notifier.run()` asyncio.gather 추가)
