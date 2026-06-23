@@ -39,7 +39,7 @@
 - [x] **T011** `core/strategy/base.py` — Strategy 플러그인 인터페이스(Protocol) 정의
 - [x] **T012** `core/strategy/engine.py` — 플러그인 로드·지표 갱신·시그널 생성 루프
 - [x] **T013** `core/strategy/plugins/` — 첫 규칙 기반 지표 전략(예: 이동평균 교차) 구현
-- [ ] **T014** 전략 경량 검증 하니스(과거 캔들로 시그널 확인)
+- [x] **T014** 전략 경량 검증 하니스(과거 캔들로 시그널 확인)
 
 ## Phase 4 — 리스크 & 주문 실행
 
