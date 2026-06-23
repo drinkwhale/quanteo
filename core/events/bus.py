@@ -73,12 +73,14 @@ class EventBus:
         except asyncio.QueueFull:
             logger.warning("EventBus 큐 포화 — 이벤트 드롭 (type=%s)", event.type)
 
-    def publish_nowait(self, event: Event) -> None:
-        """동기 컨텍스트에서 이벤트를 발행한다."""
+    def publish_nowait(self, event: Event) -> bool:
+        """동기 컨텍스트에서 이벤트를 발행한다. 성공 여부를 반환한다."""
         try:
             self._queue.put_nowait(event)
+            return True
         except asyncio.QueueFull:
             logger.warning("EventBus 큐 포화 — 이벤트 드롭 (type=%s)", event.type)
+            return False
 
     # ------------------------------------------------------------------
     # 라이프사이클
