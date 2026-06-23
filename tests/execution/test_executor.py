@@ -108,6 +108,20 @@ class TestOrderExecutorSubmit:
 
             assert rest.place_order.call_count == 1
 
+    async def test_submit_raises_on_rejected_duplicate(self):
+        """이미 rejected 상태인 주문 재제출 시 RuntimeError 발생. (H1)"""
+        async with StateStore(":memory:") as store:
+            executor, bus, rest = await _make_executor(store)
+            order = _order()
+            rest.place_order = AsyncMock(side_effect=RuntimeError("KIS 오류"))
+
+            with pytest.raises(RuntimeError):
+                await executor.submit(order)
+
+            # rejected 상태 주문 재제출 → 다른 RuntimeError 발생
+            with pytest.raises(RuntimeError, match="이미 거부된 주문"):
+                await executor.submit(order)
+
     async def test_submit_on_api_failure_stores_rejected(self):
         async with StateStore(":memory:") as store:
             executor, bus, rest = await _make_executor(store)
@@ -172,8 +186,38 @@ class TestOrderExecutorRecordFill:
             assert received[0].payload["fill_qty"] == 5
             assert received[0].payload["fill_price"] == 75100.0
 
-    async def test_record_fill_unknown_order_is_noop(self):
-        """존재하지 않는 주문 체결 기록 → 조용히 무시."""
+    async def test_record_fill_unknown_order_raises(self):
+        """존재하지 않는 주문 체결 기록 → RuntimeError 발생. (H2)"""
         async with StateStore(":memory:") as store:
             executor, bus, rest = await _make_executor(store)
-            await executor.record_fill("nonexistent-id", fill_qty=1, fill_price=100.0)
+            with pytest.raises(RuntimeError, match="미등록 주문"):
+                await executor.record_fill("nonexistent-id", fill_qty=1, fill_price=100.0)
+
+    async def test_partial_fill_sets_partial_status(self):
+        """부분 체결 시 주문 상태가 'partial'로 변경된다. (C2)"""
+        async with StateStore(":memory:") as store:
+            executor, bus, rest = await _make_executor(store)
+            order = _order(qty=10)
+            rest.place_order = AsyncMock(return_value=_make_ack(order))
+            await executor.submit(order)
+
+            await executor.record_fill(order.client_order_id, fill_qty=5, fill_price=75000.0)
+
+            row = await executor._fetch_existing(order.client_order_id)
+            assert row["status"] == "partial"
+
+    async def test_full_fill_after_partial_sets_filled_status(self):
+        """2회 체결(부분 → 완전)시 최종 상태가 'filled'. (C2)"""
+        async with StateStore(":memory:") as store:
+            executor, bus, rest = await _make_executor(store)
+            order = _order(qty=10)
+            rest.place_order = AsyncMock(return_value=_make_ack(order))
+            await executor.submit(order)
+
+            await executor.record_fill(order.client_order_id, fill_qty=6, fill_price=75000.0)
+            row = await executor._fetch_existing(order.client_order_id)
+            assert row["status"] == "partial"
+
+            await executor.record_fill(order.client_order_id, fill_qty=4, fill_price=75100.0)
+            row = await executor._fetch_existing(order.client_order_id)
+            assert row["status"] == "filled"

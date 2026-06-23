@@ -68,8 +68,8 @@ class Position:
     avg_price: float
 
     @property
-    def market_value(self) -> float:
-        """현재 시장 가치 (수량 × 평균단가)."""
+    def book_value(self) -> float:
+        """포지션 장부가 (수량 × 평균단가). 현재 시세 기반 시장가치가 아님."""
         return self.qty * self.avg_price
 
     def unrealized_pnl_pct(self, current_price: float) -> float:
@@ -93,8 +93,8 @@ class Portfolio:
 
     @property
     def total_exposure(self) -> float:
-        """총 주식 노출 금액 (원)."""
-        return sum(p.market_value for p in self.positions.values())
+        """총 주식 노출 금액 — 장부가 기준 (원)."""
+        return sum(p.book_value for p in self.positions.values())
 
     @property
     def total_assets(self) -> float:
