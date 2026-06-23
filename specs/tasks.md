@@ -52,10 +52,10 @@
 
 ## Phase 5 — 제어 API
 
-- [ ] **T021** `core/api/` — FastAPI 앱 + `/status`, `/positions`, `/orders` 조회 엔드포인트
-- [ ] **T022** `core/api/` — `/control/pause|resume|kill` 명령 엔드포인트
-- [ ] **T023** `core/api/` — `/stream` WebSocket(시세·시그널·체결·로그 실시간)
-- [ ] **T024** `core/app.py` — 코어 부팅·이벤트 루프 조립(모든 모듈 wiring)
+- [x] **T021** `core/api/` — FastAPI 앱 + `/status`, `/positions`, `/orders` 조회 엔드포인트
+- [x] **T022** `core/api/` — `/control/pause|resume|kill` 명령 엔드포인트
+- [x] **T023** `core/api/` — `/stream` WebSocket(시세·시그널·체결·로그 실시간)
+- [x] **T024** `core/app.py` — 코어 부팅·이벤트 루프 조립(모든 모듈 wiring)
 
 ## Phase 6 — 대시보드 (TypeScript)
 
