@@ -8,9 +8,9 @@ Strategy — 플러그인 인터페이스 & 공통 타입 정의.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Literal, Protocol, runtime_checkable
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Protocol, runtime_checkable
 
 from core.marketdata.models import Candle, Tick
 
@@ -20,7 +20,7 @@ from core.marketdata.models import Candle, Tick
 # ---------------------------------------------------------------------------
 
 
-class SignalSide(str, Enum):
+class SignalSide(StrEnum):
     """매수/매도 방향."""
 
     BUY = "BUY"
@@ -39,7 +39,7 @@ class Signal:
         symbol: 종목 코드.
         side: 매수(BUY) 또는 매도(SELL).
         qty: 희망 수량 (≥1).
-        price: 희망 가격 (None이면 시장가).
+        price: 희망 가격 (None이면 시장가). 지정 시 반드시 양수.
         reason: 시그널 생성 근거 (디버깅·알림용).
         timestamp: 시그널 생성 시각 (UTC).
     """
@@ -50,7 +50,13 @@ class Signal:
     qty: int
     price: float | None = None
     reason: str = ""
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        if self.qty < 1:
+            raise ValueError(f"qty는 1 이상이어야 합니다, 입력값: {self.qty}")
+        if self.price is not None and self.price <= 0:
+            raise ValueError(f"price는 0보다 커야 합니다, 입력값: {self.price}")
 
 
 # ---------------------------------------------------------------------------
@@ -58,22 +64,20 @@ class Signal:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
+@dataclass(frozen=True)
 class MarketContext:
     """전략이 on_tick 호출 시 함께 받는 시장 정보.
 
     최근 캔들·지표를 편리하게 접근할 수 있도록 Strategy Engine이 채워 전달한다.
-    전략 플러그인은 이를 읽기 전용으로 사용해야 한다.
+    frozen=True로 선언되어 전략 플러그인이 필드를 재할당하거나 내용을 변경할 수 없다.
 
     Args:
         symbol: 종목 코드.
-        recent_candles: 최근 캔들 목록 (오래된 것부터 최신 순).
-        extras: 엔진이 전략별로 추가 전달하는 키-값 데이터.
+        recent_candles: 최근 캔들 tuple (오래된 것부터 최신 순). 읽기 전용.
     """
 
     symbol: str
-    recent_candles: list[Candle] = field(default_factory=list)
-    extras: dict[str, object] = field(default_factory=dict)
+    recent_candles: tuple[Candle, ...] = field(default_factory=tuple)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +116,7 @@ class Strategy(Protocol):
 
         Args:
             tick: 방금 수신된 틱 데이터.
-            ctx: 최근 캔들 및 추가 컨텍스트.
+            ctx: 최근 캔들 컨텍스트 (읽기 전용).
 
         Returns:
             Signal: 매매 조건 충족 시.

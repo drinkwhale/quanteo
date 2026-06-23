@@ -6,19 +6,23 @@
 
 research-to-live parity 보장:
     라이브와 동일한 warmup() → on_tick() 경로를 따르므로,
-    하니스에서 검증된 전략 동작은 라이브에서도 그대로 재현된다.
+    하니스에서 검증된 전략 동작은 라이브에서도 그대로 재현됩니다.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from core.marketdata.models import Candle, Tick
-from core.strategy.base import MarketContext, Signal, Strategy
+from core.strategy.base import MarketContext, Signal, SignalSide, Strategy
 
 logger = logging.getLogger(__name__)
+
+# 엔진과 동일한 캔들 버퍼 크기 (research-to-live parity)
+_DEFAULT_CANDLE_BUFFER = 200
 
 
 @dataclass
@@ -28,6 +32,7 @@ class HarnessResult:
     Attributes:
         signals: 전략이 생성한 Signal 목록 (시간순).
         total_ticks: 재생된 틱(캔들) 수.
+        error_count: on_tick() 예외 발생 횟수.
         strategy_name: 검증 대상 전략 이름.
         symbol: 종목 코드.
         start_at: 첫 캔들 타임스탬프.
@@ -36,6 +41,7 @@ class HarnessResult:
 
     signals: list[Signal] = field(default_factory=list)
     total_ticks: int = 0
+    error_count: int = 0
     strategy_name: str = ""
     symbol: str = ""
     start_at: datetime | None = None
@@ -44,12 +50,12 @@ class HarnessResult:
     @property
     def buy_count(self) -> int:
         """BUY 시그널 수."""
-        return sum(1 for s in self.signals if s.side.value == "BUY")
+        return sum(1 for s in self.signals if s.side == SignalSide.BUY)
 
     @property
     def sell_count(self) -> int:
         """SELL 시그널 수."""
-        return sum(1 for s in self.signals if s.side.value == "SELL")
+        return sum(1 for s in self.signals if s.side == SignalSide.SELL)
 
 
 def run_backtest(
@@ -72,7 +78,7 @@ def run_backtest(
         warmup_size: warmup에 사용할 캔들 수.
 
     Returns:
-        HarnessResult: 시그널 목록 및 통계.
+        HarnessResult: 시그널 목록, 통계, 에러 카운트.
     """
     if not candles:
         logger.warning("run_backtest: 캔들 목록이 비어 있습니다")
@@ -88,14 +94,15 @@ def run_backtest(
     warmup_candles = candles[:warmup_size]
     replay_candles = candles[warmup_size:]
 
-    # warmup
+    # warmup — 엔진과 동일한 경로
     strategy.warmup(warmup_candles)
     logger.debug(
         "하니스 warmup 완료: strategy=%s candles=%d", strategy.name, len(warmup_candles)
     )
 
-    # 캔들 버퍼 (MarketContext 구성용)
-    candle_buffer = list(warmup_candles)
+    # 엔진과 동일한 bounded 캔들 버퍼 (research-to-live parity)
+    candle_buffer: deque[Candle] = deque(warmup_candles, maxlen=_DEFAULT_CANDLE_BUFFER)
+
     result = HarnessResult(
         strategy_name=strategy.name,
         symbol=symbol,
@@ -106,13 +113,14 @@ def run_backtest(
     # 재생 루프
     for candle in replay_candles:
         tick = _candle_to_tick(candle)
-        ctx = MarketContext(symbol=symbol, recent_candles=list(candle_buffer))
+        ctx = MarketContext(symbol=symbol, recent_candles=tuple(candle_buffer))
 
         try:
             signal = strategy.on_tick(tick, ctx)
             if signal is not None:
                 result.signals.append(signal)
         except Exception as exc:
+            result.error_count += 1
             logger.error(
                 "하니스 on_tick 예외: strategy=%s ts=%s error=%s",
                 strategy.name,
@@ -125,12 +133,13 @@ def run_backtest(
         result.total_ticks += 1
 
     logger.info(
-        "하니스 완료: strategy=%s ticks=%d signals=%d (BUY=%d SELL=%d)",
+        "하니스 완료: strategy=%s ticks=%d signals=%d (BUY=%d SELL=%d) errors=%d",
         strategy.name,
         result.total_ticks,
         len(result.signals),
         result.buy_count,
         result.sell_count,
+        result.error_count,
     )
     return result
 

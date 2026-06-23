@@ -168,6 +168,8 @@ class TestRunBacktestErrorHandling:
         assert result.total_ticks == 10
         # 시그널은 없어야 함 (예외로 인해 None 반환)
         assert result.signals == []
+        # 모든 틱에서 예외가 발생했으므로 error_count == total_ticks
+        assert result.error_count == 10
 
 
 # ---------------------------------------------------------------------------

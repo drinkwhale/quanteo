@@ -245,7 +245,7 @@ class TestStrategyEngineCandleBuffer:
         bus = EventBus()
         engine = StrategyEngine(bus)
         ctx = engine._build_context("UNKNOWN")
-        assert ctx.recent_candles == []
+        assert ctx.recent_candles == ()
 
 
 @pytest.mark.asyncio

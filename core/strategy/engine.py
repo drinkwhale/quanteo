@@ -47,6 +47,8 @@ class StrategyEngine:
         self._strategies: dict[str, Strategy] = {}
         # 심볼별 캔들 링버퍼 (오래된 것부터 최신 순)
         self._candle_buffers: dict[str, deque[Candle]] = {}
+        # warmup 실패 전략 이름 집합 — on_tick에서 건너뜀
+        self._failed_warmup: set[str] = set()
         self._running = False
 
     # ------------------------------------------------------------------
@@ -62,17 +64,24 @@ class StrategyEngine:
             strategy: Strategy Protocol을 구현한 인스턴스.
         """
         self._strategies[strategy.name] = strategy
+        self._failed_warmup.discard(strategy.name)  # 재등록 시 실패 상태 초기화
         logger.info("전략 등록: %s", strategy.name)
 
     def unregister(self, name: str) -> None:
         """전략 플러그인을 제거한다."""
         self._strategies.pop(name, None)
+        self._failed_warmup.discard(name)
         logger.info("전략 제거: %s", name)
 
     @property
     def strategy_names(self) -> list[str]:
         """등록된 전략 이름 목록."""
         return list(self._strategies.keys())
+
+    @property
+    def failed_warmup_names(self) -> set[str]:
+        """warmup 실패로 비활성화된 전략 이름 집합."""
+        return frozenset(self._failed_warmup)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # 워밍업
@@ -82,6 +91,8 @@ class StrategyEngine:
         """과거 캔들로 모든 전략의 초기 지표를 설정하고 캔들 버퍼를 채운다.
 
         run() 호출 전에 한 번 실행해야 research-to-live parity가 보장된다.
+        warmup 중 예외가 발생한 전략은 _failed_warmup에 추가되어
+        이후 on_tick() 호출에서 제외된다.
 
         Args:
             history: 오래된 것부터 최신 순의 캔들 목록.
@@ -101,12 +112,13 @@ class StrategyEngine:
                 logger.debug("warmup 완료: strategy=%s symbol=%s", strategy.name, symbol)
             except Exception as exc:
                 logger.error(
-                    "warmup 실패: strategy=%s symbol=%s error=%s",
+                    "warmup 실패 — 전략 비활성화: strategy=%s symbol=%s error=%s",
                     strategy.name,
                     symbol,
                     exc,
                     exc_info=True,
                 )
+                self._failed_warmup.add(strategy.name)
 
     # ------------------------------------------------------------------
     # 라이프사이클 (asyncio.gather 패턴)
@@ -143,6 +155,9 @@ class StrategyEngine:
         ctx = self._build_context(tick.symbol)
 
         for strategy in self._strategies.values():
+            # warmup 실패 전략은 건너뜀 (반초기화 상태로 실행 방지)
+            if strategy.name in self._failed_warmup:
+                continue
             try:
                 signal: Signal | None = strategy.on_tick(tick, ctx)
                 if signal is not None:
@@ -165,20 +180,32 @@ class StrategyEngine:
         buf.append(candle)
 
     def _build_context(self, symbol: str) -> MarketContext:
-        """심볼에 대한 MarketContext를 생성한다."""
+        """심볼에 대한 MarketContext를 생성한다.
+
+        NOTE: 이 스냅샷은 _handle_tick_event가 동기 핸들러이기 때문에 안전하다.
+        비동기·병렬 처리로 전환 시 버퍼 접근에 락이 필요하다.
+        """
         buf = self._candle_buffers.get(symbol)
-        candles = list(buf) if buf else []
+        candles = tuple(buf) if buf else ()
         return MarketContext(symbol=symbol, recent_candles=candles)
 
     def _publish_signal(self, signal: Signal) -> None:
         """Signal을 Event Bus에 SIGNAL 이벤트로 발행한다."""
         event = Event(type=EventType.SIGNAL, payload=signal, source=signal.strategy)
-        self._bus.publish_nowait(event)
-        logger.info(
-            "시그널 발행: strategy=%s symbol=%s side=%s qty=%s reason=%s",
-            signal.strategy,
-            signal.symbol,
-            signal.side,
-            signal.qty,
-            signal.reason,
-        )
+        published = self._bus.publish_nowait(event)
+        if published:
+            logger.info(
+                "시그널 발행: strategy=%s symbol=%s side=%s qty=%s reason=%s",
+                signal.strategy,
+                signal.symbol,
+                signal.side,
+                signal.qty,
+                signal.reason,
+            )
+        else:
+            logger.error(
+                "시그널 드롭 (큐 포화): strategy=%s symbol=%s side=%s — Risk Manager 미전달",
+                signal.strategy,
+                signal.symbol,
+                signal.side,
+            )
