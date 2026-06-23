@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from core.events.bus import EventBus
 from core.events.types import Event, EventType
@@ -19,6 +19,15 @@ from core.risk.models import Order, OrderSide
 from core.store.db import StateStore
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# REST 클라이언트 Protocol (타입 안전성)
+# ---------------------------------------------------------------------------
+
+
+class _RestClient(Protocol):
+    async def place_order(self, order: Order) -> "OrderAck": ...
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +85,7 @@ class OrderExecutor:
         bus: 주문 이벤트 발행용 EventBus.
     """
 
-    def __init__(self, rest_client: Any, store: StateStore, bus: EventBus) -> None:
+    def __init__(self, rest_client: _RestClient, store: StateStore, bus: EventBus) -> None:
         self._rest = rest_client
         self._store = store
         self._bus = bus
@@ -98,6 +107,11 @@ class OrderExecutor:
         # 멱등성 체크 — 이미 처리된 주문이면 DB에서 반환
         existing = await self._fetch_existing(order.client_order_id)
         if existing:
+            if existing["status"] == "rejected":
+                raise RuntimeError(
+                    f"이미 거부된 주문 재제출 불가 (client_id={order.client_order_id}). "
+                    "Risk Manager를 통해 새 주문을 생성하세요."
+                )
             logger.info("중복 주문 무시 (client_id=%s, status=%s)", order.client_order_id, existing["status"])
             return OrderAck(
                 client_order_id=order.client_order_id,
@@ -190,8 +204,8 @@ class OrderExecutor:
         """
         row = await self._fetch_existing(client_order_id)
         if not row:
-            logger.warning("체결 기록 실패 — 주문 없음: client_id=%s", client_order_id)
-            return
+            logger.error("미등록 주문 체결 수신: client_id=%s", client_order_id)
+            raise RuntimeError(f"미등록 주문 체결 수신: client_id={client_order_id}")
 
         now = datetime.now(UTC).isoformat()
 
@@ -210,7 +224,16 @@ class OrderExecutor:
                 now,
             ),
         )
-        await self._update_status(client_order_id, "filled", kis_order_id=None)
+
+        # 누적 체결 수량 vs 주문 수량 비교 — 부분 체결이면 'partial', 완전 체결이면 'filled'
+        async with self._store.conn.execute(
+            "SELECT COALESCE(SUM(fill_qty), 0) FROM fills WHERE client_order_id = ?",
+            (client_order_id,),
+        ) as cursor:
+            total_filled: int = (await cursor.fetchone())[0]
+
+        new_status = "filled" if total_filled >= row["qty"] else "partial"
+        await self._update_status(client_order_id, new_status, kis_order_id=None)
 
         self._bus.publish_nowait(
             Event(

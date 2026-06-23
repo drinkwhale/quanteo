@@ -99,6 +99,20 @@ class TestRiskLimits:
         assert isinstance(result, Order)
         assert result.side == OrderSide.SELL
 
+    def test_market_buy_without_price_is_rejected(self):
+        """시장가 BUY(price=None)는 노출 한도 계산 불가로 거부된다. (C1)"""
+        rm = RiskManager()
+        result = rm.evaluate(_signal(side=SignalSide.BUY, qty=10, price=None), _empty_portfolio())
+        assert isinstance(result, Rejection)
+        assert "시장가" in result.reason
+
+    def test_market_sell_without_price_is_allowed(self):
+        """시장가 SELL(price=None)은 청산 목적이므로 허용된다. (C1 예외)"""
+        rm = RiskManager()
+        result = rm.evaluate(_signal(side=SignalSide.SELL, qty=5, price=None), _empty_portfolio())
+        assert isinstance(result, Order)
+        assert result.order_type.value == "market"
+
     def test_order_has_correct_fields(self):
         rm = RiskManager()
         sig = _signal(side=SignalSide.BUY, qty=3, price=75000.0)
@@ -203,13 +217,23 @@ class TestKillSwitch:
         assert isinstance(result, Rejection)
         assert "일시정지" in result.reason
 
-    def test_reduce_halves_qty(self):
+    def test_reduce_halves_buy_qty(self):
+        """REDUCE 수준에서 BUY 수량이 절반으로 줄어든다. (C3)"""
         config = RiskConfig(reduce_ratio=0.5)
         rm = RiskManager(config)
         asyncio.run(rm.graduated_halt(HaltLevel.REDUCE))
-        result = rm.evaluate(_signal(qty=10, price=1.0), _empty_portfolio())
+        result = rm.evaluate(_signal(side=SignalSide.BUY, qty=10, price=1.0), _empty_portfolio())
         assert isinstance(result, Order)
         assert result.qty == 5
+
+    def test_reduce_does_not_scale_sell_qty(self):
+        """REDUCE 수준에서 SELL 청산 수량은 줄어들지 않는다. (C3)"""
+        config = RiskConfig(reduce_ratio=0.5)
+        rm = RiskManager(config)
+        asyncio.run(rm.graduated_halt(HaltLevel.REDUCE))
+        result = rm.evaluate(_signal(side=SignalSide.SELL, qty=10, price=1.0), _empty_portfolio())
+        assert isinstance(result, Order)
+        assert result.qty == 10  # 전량 청산
 
     def test_halt_level_monotonically_increases(self):
         """킬스위치 수준은 단조 증가만 허용 (강등 불가)."""

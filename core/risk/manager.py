@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from core.events.bus import EventBus
 from core.events.types import Event, EventType
@@ -73,7 +73,7 @@ class RiskManager:
         self._bus = bus
         self._halt: HaltLevel = HaltLevel.NONE
         self._daily_order_count: int = 0
-        self._daily_reset_date: datetime = datetime.now(UTC).date()
+        self._daily_reset_date: date = datetime.now(UTC).date()
 
     # ------------------------------------------------------------------
     # 공개 API
@@ -104,6 +104,13 @@ class RiskManager:
         if rejection := self._check_halt(signal):
             return rejection
 
+        # 1.5) 시장가 BUY 거부 — 가격 없이는 노출 한도 계산 불가
+        if signal.side == SignalSide.BUY and signal.price is None:
+            return Rejection(
+                signal=signal,
+                reason="시장가 BUY 주문은 리스크 체크 불가 — 지정가(price 지정) 사용",
+            )
+
         # 2) 일일 주문 횟수
         if rejection := self._check_daily_orders(signal):
             return rejection
@@ -118,8 +125,8 @@ class RiskManager:
             if rejection := self._check_position_value(signal, portfolio):
                 return rejection
 
-        # 5) REDUCE 수준 수량 축소
-        qty = self._apply_reduce(signal.qty)
+        # 5) REDUCE 수준 수량 축소 — BUY 신규 진입에만 적용 (SELL 청산은 전량 유지)
+        qty = self._apply_reduce(signal.qty) if signal.side == SignalSide.BUY else signal.qty
         if qty < 1:
             return Rejection(signal=signal, reason="REDUCE 적용 후 수량이 0 이하")
 
@@ -249,7 +256,7 @@ class RiskManager:
     def _check_position_value(self, signal: Signal, portfolio: Portfolio) -> Rejection | None:
         """종목당 포지션 가치 한도 검증 (BUY 전용)."""
         existing = portfolio.positions.get(signal.symbol)
-        existing_value = existing.market_value if existing else 0.0
+        existing_value = existing.book_value if existing else 0.0
         add_value = signal.qty * (signal.price or 0.0)
         projected = existing_value + add_value
         if projected > self._config.max_position_value:

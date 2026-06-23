@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS orders (
     qty              INTEGER NOT NULL,
     price            REAL    NOT NULL DEFAULT 0.0,
     status           TEXT    NOT NULL DEFAULT 'pending'
-                             CHECK(status IN ('pending','submitted','filled','cancelled','rejected')),
+                             CHECK(status IN ('pending','submitted','partial','filled','cancelled','rejected')),
     created_at       TEXT    NOT NULL,
     updated_at       TEXT    NOT NULL
 )
