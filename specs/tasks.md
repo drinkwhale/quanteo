@@ -48,7 +48,7 @@
 - [x] **T017** `core/risk/` — 킬스위치/일시정지 상태 관리
 - [x] **T018** `core/execution/` — Order Executor: 주문 전송·멱등성(client_order_id)·체결 추적
 - [x] **T019** `core/adapters/kis/rest.py` — 매수/매도 주문 REST 호출(환경별 TR_ID)
-- [ ] **T020** vps(모의투자) 통합 테스트: 시그널 → 리스크 → 주문 라운드트립
+- [x] **T020** vps(모의투자) 통합 테스트: 시그널 → 리스크 → 주문 라운드트립
 
 ## Phase 5 — 제어 API
 
