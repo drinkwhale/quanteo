@@ -46,8 +46,8 @@
 - [x] **T015** `core/risk/` — Risk Manager: 한도(종목당 금액·일일 주문수·총 노출) 가드
 - [x] **T016** `core/risk/` — 손절/익절 `check_exit` 로직
 - [x] **T017** `core/risk/` — 킬스위치/일시정지 상태 관리
-- [ ] **T018** `core/execution/` — Order Executor: 주문 전송·멱등성(client_order_id)·체결 추적
-- [ ] **T019** `core/adapters/kis/rest.py` — 매수/매도 주문 REST 호출(환경별 TR_ID)
+- [x] **T018** `core/execution/` — Order Executor: 주문 전송·멱등성(client_order_id)·체결 추적
+- [x] **T019** `core/adapters/kis/rest.py` — 매수/매도 주문 REST 호출(환경별 TR_ID)
 - [ ] **T020** vps(모의투자) 통합 테스트: 시그널 → 리스크 → 주문 라운드트립
 
 ## Phase 5 — 제어 API

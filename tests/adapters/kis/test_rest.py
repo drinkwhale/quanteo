@@ -263,3 +263,111 @@ async def test_get_overseas_balance_skips_zero_qty():
     client = KisRestClient(auth, market=Market.OVERSEAS, http_client=mock_client)
     result = await client.get_balance()
     assert result.items == []
+
+
+# ---------------------------------------------------------------------------
+# T019: 매수/매도 주문 (국내)
+# ---------------------------------------------------------------------------
+
+
+def _post_mock_response(data: dict) -> httpx.Response:
+    resp = httpx.Response(200, json=data)
+    resp.request = httpx.Request("POST", "https://openapivts.koreainvestment.com:29443/")
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_place_domestic_buy_order():
+    from core.config.settings import Env, Market
+    from core.risk.models import Order, OrderSide, OrderType
+    from core.strategy.base import Signal, SignalSide
+
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(
+        return_value=_post_mock_response({"rt_cd": "0", "output": {"ODNO": "0000123456"}})
+    )
+
+    client = KisRestClient(auth, env=Env.VPS, market=Market.DOMESTIC, http_client=mock_client)
+
+    sig = Signal(strategy="test", symbol="005930", side=SignalSide.BUY, qty=5, price=75000.0)
+    order = Order(
+        symbol="005930",
+        market=Market.DOMESTIC,
+        env=Env.VPS,
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        qty=5,
+        price=75000.0,
+        source_signal=sig,
+    )
+
+    ack = await client.place_order(order)
+
+    assert ack.kis_order_id == "0000123456"
+    assert ack.status == "submitted"
+    assert ack.symbol == "005930"
+
+    call_kwargs = mock_client.post.call_args
+    sent_body = call_kwargs.kwargs["json"]
+    assert sent_body["PDNO"] == "005930"
+    assert sent_body["ORD_QTY"] == "5"
+    assert sent_body["ORD_DVSN"] == "00"  # 지정가
+
+
+@pytest.mark.asyncio
+async def test_place_domestic_sell_order_market():
+    from core.config.settings import Env, Market
+    from core.risk.models import Order, OrderSide, OrderType
+    from core.strategy.base import Signal, SignalSide
+
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(
+        return_value=_post_mock_response({"rt_cd": "0", "output": {"ODNO": "0000999999"}})
+    )
+
+    client = KisRestClient(auth, env=Env.VPS, market=Market.DOMESTIC, http_client=mock_client)
+
+    sig = Signal(strategy="test", symbol="005930", side=SignalSide.SELL, qty=3, price=None)
+    order = Order(
+        symbol="005930",
+        market=Market.DOMESTIC,
+        env=Env.VPS,
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        qty=3,
+        price=0.0,
+        source_signal=sig,
+    )
+
+    ack = await client.place_order(order)
+
+    assert ack.kis_order_id == "0000999999"
+    sent_body = mock_client.post.call_args.kwargs["json"]
+    assert sent_body["ORD_DVSN"] == "01"  # 시장가
+    assert sent_body["ORD_UNPR"] == "0"   # 시장가 가격은 0
+
+
+@pytest.mark.asyncio
+async def test_place_order_api_error_raises():
+    from core.config.settings import Env, Market
+    from core.risk.models import Order, OrderSide, OrderType
+    from core.strategy.base import Signal, SignalSide
+
+    auth = _make_auth()
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(
+        return_value=_post_mock_response({"rt_cd": "9", "msg1": "잔고 부족"})
+    )
+
+    client = KisRestClient(auth, env=Env.VPS, market=Market.DOMESTIC, http_client=mock_client)
+
+    sig = Signal(strategy="test", symbol="005930", side=SignalSide.BUY, qty=1, price=100.0)
+    order = Order(
+        symbol="005930", market=Market.DOMESTIC, env=Env.VPS,
+        side=OrderSide.BUY, order_type=OrderType.LIMIT, qty=1, price=100.0, source_signal=sig,
+    )
+
+    with pytest.raises(RuntimeError, match="KIS 주문 오류"):
+        await client.place_order(order)

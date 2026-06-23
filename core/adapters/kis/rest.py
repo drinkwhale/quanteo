@@ -1,21 +1,26 @@
 """
-KIS REST API 어댑터 — 현재가·잔고 조회.
+KIS REST API 어댑터 — 현재가·잔고 조회 + 매수/매도 주문.
 
 참조: open-trading-api/examples_llm/domestic_stock/inquire_price.py
      open-trading-api/examples_llm/domestic_stock/inquire_balance.py
+     open-trading-api/examples_llm/domestic_stock/order_cash.py
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from core.adapters.kis.auth import KisAuth
 from core.adapters.kis.tr_ids import get_rest_domain, get_tr_ids
 from core.config.settings import Env, Market
+
+if TYPE_CHECKING:
+    from core.execution.executor import OrderAck
+    from core.risk.models import Order, OrderSide
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +251,135 @@ class KisRestClient:
             total_profit_loss=float(summary.get("evlu_pfls_smtl_amt", 0)),
             deposit=float(summary.get("dnca_tot_amt", 0)),
         )
+
+    # ------------------------------------------------------------------
+    # 주문
+    # ------------------------------------------------------------------
+
+    async def place_order(self, order: "Order") -> "OrderAck":
+        """매수/매도 주문을 KIS에 전송한다.
+
+        환경별 TR_ID를 자동 선택하며 모의투자(vps)와 실전(prod) 모두 지원한다.
+        국내 주식 시장가/지정가 주문을 처리한다.
+
+        참조: open-trading-api/examples_llm/domestic_stock/order_cash.py
+
+        Args:
+            order: Risk Manager가 승인한 주문.
+
+        Returns:
+            OrderAck: KIS 주문 응답 (ODNO 포함).
+
+        Raises:
+            RuntimeError: KIS API 오류 발생 시.
+        """
+        from core.execution.executor import OrderAck
+        from core.risk.models import OrderSide, OrderType
+
+        if self.market == Market.DOMESTIC:
+            return await self._place_domestic_order(order)
+        return await self._place_overseas_order(order)
+
+    async def _place_domestic_order(self, order: "Order") -> "OrderAck":
+        from core.execution.executor import OrderAck
+        from core.risk.models import OrderSide, OrderType
+
+        tr_id = self._tr_ids.buy if order.side == OrderSide.BUY else self._tr_ids.sell
+
+        # 주문 유형 코드: 00=지정가, 01=시장가 (KIS 국내주식 코드표)
+        ord_dvsn = "00" if order.order_type == OrderType.LIMIT else "01"
+        # 시장가 주문 시 가격은 "0"
+        ord_unpr = str(int(order.price)) if order.order_type == OrderType.LIMIT else "0"
+
+        creds = self.auth.credentials
+        body = {
+            "CANO": creds.account_no,
+            "ACNT_PRDT_CD": creds.account_code,
+            "PDNO": order.symbol,
+            "ORD_DVSN": ord_dvsn,
+            "ORD_QTY": str(order.qty),
+            "ORD_UNPR": ord_unpr,
+        }
+
+        data = await self._post(
+            "/uapi/domestic-stock/v1/trading/order-cash",
+            body=body,
+            tr_id=tr_id,
+        )
+
+        out = data.get("output", {})
+        kis_order_id = out.get("ODNO", "")
+
+        return OrderAck(
+            client_order_id=order.client_order_id,
+            kis_order_id=kis_order_id,
+            symbol=order.symbol,
+            status="submitted",
+            raw=out,
+        )
+
+    async def _place_overseas_order(self, order: "Order") -> "OrderAck":
+        from core.execution.executor import OrderAck
+        from core.risk.models import OrderSide, OrderType
+
+        tr_id = self._tr_ids.buy if order.side == OrderSide.BUY else self._tr_ids.sell
+
+        creds = self.auth.credentials
+        body = {
+            "CANO": creds.account_no,
+            "ACNT_PRDT_CD": creds.account_code,
+            "OVRS_EXCG_CD": "NASD",  # 기본값 NASDAQ — 추후 파라미터화
+            "PDNO": order.symbol,
+            "ORD_QTY": str(order.qty),
+            "OVRS_ORD_UNPR": str(order.price) if order.price > 0 else "0",
+            "ORD_SVR_DVSN_CD": "0",
+            "ORD_DVSN": "00",
+        }
+
+        data = await self._post(
+            "/uapi/overseas-stock/v1/trading/order",
+            body=body,
+            tr_id=tr_id,
+        )
+
+        out = data.get("output", {})
+        return OrderAck(
+            client_order_id=order.client_order_id,
+            kis_order_id=out.get("ODNO", ""),
+            symbol=order.symbol,
+            status="submitted",
+            raw=out,
+        )
+
+    async def _post(self, path: str, body: dict[str, str], tr_id: str) -> dict[str, Any]:
+        """공통 POST 요청 헬퍼."""
+        token = await self.auth.get_access_token()
+        headers = {
+            "authorization": f"Bearer {token.token}",
+            "appkey": self.auth.credentials.app_key,
+            "appsecret": self.auth.credentials.app_secret.get_secret_value(),
+            "tr_id": tr_id,
+            "content-type": "application/json; charset=utf-8",
+            "User-Agent": self.auth.credentials.user_agent,
+        }
+
+        url = f"{self._base_url}{path}"
+
+        if self._http_client:
+            resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
+        else:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json=body, timeout=10.0)
+
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+
+        rt_cd = data.get("rt_cd", "")
+        if rt_cd != "0":
+            msg = data.get("msg1", "알 수 없는 KIS API 오류")
+            raise RuntimeError(f"KIS 주문 오류 (tr_id={tr_id}, rt_cd={rt_cd}): {msg}")
+
+        return data
 
     async def _get_overseas_balance(self) -> BalanceInfo:
         creds = self.auth.credentials
