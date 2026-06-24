@@ -105,9 +105,24 @@ git checkout phase/1-bootstrap
 git merge --squash task/T001-pyproject
 git commit -m "feat(T001): scaffold project with uv and core/ structure"
 
-# 7. Phase 완료 시 Phase → main으로 PR
+# 7. Phase 완료 시 — 반드시 아래 순서로 진행 (자동화 규칙)
+#    a) PROJECT_INDEX.md 갱신: /sc:index-repo mode=update 실행
+#    b) 변경사항 commit & push: git add -A && git commit && git push
+#    c) PR 생성: gh pr create --base main --head phase/...
 gh pr create --base main --head phase/1-bootstrap
 ```
+
+> **⚡ Phase 완료 자동화 규칙 (Claude 필독)**
+>
+> Phase의 **마지막 Task까지 완료된 직후**, Claude는 반드시 아래 세 단계를 순서대로 실행한다.
+> 사용자가 별도로 요청하지 않아도 자동 진행.
+>
+> 1. `/sc:index-repo mode=update` — PROJECT_INDEX.md 갱신
+> 2. 변경사항 전체 commit & push (`phase/*` 브랜치)
+> 3. `gh pr create --base main` — PR 생성 (이미 존재하면 skip)
+>
+> Stop hook (`settings.local.json`)이 미커밋 변경사항을 자동 commit+push하지만,
+> **index 업데이트는 AI가 직접 실행해야 하므로** Claude가 세션 내에서 처리한다.
 
 ### 커밋 메시지 형식 (Conventional Commits)
 
