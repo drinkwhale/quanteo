@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from core.adapters.kis.auth import KisAuth
+from core.adapters.kis.throttler import ThrottlerConfig, TokenBucketThrottler, with_retry
 from core.adapters.kis.tr_ids import get_rest_domain, get_tr_ids
 from core.config.settings import Env, Market
 
@@ -89,6 +90,7 @@ class KisRestClient:
         env: Env = Env.VPS,
         market: Market = Market.DOMESTIC,
         http_client: httpx.AsyncClient | None = None,
+        throttler: TokenBucketThrottler | None = None,
     ) -> None:
         self.auth = auth
         self.env = env
@@ -96,36 +98,40 @@ class KisRestClient:
         self._base_url = get_rest_domain(env)
         self._tr_ids = get_tr_ids(env, market)
         self._http_client = http_client
+        self._throttler = throttler or TokenBucketThrottler()
 
     async def _get(self, path: str, params: dict[str, str], tr_id: str) -> dict[str, Any]:
-        """공통 GET 요청 헬퍼."""
-        token = await self.auth.get_access_token()
-        headers = {
-            "authorization": f"Bearer {token.token}",
-            "appkey": self.auth.credentials.app_key,
-            "appsecret": self.auth.credentials.app_secret.get_secret_value(),
-            "tr_id": tr_id,
-            "content-type": "application/json; charset=utf-8",
-            "User-Agent": self.auth.credentials.user_agent,
-        }
+        """공통 GET 요청 헬퍼 (throttler + retry 포함)."""
 
-        url = f"{self._base_url}{path}"
+        async def _do() -> dict[str, Any]:
+            token = await self.auth.get_access_token()
+            headers = {
+                "authorization": f"Bearer {token.token}",
+                "appkey": self.auth.credentials.app_key,
+                "appsecret": self.auth.credentials.app_secret.get_secret_value(),
+                "tr_id": tr_id,
+                "content-type": "application/json; charset=utf-8",
+                "User-Agent": self.auth.credentials.user_agent,
+            }
+            url = f"{self._base_url}{path}"
 
-        if self._http_client:
-            resp = await self._http_client.get(url, headers=headers, params=params, timeout=10.0)
-        else:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, params=params, timeout=10.0)
+            if self._http_client:
+                resp = await self._http_client.get(url, headers=headers, params=params, timeout=10.0)
+            else:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, headers=headers, params=params, timeout=10.0)
 
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
 
-        rt_cd = data.get("rt_cd", "")
-        if rt_cd != "0":
-            msg = data.get("msg1", "알 수 없는 KIS API 오류")
-            raise RuntimeError(f"KIS API 오류 (rt_cd={rt_cd}): {msg}")
+            rt_cd = data.get("rt_cd", "")
+            if rt_cd != "0":
+                msg = data.get("msg1", "알 수 없는 KIS API 오류")
+                raise RuntimeError(f"KIS API 오류 (rt_cd={rt_cd}): {msg}")
 
-        return data
+            return data
+
+        return await with_retry(_do, self._throttler)
 
     # ------------------------------------------------------------------
     # 현재가 조회
@@ -352,34 +358,37 @@ class KisRestClient:
         )
 
     async def _post(self, path: str, body: dict[str, str], tr_id: str) -> dict[str, Any]:
-        """공통 POST 요청 헬퍼."""
-        token = await self.auth.get_access_token()
-        headers = {
-            "authorization": f"Bearer {token.token}",
-            "appkey": self.auth.credentials.app_key,
-            "appsecret": self.auth.credentials.app_secret.get_secret_value(),
-            "tr_id": tr_id,
-            "content-type": "application/json; charset=utf-8",
-            "User-Agent": self.auth.credentials.user_agent,
-        }
+        """공통 POST 요청 헬퍼 (throttler + retry 포함)."""
 
-        url = f"{self._base_url}{path}"
+        async def _do() -> dict[str, Any]:
+            token = await self.auth.get_access_token()
+            headers = {
+                "authorization": f"Bearer {token.token}",
+                "appkey": self.auth.credentials.app_key,
+                "appsecret": self.auth.credentials.app_secret.get_secret_value(),
+                "tr_id": tr_id,
+                "content-type": "application/json; charset=utf-8",
+                "User-Agent": self.auth.credentials.user_agent,
+            }
+            url = f"{self._base_url}{path}"
 
-        if self._http_client:
-            resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
-        else:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=headers, json=body, timeout=10.0)
+            if self._http_client:
+                resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
+            else:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, headers=headers, json=body, timeout=10.0)
 
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
 
-        rt_cd = data.get("rt_cd", "")
-        if rt_cd != "0":
-            msg = data.get("msg1", "알 수 없는 KIS API 오류")
-            raise RuntimeError(f"KIS 주문 오류 (tr_id={tr_id}, rt_cd={rt_cd}): {msg}")
+            rt_cd = data.get("rt_cd", "")
+            if rt_cd != "0":
+                msg = data.get("msg1", "알 수 없는 KIS API 오류")
+                raise RuntimeError(f"KIS 주문 오류 (tr_id={tr_id}, rt_cd={rt_cd}): {msg}")
 
-        return data
+            return data
+
+        return await with_retry(_do, self._throttler)
 
     async def _get_overseas_balance(self) -> BalanceInfo:
         creds = self.auth.credentials
