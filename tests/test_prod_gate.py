@@ -12,7 +12,6 @@ import pytest
 from core.app import ProdGateError, _check_prod_gate
 from core.config.settings import Env
 
-
 # ---------------------------------------------------------------------------
 # 핵심 게이트 함수
 # ---------------------------------------------------------------------------
@@ -74,8 +73,9 @@ async def test_run_blocks_prod_before_settings_load():
     설정 파일(kis_devlp.yaml)이 없어도 ProdGateError가 먼저 발생해야 한다.
     (FileNotFoundError가 발생하면 게이트가 너무 늦게 동작하는 것.)
     """
-    from core.app import run
     from pathlib import Path
+
+    from core.app import run
 
     with pytest.raises(ProdGateError):
         await run(

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from core.config.settings import Settings
-from core.notifier.base import NotifyLevel, Notifier
+from core.notifier.base import Notifier, NotifyLevel
 from core.notifier.mock import MockNotifier
 from core.notifier.telegram import TelegramNotifier
 

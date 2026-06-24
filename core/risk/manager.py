@@ -10,7 +10,7 @@ Risk Manager — 시그널 검증 및 주문 생성.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from core.events.bus import EventBus
@@ -116,14 +116,12 @@ class RiskManager:
             return rejection
 
         # 3) 총 노출 한도 (BUY)
-        if signal.side == SignalSide.BUY:
-            if rejection := self._check_total_exposure(signal, portfolio):
-                return rejection
+        if signal.side == SignalSide.BUY and (rejection := self._check_total_exposure(signal, portfolio)):
+            return rejection
 
         # 4) 종목당 포지션 가치 한도 (BUY)
-        if signal.side == SignalSide.BUY:
-            if rejection := self._check_position_value(signal, portfolio):
-                return rejection
+        if signal.side == SignalSide.BUY and (rejection := self._check_position_value(signal, portfolio)):
+            return rejection
 
         # 5) REDUCE 수준 수량 축소 — BUY 신규 진입에만 적용 (SELL 청산은 전량 유지)
         qty = self._apply_reduce(signal.qty) if signal.side == SignalSide.BUY else signal.qty
@@ -224,10 +222,9 @@ class RiskManager:
             # KILL: 손절(SELL)만 허용
             if signal.side == SignalSide.BUY:
                 return Rejection(signal=signal, reason=f"킬스위치 활성 ({self._halt.value}) — 신규 BUY 차단")
-        elif self._halt == HaltLevel.PAUSE:
+        elif self._halt == HaltLevel.PAUSE and signal.side == SignalSide.BUY:
             # PAUSE: 신규 진입 불가
-            if signal.side == SignalSide.BUY:
-                return Rejection(signal=signal, reason=f"일시정지 활성 ({self._halt.value}) — 신규 BUY 차단")
+            return Rejection(signal=signal, reason=f"일시정지 활성 ({self._halt.value}) — 신규 BUY 차단")
         return None
 
     def _check_daily_orders(self, signal: Signal) -> Rejection | None:

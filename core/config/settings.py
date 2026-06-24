@@ -8,27 +8,26 @@ kis_devlp.yaml을 읽어 환경(prod/vps)·시장(domestic/overseas) 설정을 �
 from __future__ import annotations
 
 import os
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, SecretStr, field_validator
 
-
 # ---------------------------------------------------------------------------
 # 열거형
 # ---------------------------------------------------------------------------
 
 
-class Env(str, Enum):
+class Env(StrEnum):
     """KIS 투자 환경."""
 
     PROD = "prod"  # 실전투자 (실제 돈)
     VPS = "vps"    # 모의투자 (paper trading) — 기본값
 
 
-class Market(str, Enum):
+class Market(StrEnum):
     """대상 시장."""
 
     DOMESTIC = "domestic"
@@ -118,7 +117,7 @@ _KIS_KEY_PREFIX: dict[Env, str] = {
 }
 
 
-def _extract_credentials(raw: dict[str, Any], env: Env, path: Path) -> "KisCredentials":
+def _extract_credentials(raw: dict[str, Any], env: Env, path: Path) -> KisCredentials:
     """kis_devlp.yaml에서 환경별 자격증명을 추출한다.
 
     KIS 공식 포맷(flat keys: my_app / paper_app 등)과

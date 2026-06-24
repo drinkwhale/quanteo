@@ -108,7 +108,7 @@ def _is_kis_rate_limit(exc: RuntimeError) -> bool:
     return any(code in msg for code in _KIS_RATE_LIMIT_CODES)
 
 
-async def with_retry(
+async def with_retry[T](
     coro_factory: Callable[[], Awaitable[T]],
     throttler: FixedIntervalThrottler,
     *,

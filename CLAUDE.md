@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⛔ 브랜치 규칙 (세션 시작 시 반드시 확인)
+
+**코드를 수정하기 전에 항상 현재 브랜치를 확인한다.**
+
+```bash
+git branch --show-current
+```
+
+- `main` 브랜치라면 **즉시 작업 브랜치를 생성**한 후 수정을 시작한다.
+- `main`에 직접 커밋하지 않는다. 예외 없음.
+- 브랜치 명명 규칙: `fix/{slug}` / `task/T{NNN}-{slug}` / `phase/{N}-{slug}`
+
 ## Project
 
 **quanteo** — 한국투자증권(KIS) Open Trading API를 이용한 주식 자동매매(트레이딩) 봇.

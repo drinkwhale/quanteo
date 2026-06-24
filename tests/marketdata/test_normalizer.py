@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from core.marketdata.models import Candle, Quote, Tick
 from core.marketdata.normalizer import (
     normalize_domestic_quote,

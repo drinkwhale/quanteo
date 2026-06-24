@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
-
-import pytest
 
 from core.config.settings import Env, Market
 from core.risk.manager import RiskConfig, RiskManager
@@ -18,7 +15,6 @@ from core.risk.models import (
     Rejection,
 )
 from core.strategy.base import Signal, SignalSide
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼

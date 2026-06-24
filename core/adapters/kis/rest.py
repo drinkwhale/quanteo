@@ -21,7 +21,7 @@ from core.config.settings import Env, Market
 
 if TYPE_CHECKING:
     from core.execution.executor import OrderAck
-    from core.risk.models import Order, OrderSide
+    from core.risk.models import Order
 
 logger = logging.getLogger(__name__)
 
@@ -341,7 +341,7 @@ class KisRestClient:
     # 주문
     # ------------------------------------------------------------------
 
-    async def place_order(self, order: "Order") -> "OrderAck":
+    async def place_order(self, order: Order) -> OrderAck:
         """매수/매도 주문을 KIS에 전송한다.
 
         환경별 TR_ID를 자동 선택하며 모의투자(vps)와 실전(prod) 모두 지원한다.
@@ -363,7 +363,7 @@ class KisRestClient:
             return await self._place_domestic_order(order)
         return await self._place_overseas_order(order)
 
-    async def _place_domestic_order(self, order: "Order") -> "OrderAck":
+    async def _place_domestic_order(self, order: Order) -> OrderAck:
         from core.execution.executor import OrderAck
         from core.risk.models import OrderSide, OrderType
 
@@ -401,9 +401,9 @@ class KisRestClient:
             raw=out,
         )
 
-    async def _place_overseas_order(self, order: "Order") -> "OrderAck":
+    async def _place_overseas_order(self, order: Order) -> OrderAck:
         from core.execution.executor import OrderAck
-        from core.risk.models import OrderSide, OrderType
+        from core.risk.models import OrderSide
 
         tr_id = self._tr_ids.buy if order.side == OrderSide.BUY else self._tr_ids.sell
 

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from core.marketdata.models import Candle, Tick
 from core.strategy.base import MarketContext, Signal, SignalSide
 from core.strategy.harness import HarnessResult, run_backtest
 from core.strategy.plugins.ma_cross import MACrossStrategy
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼
@@ -24,7 +21,7 @@ def _make_candles(
 ) -> list[Candle]:
     """가격 목록으로 캔들 시퀀스를 생성한다."""
     if start is None:
-        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 1, tzinfo=UTC)
     return [
         Candle(
             symbol=symbol,

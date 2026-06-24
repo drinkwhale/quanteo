@@ -1,17 +1,15 @@
 """KIS 인증 모듈 단위 테스트."""
 
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import httpx
+import pytest
 
 from core.adapters.kis.auth import (
     AccessToken,
     KisAuth,
-    WebSocketKey,
     _cache_path,
     _load_token_cache,
     _save_token_cache,
@@ -56,20 +54,20 @@ def _mock_ws_key_response(key: str = "WSKEY_XYZ") -> MagicMock:
 
 class TestAccessToken:
     def test_not_expired_when_fresh(self) -> None:
-        token = AccessToken("tok", datetime.now(timezone.utc) + timedelta(hours=12))
+        token = AccessToken("tok", datetime.now(UTC) + timedelta(hours=12))
         assert not token.is_expired()
 
     def test_expired_when_past(self) -> None:
-        token = AccessToken("tok", datetime.now(timezone.utc) - timedelta(seconds=1))
+        token = AccessToken("tok", datetime.now(UTC) - timedelta(seconds=1))
         assert token.is_expired()
 
     def test_expired_within_buffer(self) -> None:
         # 만료까지 3분 남았을 때 버퍼 5분이면 만료로 간주
-        token = AccessToken("tok", datetime.now(timezone.utc) + timedelta(seconds=180))
+        token = AccessToken("tok", datetime.now(UTC) + timedelta(seconds=180))
         assert token.is_expired(buffer_seconds=300)
 
     def test_str_returns_token(self) -> None:
-        token = AccessToken("mytoken", datetime.now(timezone.utc) + timedelta(hours=1))
+        token = AccessToken("mytoken", datetime.now(UTC) + timedelta(hours=1))
         assert str(token) == "mytoken"
 
 
@@ -80,7 +78,7 @@ class TestAccessToken:
 
 class TestTokenCache:
     def test_save_and_load_valid_token(self, tmp_path: Path) -> None:
-        token = AccessToken("CACHED_TOKEN", datetime.now(timezone.utc) + timedelta(hours=12))
+        token = AccessToken("CACHED_TOKEN", datetime.now(UTC) + timedelta(hours=12))
         _save_token_cache(token, Env.VPS, tmp_path)
 
         loaded = _load_token_cache(Env.VPS, tmp_path)
@@ -88,7 +86,7 @@ class TestTokenCache:
         assert loaded.token == "CACHED_TOKEN"
 
     def test_expired_cache_returns_none(self, tmp_path: Path) -> None:
-        token = AccessToken("OLD_TOKEN", datetime.now(timezone.utc) - timedelta(hours=1))
+        token = AccessToken("OLD_TOKEN", datetime.now(UTC) - timedelta(hours=1))
         _save_token_cache(token, Env.VPS, tmp_path)
 
         loaded = _load_token_cache(Env.VPS, tmp_path)
@@ -150,7 +148,7 @@ class TestKisAuthAccessToken:
     ) -> None:
         valid_token = AccessToken(
             "CACHED_TOKEN",
-            datetime.now(timezone.utc) + timedelta(hours=12),
+            datetime.now(UTC) + timedelta(hours=12),
         )
         _save_token_cache(valid_token, Env.VPS, vps_auth.cache_dir)
 
@@ -167,7 +165,7 @@ class TestKisAuthAccessToken:
     async def test_reissues_when_expired(
         self, vps_auth: KisAuth
     ) -> None:
-        expired = AccessToken("OLD", datetime.now(timezone.utc) - timedelta(hours=1))
+        expired = AccessToken("OLD", datetime.now(UTC) - timedelta(hours=1))
         _save_token_cache(expired, Env.VPS, vps_auth.cache_dir)
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -192,7 +190,7 @@ class TestKisAuthWebSocketKey:
         # Access Token 미리 주입
         vps_auth._access_token = AccessToken(
             "BEARER_TOKEN",
-            datetime.now(timezone.utc) + timedelta(hours=12),
+            datetime.now(UTC) + timedelta(hours=12),
         )
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -212,7 +210,7 @@ class TestKisAuthWebSocketKey:
     ) -> None:
         vps_auth._access_token = AccessToken(
             "MY_BEARER",
-            datetime.now(timezone.utc) + timedelta(hours=12),
+            datetime.now(UTC) + timedelta(hours=12),
         )
 
         mock_client = AsyncMock(spec=httpx.AsyncClient)

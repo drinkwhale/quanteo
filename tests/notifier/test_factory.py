@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from core.config.settings import TelegramConfig
 from core.notifier.factory import make_notifier
 from core.notifier.mock import MockNotifier
 from core.notifier.telegram import TelegramNotifier
-
 
 # aiogram은 "{숫자}:{문자열}" 형식의 토큰만 허용한다.
 _FAKE_TOKEN = "123456789:AABBCCDDaabbccdd11223344"

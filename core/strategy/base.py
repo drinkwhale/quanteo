@@ -14,7 +14,6 @@ from typing import Protocol, runtime_checkable
 
 from core.marketdata.models import Candle, Tick
 
-
 # ---------------------------------------------------------------------------
 # 시그널 타입
 # ---------------------------------------------------------------------------
