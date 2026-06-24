@@ -1,0 +1,39 @@
+# 자격증명 및 민감 파일 — 절대 이미지에 포함 금지
+*.yaml
+*.yml
+*.env
+.env*
+kis_devlp.yaml
+
+# 개발/테스트 전용
+tests/
+.venv/
+htmlcov/
+.pytest_cache/
+.coverage
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# 대시보드 (별도 컨테이너로 분리)
+dashboard/
+
+# Git / IDE
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+
+# 문서
+README.md
+claudedocs/
+specs/
+PROJECT_INDEX.md
+LICENSE
+
+# 설정 (이미지 빌드 시 불필요)
+.claude/
+pyproject.toml.bak

@@ -46,6 +46,36 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class ProdGateError(RuntimeError):
+    """실전(prod) 환경 이중 확인 게이트 실패."""
+
+
+def _check_prod_gate(env: Env, prod_confirmed: bool) -> None:
+    """실전 환경 진입 전 이중 확인 게이트.
+
+    prod 환경은 명시적으로 prod_confirmed=True 를 전달해야만 진입된다.
+    누락 시 즉시 예외를 발생시켜 실수로 실전 주문이 나가는 것을 방지한다.
+
+    Args:
+        env: 투자 환경.
+        prod_confirmed: CLI에서 --i-understand-real-money 플래그가 전달되었는지 여부.
+
+    Raises:
+        ProdGateError: prod 환경이지만 확인 플래그가 없을 때.
+    """
+    if env == Env.PROD and not prod_confirmed:
+        raise ProdGateError(
+            "\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "⛔  실전(prod) 환경 진입 차단\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "--env prod 는 실제 돈을 사용합니다.\n"
+            "의도적으로 실전 환경을 시작하려면 아래 플래그를 추가하세요:\n\n"
+            "  uv run quanteo --env prod --i-understand-real-money\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
+
 async def run(
     env: Env = Env.VPS,
     market: Market = Market.DOMESTIC,
@@ -53,6 +83,7 @@ async def run(
     api_host: str = "127.0.0.1",
     api_port: int = 8000,
     with_trading: bool = False,
+    prod_confirmed: bool = False,
 ) -> None:
     """quanteo 코어 전체를 시작한다.
 
@@ -64,7 +95,12 @@ async def run(
         api_port: Control API 바인드 포트.
         with_trading: True이면 MarketData / Strategy / Executor 도 시작.
                       False이면 Control API + Notifier만 구동 (개발/검수용).
+        prod_confirmed: CLI --i-understand-real-money 플래그. prod 환경 진입 이중 확인용.
+
+    Raises:
+        ProdGateError: prod 환경인데 prod_confirmed=False 일 때.
     """
+    _check_prod_gate(env, prod_confirmed)
     settings = load_settings(env=env, market=market, config_path=config_path)
     logger.info("quanteo 시작 (env=%s market=%s)", settings.env, settings.market)
 
@@ -73,6 +109,9 @@ async def run(
     # -----------------------------------------------------------------------
     store = StateStore()
     await store.open()
+
+    # 재시작 복구: 직전 상태(포지션·미체결 주문) 로드 및 로깅
+    await _log_persisted_state(store, env.value)
 
     bus = EventBus()
     risk = RiskManager(config=RiskConfig(), bus=bus)
@@ -153,6 +192,66 @@ async def run(
 
 
 # ---------------------------------------------------------------------------
+# 재시작 복구
+# ---------------------------------------------------------------------------
+
+
+async def _log_persisted_state(store: StateStore, env: str) -> None:
+    """재시작 시 State Store에서 직전 포지션·미체결 주문을 조회해 로깅한다.
+
+    현재는 로그 출력만 수행한다. 운영자가 재시작 후 상태를 즉시 파악할 수 있게 한다.
+
+    TODO: RiskManager·Executor에 포지션·미체결 주문을 실제로 주입하는
+          심화 복구 로직 추가 (현재는 로그만 — 재시작 후 포지션이 0으로 초기화됨).
+    """
+    try:
+        positions = await store.get_open_positions(env=env)
+        orders = await store.get_pending_orders(env=env)
+
+        if positions:
+            logger.info("♻️  재시작 복구 — 오픈 포지션 %d개:", len(positions))
+            for pos in positions:
+                logger.info(
+                    "  · %s %s | qty=%d avg_price=%.2f (env=%s)",
+                    pos.market,
+                    pos.symbol,
+                    pos.qty,
+                    pos.avg_price,
+                    pos.env,
+                )
+        else:
+            logger.info("♻️  재시작 복구 — 오픈 포지션 없음")
+
+        if orders:
+            logger.warning("♻️  재시작 복구 — 미체결 주문 %d개 (수동 확인 필요):", len(orders))
+            for ord_ in orders:
+                logger.warning(
+                    "  · %s %s %s | qty=%d status=%s client_order_id=%s",
+                    ord_.env,
+                    ord_.side,
+                    ord_.symbol,
+                    ord_.qty,
+                    ord_.status,
+                    ord_.client_order_id,
+                )
+        else:
+            logger.info("♻️  재시작 복구 — 미체결 주문 없음")
+
+    except Exception as exc:
+        # DB 오류 시 빈 상태로 부팅되므로 운영자에게 경고를 전달한다.
+        # 미체결 주문이 있을 경우 수동 확인이 필요하다.
+        logger.error(
+            "재시작 복구 중 오류 — DB를 확인하세요. 포지션·주문 정보 없이 계속합니다: %s",
+            exc,
+            exc_info=True,
+        )
+        logger.warning(
+            "⚠️  DB 복구 실패로 인해 빈 상태에서 시작합니다. "
+            "미체결 주문이 있으면 수동으로 확인하세요."
+        )
+
+
+# ---------------------------------------------------------------------------
 # 트레이딩 태스크 (with_trading=True 시 추가)
 # ---------------------------------------------------------------------------
 
@@ -220,6 +319,12 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Control API 호스트")
     parser.add_argument("--port", type=int, default=8000, help="Control API 포트")
     parser.add_argument("--with-trading", action="store_true", help="MarketData/Strategy/Executor 포함")
+    parser.add_argument(
+        "--i-understand-real-money",
+        action="store_true",
+        dest="prod_confirmed",
+        help="실전(prod) 환경 이중 확인 플래그. --env prod 시 반드시 함께 지정.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -227,15 +332,20 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    asyncio.run(
-        run(
-            env=Env(args.env),
-            market=Market(args.market),
-            api_host=args.host,
-            api_port=args.port,
-            with_trading=args.with_trading,
+    try:
+        asyncio.run(
+            run(
+                env=Env(args.env),
+                market=Market(args.market),
+                api_host=args.host,
+                api_port=args.port,
+                with_trading=args.with_trading,
+                prod_confirmed=args.prod_confirmed,
+            )
         )
-    )
+    except ProdGateError as exc:
+        print(str(exc))
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

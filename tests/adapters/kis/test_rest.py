@@ -369,5 +369,5 @@ async def test_place_order_api_error_raises():
         side=OrderSide.BUY, order_type=OrderType.LIMIT, qty=1, price=100.0, source_signal=sig,
     )
 
-    with pytest.raises(RuntimeError, match="KIS 주문 오류"):
+    with pytest.raises(RuntimeError, match="KIS API 오류"):
         await client.place_order(order)

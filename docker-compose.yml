@@ -1,0 +1,62 @@
+version: "3.9"
+
+# ============================================================
+# quanteo docker-compose — 로컬 개발 / VPS 배포용
+#
+# 사용법:
+#   docker compose up                    # 기본 실행 (vps 환경)
+#   docker compose up --build            # 이미지 재빌드
+#   docker compose logs -f quanteo-core  # 로그 실시간 확인
+# ============================================================
+
+services:
+  quanteo-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: quanteo:latest
+    container_name: quanteo-core
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      # KIS 자격증명 및 캐시 (읽기 전용 마운트 권장)
+      # 호스트: ~/KIS/config/kis_devlp.yaml → 컨테이너 내부
+      - "${KIS_CONFIG_DIR:-${HOME}/KIS}:/home/quanteo/KIS:ro"
+      # SQLite DB — 재시작 후에도 상태 유지
+      - quanteo-data:/home/quanteo/KIS/data
+
+    environment:
+      # 환경 변수로 설정 경로 재지정 가능
+      - QUANTEO_CONFIG_PATH=/home/quanteo/KIS/config/kis_devlp.yaml
+      - PYTHONUNBUFFERED=1
+
+    # 기본 명령: vps 환경, 트레이딩 없이 Control API만
+    # 트레이딩 활성화: --with-trading 추가
+    command: ["--env", "vps", "--host", "0.0.0.0", "--port", "8000"]
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/app/.venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/status')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  quanteo-data:
+    driver: local
