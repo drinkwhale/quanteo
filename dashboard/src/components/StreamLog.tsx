@@ -1,4 +1,4 @@
-import type { StreamMessage } from "../api/types";
+import type { LogEntry } from "../hooks/useStream";
 
 const EVENT_COLOR: Record<string, string> = {
   connected: "text-positive",
@@ -18,7 +18,7 @@ function colorFor(eventType: string): string {
 }
 
 interface Props {
-  logs: StreamMessage[];
+  logs: LogEntry[];
   connected: boolean;
 }
 
@@ -43,9 +43,9 @@ export function StreamLog({ logs, connected }: Props) {
             이벤트 대기 중...
           </p>
         ) : (
-          logs.map((log, i) => (
+          logs.map((log) => (
             <div
-              key={i}
+              key={log._key}
               className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-mono"
             >
               <span className="text-muted flex-shrink-0 w-20 truncate">

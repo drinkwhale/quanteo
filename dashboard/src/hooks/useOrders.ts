@@ -7,7 +7,7 @@ export function useOrders(intervalMs = 5000) {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(() => {
+  const refresh = useCallback(() => {
     api
       .getOrders(100)
       .then((res) => {
@@ -20,10 +20,10 @@ export function useOrders(intervalMs = 5000) {
   }, []);
 
   useEffect(() => {
-    fetch();
-    const id = setInterval(fetch, intervalMs);
+    refresh();
+    const id = setInterval(refresh, intervalMs);
     return () => clearInterval(id);
-  }, [fetch, intervalMs]);
+  }, [refresh, intervalMs]);
 
-  return { orders, total, error, refetch: fetch };
+  return { orders, total, error, refetch: refresh };
 }

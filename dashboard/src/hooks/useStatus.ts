@@ -6,7 +6,7 @@ export function useStatus(intervalMs = 3000) {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(() => {
+  const refresh = useCallback(() => {
     api
       .getStatus()
       .then(setStatus)
@@ -16,10 +16,10 @@ export function useStatus(intervalMs = 3000) {
   }, []);
 
   useEffect(() => {
-    fetch();
-    const id = setInterval(fetch, intervalMs);
+    refresh();
+    const id = setInterval(refresh, intervalMs);
     return () => clearInterval(id);
-  }, [fetch, intervalMs]);
+  }, [refresh, intervalMs]);
 
-  return { status, error, refetch: fetch };
+  return { status, error, refetch: refresh };
 }

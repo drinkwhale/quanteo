@@ -1,15 +1,24 @@
 import type { PositionItem } from "../api/types";
 
-function fmtKRW(n: number): string {
+function fmtPrice(n: number, market: string): string {
+  if (market === "overseas")
+    return (
+      "$" +
+      n.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    );
   return n.toLocaleString("ko-KR") + "원";
 }
 
 interface Props {
   positions: PositionItem[];
   total: number;
+  error?: string | null;
 }
 
-export function PositionsTable({ positions, total }: Props) {
+export function PositionsTable({ positions, total, error }: Props) {
   return (
     <section className="bg-panel border border-border rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -18,6 +27,12 @@ export function PositionsTable({ positions, total }: Props) {
         </h2>
         <span className="text-xs text-muted font-mono">{total}건</span>
       </div>
+
+      {error && (
+        <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
+          {error}
+        </p>
+      )}
 
       {positions.length === 0 ? (
         <p className="px-4 py-6 text-muted text-sm font-mono text-center">
@@ -49,10 +64,10 @@ export function PositionsTable({ positions, total }: Props) {
                     {p.qty.toLocaleString()}
                   </td>
                   <td className="px-4 py-2 text-right text-white">
-                    {fmtKRW(p.avg_price)}
+                    {fmtPrice(p.avg_price, p.market)}
                   </td>
                   <td className="px-4 py-2 text-right text-accent">
-                    {fmtKRW(p.book_value)}
+                    {fmtPrice(p.book_value, p.market)}
                   </td>
                   <td className="px-4 py-2 text-muted">{p.market}</td>
                   <td className="px-4 py-2 text-muted text-xs">

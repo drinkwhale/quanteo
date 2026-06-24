@@ -14,7 +14,6 @@ export default defineConfig({
       "/stream": {
         target: "ws://localhost:8000",
         ws: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
   },

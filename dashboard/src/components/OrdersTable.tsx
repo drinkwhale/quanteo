@@ -11,9 +11,10 @@ const STATUS_COLOR: Record<string, string> = {
 interface Props {
   orders: OrderItem[];
   total: number;
+  error?: string | null;
 }
 
-export function OrdersTable({ orders, total }: Props) {
+export function OrdersTable({ orders, total, error }: Props) {
   return (
     <section className="bg-panel border border-border rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -22,6 +23,12 @@ export function OrdersTable({ orders, total }: Props) {
         </h2>
         <span className="text-xs text-muted font-mono">{total}건</span>
       </div>
+
+      {error && (
+        <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
+          {error}
+        </p>
+      )}
 
       {orders.length === 0 ? (
         <p className="px-4 py-6 text-muted text-sm font-mono text-center">
