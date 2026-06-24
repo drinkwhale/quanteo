@@ -1,23 +1,23 @@
 # Project Index: quanteo
 
-Generated: 2026-06-24
+Generated: 2026-06-24 (Phase 7 완료)
 
 ## 📋 Status
 
-**Phase 1~6 완료** — Phase 7 (안전 & 운영) 진행 예정.
+**Phase 1~7 전체 완료** — 모든 구현 Task 완료.
 
-| Phase    | Tasks     | 상태    | 내용                                            |
-| -------- | --------- | ------- | ----------------------------------------------- |
-| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, KIS 인증     |
-| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus |
-| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)         |
-| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness    |
-| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)        |
-| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring          |
-| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)       |
-| **P7**   | T029–T032 | ⬜ 미완 | 킬스위치·복구·rate limit·prod 게이트            |
+| Phase    | Tasks     | 상태    | 내용                                               |
+| -------- | --------- | ------- | -------------------------------------------------- |
+| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, KIS 인증        |
+| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus    |
+| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)            |
+| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness       |
+| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)           |
+| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring             |
+| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)          |
+| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker |
 
-**테스트:** 252 passed (Python) · TypeScript tsc clean (2026-06-24 기준)
+**테스트:** 275 passed (Python) · TypeScript tsc clean (2026-06-24 기준)
 
 ---
 
@@ -28,7 +28,8 @@ quanteo/
 ├── core/
 │   ├── adapters/kis/         # KIS REST/WS Adapter + 인증 + TR_ID 매핑
 │   │   ├── auth.py           # access token 발급·캐싱·재발급 + WebSocket 접속키
-│   │   ├── rest.py           # 현재가·잔고 조회, 매수/매도 주문 REST
+│   │   ├── rest.py           # 현재가·잔고 조회, 매수/매도 주문 REST (throttler 통합)
+│   │   ├── throttler.py      # TokenBucketThrottler + 지수 백오프 재시도 (T029)
 │   │   ├── ws.py             # 실시간 시세/체결 WebSocket 구독
 │   │   └── tr_ids.py         # 환경(prod/vps)×시장(domestic/overseas) TR_ID 매핑
 │   ├── api/                  # Control API (FastAPI)
@@ -61,14 +62,14 @@ quanteo/
 │   │   ├── manager.py        # RiskManager (한도가드·손절익절·킬스위치)
 │   │   └── models.py         # HaltLevel, Order, Rejection 등
 │   ├── store/
-│   │   ├── db.py             # StateStore (aiosqlite CRUD)
+│   │   ├── db.py             # StateStore (aiosqlite CRUD + 재시작 복구 메서드, T030)
 │   │   └── schema.py         # DDL (positions/orders/fills/signals/events_log)
 │   ├── strategy/
 │   │   ├── base.py           # Strategy Protocol (warmup/on_tick/on_candle)
 │   │   ├── engine.py         # StrategyEngine (플러그인 로드·시그널 루프)
 │   │   ├── harness.py        # BacktestHarness (과거 캔들로 시그널 검증)
 │   │   └── plugins/ma_cross.py  # 이동평균 교차 전략 플러그인
-│   └── app.py                # 코어 부팅·asyncio.gather wiring (전체 진입점)
+│   └── app.py                # 코어 부팅·asyncio.gather wiring + prod 게이트 (T031)
 ├── dashboard/                # TypeScript 웹 대시보드
 │   ├── src/
 │   │   ├── api/
@@ -90,13 +91,17 @@ quanteo/
 │   ├── vite.config.ts        # /api → localhost:8000 proxy
 │   ├── tailwind.config.js    # 다크 트레이딩 테마
 │   └── package.json          # React 18, Vite 5, TailwindCSS 3
-├── tests/                    # pytest (252 passed)
-│   ├── adapters/kis/         # auth·rest·tr_ids·ws 단위 테스트
+├── Dockerfile                # 멀티스테이지 빌드 (builder/runtime, 비루트 유저, T032)
+├── .dockerignore             # 자격증명·테스트·대시보드 제외
+├── docker-compose.yml        # vps 기본 실행, KIS 볼륨 마운트, healthcheck
+├── tests/                    # pytest (275 passed)
+│   ├── adapters/kis/         # auth·rest·tr_ids·ws·throttler 단위 테스트
 │   ├── api/                  # Control API 엔드포인트 테스트
 │   ├── config/, events/, execution/, marketdata/
 │   ├── notifier/             # Telegram·Mock·template·wiring 테스트
 │   ├── risk/                 # RiskManager 한도·손절·킬스위치 테스트
-│   ├── store/                # StateStore CRUD 테스트
+│   ├── store/                # StateStore CRUD + 재시작 복구 테스트
+│   ├── test_prod_gate.py     # prod 이중 확인 게이트 안전 테스트
 │   ├── strategy/             # Engine·Harness·MA Cross 플러그인 테스트
 │   ├── integration/          # signal→risk→order 라운드트립 테스트
 │   └── conftest.py           # 공통 fixture (AppContainer mock, DB)
@@ -115,9 +120,15 @@ quanteo/
 ```bash
 # Python 코어
 uv sync
-uv run python -m core.app          # 봇 전체 실행
-uv run pytest                       # 테스트 (252 cases)
-uv run ruff check . && ruff format .  # 린트·포맷
+uv run python -m core.app                              # vps(모의투자), Control API만
+uv run python -m core.app --with-trading               # 시장데이터·전략·주문 포함
+uv run python -m core.app --env prod --i-understand-real-money  # 실전 (이중 확인 필수)
+uv run pytest                                          # 테스트 (275 cases)
+uv run ruff check . && ruff format .                   # 린트·포맷
+
+# Docker
+docker compose up                                      # vps 환경 컨테이너 실행
+docker compose up --build                              # 이미지 재빌드 후 실행
 
 # TypeScript 대시보드 (별도 터미널)
 cd dashboard && npm install
@@ -169,8 +180,10 @@ npm run build  # 프로덕션 빌드 (~154KB gzipped 49KB)
 ## 🔒 보안 원칙
 
 - `kis_devlp.yaml` (앱키·시크릿·계좌번호) — 저장소 밖, 절대 커밋 금지
-- 기본 환경 `vps` (모의투자). `prod` 실전은 명시 플래그만.
+- 기본 환경 `vps` (모의투자). `prod` 실전은 `--i-understand-real-money` 이중 확인 필수.
 - 모든 주문 경로는 RiskManager 통과 필수.
+- Rate Limit: `TokenBucketThrottler` (15회/초) + 지수 백오프 재시도.
+- 재시작 복구: `StateStore.get_open_positions()` / `get_pending_orders()` 로 직전 상태 로드.
 
 ---
 
