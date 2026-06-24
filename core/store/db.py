@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -19,6 +20,37 @@ from core.store.schema import ALL_TABLES, CREATE_INDEXES
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = Path.home() / "KIS" / "data" / "quanteo.db"
+
+
+# ---------------------------------------------------------------------------
+# 복구 데이터 타입
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    """재시작 복구용 포지션 스냅샷."""
+
+    symbol: str
+    market: str
+    env: str
+    qty: int
+    avg_price: float
+    opened_at: str
+
+
+@dataclass(frozen=True)
+class PendingOrder:
+    """재시작 복구용 미체결 주문 스냅샷."""
+
+    client_order_id: str
+    symbol: str
+    market: str
+    env: str
+    side: str
+    qty: int
+    status: str
+    created_at: str
 
 
 class StateStore:
@@ -71,14 +103,14 @@ class StateStore:
     # 재시작 복구 메서드
     # ---------------------------------------------------------------------------
 
-    async def get_open_positions(self, env: str | None = None) -> list[dict[str, Any]]:
+    async def get_open_positions(self, env: str | None = None) -> list[PositionSnapshot]:
         """수량이 남아 있는 포지션을 반환한다.
 
         Args:
             env: 특정 환경('prod' | 'vps')만 필터. None이면 전체.
 
         Returns:
-            positions 테이블 행을 dict 리스트로 반환.
+            PositionSnapshot 리스트.
         """
         if env:
             cursor = await self.conn.execute(
@@ -90,16 +122,26 @@ class StateStore:
                 "SELECT * FROM positions WHERE qty > 0 ORDER BY opened_at"
             )
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [
+            PositionSnapshot(
+                symbol=row["symbol"],
+                market=row["market"],
+                env=row["env"],
+                qty=int(row["qty"]),
+                avg_price=float(row["avg_price"]),
+                opened_at=row["opened_at"],
+            )
+            for row in rows
+        ]
 
-    async def get_pending_orders(self, env: str | None = None) -> list[dict[str, Any]]:
+    async def get_pending_orders(self, env: str | None = None) -> list[PendingOrder]:
         """미체결(pending/submitted/partial) 주문을 반환한다.
 
         Args:
             env: 특정 환경만 필터. None이면 전체.
 
         Returns:
-            orders 테이블 행을 dict 리스트로 반환.
+            PendingOrder 리스트.
         """
         statuses = ("pending", "submitted", "partial")
         placeholders = ",".join("?" * len(statuses))
@@ -115,7 +157,19 @@ class StateStore:
                 statuses,
             )
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [
+            PendingOrder(
+                client_order_id=row["client_order_id"],
+                symbol=row["symbol"],
+                market=row["market"],
+                env=row["env"],
+                side=row["side"],
+                qty=int(row["qty"]),
+                status=row["status"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     async def __aenter__(self) -> "StateStore":
         await self.open()

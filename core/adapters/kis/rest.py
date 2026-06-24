@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
 from core.adapters.kis.auth import KisAuth
-from core.adapters.kis.throttler import ThrottlerConfig, TokenBucketThrottler, with_retry
+from core.adapters.kis.throttler import FixedIntervalThrottler, with_retry
 from core.adapters.kis.tr_ids import get_rest_domain, get_tr_ids
 from core.config.settings import Env, Market
 
@@ -82,6 +82,7 @@ class KisRestClient:
         env: 투자 환경 (PROD/VPS).
         market: 대상 시장.
         http_client: 테스트 인젝션용 httpx.AsyncClient.
+        throttler: FixedIntervalThrottler. None이면 기본값 생성.
     """
 
     def __init__(
@@ -90,7 +91,7 @@ class KisRestClient:
         env: Env = Env.VPS,
         market: Market = Market.DOMESTIC,
         http_client: httpx.AsyncClient | None = None,
-        throttler: TokenBucketThrottler | None = None,
+        throttler: FixedIntervalThrottler | None = None,
     ) -> None:
         self.auth = auth
         self.env = env
@@ -98,10 +99,32 @@ class KisRestClient:
         self._base_url = get_rest_domain(env)
         self._tr_ids = get_tr_ids(env, market)
         self._http_client = http_client
-        self._throttler = throttler or TokenBucketThrottler()
+        self._throttler = throttler or FixedIntervalThrottler()
 
-    async def _get(self, path: str, params: dict[str, str], tr_id: str) -> dict[str, Any]:
-        """공통 GET 요청 헬퍼 (throttler + retry 포함)."""
+    # ------------------------------------------------------------------
+    # 내부 공통 요청 헬퍼
+    # ------------------------------------------------------------------
+
+    async def _request(
+        self,
+        method: Literal["GET", "POST"],
+        path: str,
+        tr_id: str,
+        *,
+        params: dict[str, str] | None = None,
+        body: dict[str, str] | None = None,
+        idempotent: bool = True,
+    ) -> dict[str, Any]:
+        """공통 HTTP 요청 헬퍼 (throttler + retry 포함).
+
+        Args:
+            method: "GET" 또는 "POST".
+            path: API 경로.
+            tr_id: KIS TR_ID 헤더값.
+            params: GET 쿼리 파라미터.
+            body: POST JSON 바디.
+            idempotent: False이면 429 시 재시도 없이 즉시 예외 (주문 중복 방지).
+        """
 
         async def _do() -> dict[str, Any]:
             token = await self.auth.get_access_token()
@@ -116,10 +139,16 @@ class KisRestClient:
             url = f"{self._base_url}{path}"
 
             if self._http_client:
-                resp = await self._http_client.get(url, headers=headers, params=params, timeout=10.0)
+                if method == "GET":
+                    resp = await self._http_client.get(url, headers=headers, params=params, timeout=10.0)
+                else:
+                    resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
             else:
                 async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, headers=headers, params=params, timeout=10.0)
+                    if method == "GET":
+                        resp = await client.get(url, headers=headers, params=params, timeout=10.0)
+                    else:
+                        resp = await client.post(url, headers=headers, json=body, timeout=10.0)
 
             resp.raise_for_status()
             data: dict[str, Any] = resp.json()
@@ -127,11 +156,19 @@ class KisRestClient:
             rt_cd = data.get("rt_cd", "")
             if rt_cd != "0":
                 msg = data.get("msg1", "알 수 없는 KIS API 오류")
-                raise RuntimeError(f"KIS API 오류 (rt_cd={rt_cd}): {msg}")
+                raise RuntimeError(f"KIS API 오류 (tr_id={tr_id}, rt_cd={rt_cd}): {msg}")
 
             return data
 
-        return await with_retry(_do, self._throttler)
+        return await with_retry(_do, self._throttler, idempotent=idempotent)
+
+    async def _get(self, path: str, params: dict[str, str], tr_id: str) -> dict[str, Any]:
+        """GET 요청 헬퍼 (멱등)."""
+        return await self._request("GET", path, tr_id, params=params)
+
+    async def _post(self, path: str, body: dict[str, str], tr_id: str) -> dict[str, Any]:
+        """POST 요청 헬퍼 (비멱등 — 429 시 재시도 없음, 중복 주문 방지)."""
+        return await self._request("POST", path, tr_id, body=body, idempotent=False)
 
     # ------------------------------------------------------------------
     # 현재가 조회
@@ -258,6 +295,48 @@ class KisRestClient:
             deposit=float(summary.get("dnca_tot_amt", 0)),
         )
 
+    async def _get_overseas_balance(self) -> BalanceInfo:
+        creds = self.auth.credentials
+        params = {
+            "CANO": creds.account_no,
+            "ACNT_PRDT_CD": creds.account_code,
+            "OVRS_EXCG_CD": "NASD",
+            "TR_CRCY_CD": "USD",
+            "CTX_AREA_FK200": "",
+            "CTX_AREA_NK200": "",
+        }
+        data = await self._get(
+            "/uapi/overseas-stock/v1/trading/inquire-balance",
+            params,
+            self._tr_ids.balance,
+        )
+
+        items: list[BalanceItem] = []
+        for row in data.get("output1", []):
+            qty = int(row.get("ovrs_cblc_qty", 0))
+            if qty == 0:
+                continue
+            items.append(
+                BalanceItem(
+                    symbol=row.get("ovrs_pdno", ""),
+                    symbol_name=row.get("ovrs_item_name", ""),
+                    qty=qty,
+                    avg_price=float(row.get("pchs_avg_pric", 0)),
+                    current_price=float(row.get("now_pric2", 0)),
+                    eval_amount=float(row.get("ovrs_stck_evlu_amt", 0)),
+                    profit_loss=float(row.get("frcr_evlu_pfls_amt", 0)),
+                    profit_loss_rate=float(row.get("evlu_pfls_rt", 0)),
+                )
+            )
+
+        out2 = data.get("output2", {})
+        return BalanceInfo(
+            items=items,
+            total_eval_amount=float(out2.get("tot_evlu_amt", 0)),
+            total_profit_loss=float(out2.get("ovrs_tot_pfls", 0)),
+            deposit=float(out2.get("frcr_dncl_amt_2", 0)),
+        )
+
     # ------------------------------------------------------------------
     # 주문
     # ------------------------------------------------------------------
@@ -277,11 +356,9 @@ class KisRestClient:
             OrderAck: KIS 주문 응답 (ODNO 포함).
 
         Raises:
+            RateLimitExceeded: 주문 중 429 발생 (중복 방지를 위해 재시도 안 함).
             RuntimeError: KIS API 오류 발생 시.
         """
-        from core.execution.executor import OrderAck
-        from core.risk.models import OrderSide, OrderType
-
         if self.market == Market.DOMESTIC:
             return await self._place_domestic_order(order)
         return await self._place_overseas_order(order)
@@ -355,79 +432,4 @@ class KisRestClient:
             symbol=order.symbol,
             status="submitted",
             raw=out,
-        )
-
-    async def _post(self, path: str, body: dict[str, str], tr_id: str) -> dict[str, Any]:
-        """공통 POST 요청 헬퍼 (throttler + retry 포함)."""
-
-        async def _do() -> dict[str, Any]:
-            token = await self.auth.get_access_token()
-            headers = {
-                "authorization": f"Bearer {token.token}",
-                "appkey": self.auth.credentials.app_key,
-                "appsecret": self.auth.credentials.app_secret.get_secret_value(),
-                "tr_id": tr_id,
-                "content-type": "application/json; charset=utf-8",
-                "User-Agent": self.auth.credentials.user_agent,
-            }
-            url = f"{self._base_url}{path}"
-
-            if self._http_client:
-                resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
-            else:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(url, headers=headers, json=body, timeout=10.0)
-
-            resp.raise_for_status()
-            data: dict[str, Any] = resp.json()
-
-            rt_cd = data.get("rt_cd", "")
-            if rt_cd != "0":
-                msg = data.get("msg1", "알 수 없는 KIS API 오류")
-                raise RuntimeError(f"KIS 주문 오류 (tr_id={tr_id}, rt_cd={rt_cd}): {msg}")
-
-            return data
-
-        return await with_retry(_do, self._throttler)
-
-    async def _get_overseas_balance(self) -> BalanceInfo:
-        creds = self.auth.credentials
-        params = {
-            "CANO": creds.account_no,
-            "ACNT_PRDT_CD": creds.account_code,
-            "OVRS_EXCG_CD": "NASD",
-            "TR_CRCY_CD": "USD",
-            "CTX_AREA_FK200": "",
-            "CTX_AREA_NK200": "",
-        }
-        data = await self._get(
-            "/uapi/overseas-stock/v1/trading/inquire-balance",
-            params,
-            self._tr_ids.balance,
-        )
-
-        items: list[BalanceItem] = []
-        for row in data.get("output1", []):
-            qty = int(row.get("ovrs_cblc_qty", 0))
-            if qty == 0:
-                continue
-            items.append(
-                BalanceItem(
-                    symbol=row.get("ovrs_pdno", ""),
-                    symbol_name=row.get("ovrs_item_name", ""),
-                    qty=qty,
-                    avg_price=float(row.get("pchs_avg_pric", 0)),
-                    current_price=float(row.get("now_pric2", 0)),
-                    eval_amount=float(row.get("ovrs_stck_evlu_amt", 0)),
-                    profit_loss=float(row.get("frcr_evlu_pfls_amt", 0)),
-                    profit_loss_rate=float(row.get("evlu_pfls_rt", 0)),
-                )
-            )
-
-        out2 = data.get("output2", {})
-        return BalanceInfo(
-            items=items,
-            total_eval_amount=float(out2.get("tot_evlu_amt", 0)),
-            total_profit_loss=float(out2.get("ovrs_tot_pfls", 0)),
-            deposit=float(out2.get("frcr_dncl_amt_2", 0)),
         )

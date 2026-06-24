@@ -110,8 +110,8 @@ async def run(
     store = StateStore()
     await store.open()
 
-    # 재시작 복구: 직전 상태(포지션·미체결 주문) 로드
-    await _restore_state(store, env.value)
+    # 재시작 복구: 직전 상태(포지션·미체결 주문) 로드 및 로깅
+    await _log_persisted_state(store, env.value)
 
     bus = EventBus()
     risk = RiskManager(config=RiskConfig(), bus=bus)
@@ -196,11 +196,13 @@ async def run(
 # ---------------------------------------------------------------------------
 
 
-async def _restore_state(store: StateStore, env: str) -> None:
-    """재시작 시 State Store에서 직전 포지션·미체결 주문을 로드해 로깅한다.
+async def _log_persisted_state(store: StateStore, env: str) -> None:
+    """재시작 시 State Store에서 직전 포지션·미체결 주문을 조회해 로깅한다.
 
-    현재는 로그 출력만 수행한다 (복구 정보를 RiskManager·Executor에 주입하는
-    심화 복구는 추후 구현). 로그를 통해 운영자가 재시작 후 상태를 즉시 파악할 수 있다.
+    현재는 로그 출력만 수행한다. 운영자가 재시작 후 상태를 즉시 파악할 수 있게 한다.
+
+    TODO: RiskManager·Executor에 포지션·미체결 주문을 실제로 주입하는
+          심화 복구 로직 추가 (현재는 로그만 — 재시작 후 포지션이 0으로 초기화됨).
     """
     try:
         positions = await store.get_open_positions(env=env)
@@ -211,11 +213,11 @@ async def _restore_state(store: StateStore, env: str) -> None:
             for pos in positions:
                 logger.info(
                     "  · %s %s | qty=%d avg_price=%.2f (env=%s)",
-                    pos["market"],
-                    pos["symbol"],
-                    pos["qty"],
-                    pos["avg_price"],
-                    pos["env"],
+                    pos.market,
+                    pos.symbol,
+                    pos.qty,
+                    pos.avg_price,
+                    pos.env,
                 )
         else:
             logger.info("♻️  재시작 복구 — 오픈 포지션 없음")
@@ -225,18 +227,28 @@ async def _restore_state(store: StateStore, env: str) -> None:
             for ord_ in orders:
                 logger.warning(
                     "  · %s %s %s | qty=%d status=%s client_order_id=%s",
-                    ord_["env"],
-                    ord_["side"],
-                    ord_["symbol"],
-                    ord_["qty"],
-                    ord_["status"],
-                    ord_["client_order_id"],
+                    ord_.env,
+                    ord_.side,
+                    ord_.symbol,
+                    ord_.qty,
+                    ord_.status,
+                    ord_.client_order_id,
                 )
         else:
             logger.info("♻️  재시작 복구 — 미체결 주문 없음")
 
     except Exception as exc:
-        logger.error("재시작 복구 중 오류 (무시하고 계속): %s", exc)
+        # DB 오류 시 빈 상태로 부팅되므로 운영자에게 경고를 전달한다.
+        # 미체결 주문이 있을 경우 수동 확인이 필요하다.
+        logger.error(
+            "재시작 복구 중 오류 — DB를 확인하세요. 포지션·주문 정보 없이 계속합니다: %s",
+            exc,
+            exc_info=True,
+        )
+        logger.warning(
+            "⚠️  DB 복구 실패로 인해 빈 상태에서 시작합니다. "
+            "미체결 주문이 있으면 수동으로 확인하세요."
+        )
 
 
 # ---------------------------------------------------------------------------

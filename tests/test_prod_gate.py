@@ -83,3 +83,27 @@ async def test_run_blocks_prod_before_settings_load():
             prod_confirmed=False,
             config_path=Path("/nonexistent/path/kis_devlp.yaml"),
         )
+
+
+@pytest.mark.asyncio
+async def test_run_with_prod_confirmed_passes_gate():
+    """prod + prod_confirmed=True 이면 게이트를 통과하고 다음 단계로 진입한다.
+
+    설정 파일이 없으므로 FileNotFoundError(또는 ConfigError)가 발생해야 한다.
+    ProdGateError가 아닌 다른 예외는 게이트를 통과했다는 의미다.
+    """
+    from pathlib import Path
+
+    from core.app import run
+
+    with pytest.raises(Exception) as exc_info:
+        await run(
+            env=Env.PROD,
+            prod_confirmed=True,
+            config_path=Path("/nonexistent/path/kis_devlp.yaml"),
+        )
+
+    # prod 게이트 에러가 아닌 다른 예외여야 한다 (설정 파일 미존재 등)
+    assert not isinstance(exc_info.value, ProdGateError), (
+        "prod_confirmed=True 인데 ProdGateError가 발생했습니다 — 게이트 로직 오류"
+    )

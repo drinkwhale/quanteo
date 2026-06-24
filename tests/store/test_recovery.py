@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from core.store.db import StateStore
+from core.store.db import PendingOrder, PositionSnapshot, StateStore
 
 
 @pytest.fixture
@@ -53,10 +55,24 @@ async def test_get_open_positions_returns_nonzero_qty(store: StateStore):
     await _insert_position(store, "000660", qty=0)  # 청산된 포지션 — 제외돼야 함
 
     result = await store.get_open_positions()
-    symbols = [r["symbol"] for r in result]
+    symbols = [r.symbol for r in result]
 
     assert "005930" in symbols
     assert "000660" not in symbols
+
+
+@pytest.mark.asyncio
+async def test_get_open_positions_returns_position_snapshot_type(store: StateStore):
+    """반환 타입이 PositionSnapshot 이어야 한다."""
+    await _insert_position(store, "005930", qty=5)
+
+    result = await store.get_open_positions()
+
+    assert len(result) == 1
+    assert isinstance(result[0], PositionSnapshot)
+    assert result[0].symbol == "005930"
+    assert result[0].qty == 5
+    assert result[0].avg_price == 75000.0
 
 
 @pytest.mark.asyncio
@@ -68,10 +84,10 @@ async def test_get_open_positions_filters_by_env(store: StateStore):
     prod_result = await store.get_open_positions(env="prod")
 
     assert len(vps_result) == 1
-    assert vps_result[0]["symbol"] == "005930"
+    assert vps_result[0].symbol == "005930"
 
     assert len(prod_result) == 1
-    assert prod_result[0]["symbol"] == "000660"
+    assert prod_result[0].symbol == "000660"
 
 
 @pytest.mark.asyncio
@@ -94,9 +110,23 @@ async def test_get_pending_orders_returns_correct_statuses(store: StateStore):
         await _insert_order(store, f"stock-{status}", status)
 
     result = await store.get_pending_orders()
-    statuses = {r["status"] for r in result}
+    statuses = {r.status for r in result}
 
     assert statuses == {"pending", "submitted", "partial"}
+
+
+@pytest.mark.asyncio
+async def test_get_pending_orders_returns_pending_order_type(store: StateStore):
+    """반환 타입이 PendingOrder 이어야 한다."""
+    await _insert_order(store, "005930", "pending")
+
+    result = await store.get_pending_orders()
+
+    assert len(result) == 1
+    assert isinstance(result[0], PendingOrder)
+    assert result[0].symbol == "005930"
+    assert result[0].status == "pending"
+    assert result[0].side == "buy"
 
 
 @pytest.mark.asyncio
@@ -107,7 +137,7 @@ async def test_get_pending_orders_filters_by_env(store: StateStore):
     vps_result = await store.get_pending_orders(env="vps")
 
     assert len(vps_result) == 1
-    assert vps_result[0]["env"] == "vps"
+    assert vps_result[0].env == "vps"
 
 
 @pytest.mark.asyncio
@@ -133,8 +163,45 @@ async def test_restore_state_scenario(store: StateStore):
     orders = await store.get_pending_orders(env="vps")
 
     assert len(positions) == 1
-    assert positions[0]["symbol"] == "005930"
+    assert positions[0].symbol == "005930"
 
     assert len(orders) == 1
-    assert orders[0]["symbol"] == "005930"
-    assert orders[0]["status"] == "submitted"
+    assert orders[0].symbol == "005930"
+    assert orders[0].status == "submitted"
+
+
+# ---------------------------------------------------------------------------
+# _log_persisted_state 통합
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_log_persisted_state_logs_positions_and_orders(store: StateStore, caplog):
+    """_log_persisted_state() 가 포지션·미체결 주문을 로그에 출력한다."""
+    from core.app import _log_persisted_state
+
+    await _insert_position(store, "005930", qty=10, env="vps")
+    await _insert_order(store, "005930", "submitted", env="vps")
+
+    with caplog.at_level(logging.INFO, logger="core.app"):
+        await _log_persisted_state(store, "vps")
+
+    assert "오픈 포지션 1개" in caplog.text
+    assert "미체결 주문 1개" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_log_persisted_state_handles_db_error_gracefully(store: StateStore, caplog):
+    """DB 오류 시 예외 없이 경고 로그를 남기고 계속한다."""
+    from core.app import _log_persisted_state
+
+    # get_open_positions 에서 예외 발생을 시뮬레이션
+    with (
+        patch.object(store, "get_open_positions", side_effect=RuntimeError("DB 손상")),
+        caplog.at_level(logging.WARNING, logger="core.app"),
+    ):
+        # 예외가 전파되지 않아야 한다
+        await _log_persisted_state(store, "vps")
+
+    assert "DB를 확인하세요" in caplog.text
+    assert "빈 상태에서 시작" in caplog.text
