@@ -120,3 +120,55 @@ async def test_publish_after_stop_does_not_block():
     # stop 후에도 예외 없이 동작해야 함
     await bus.publish(_tick_event())
     await bus.publish(_tick_event())
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_all_stops_delivery():
+    """unsubscribe_all() 이후 와일드카드 핸들러에 이벤트가 전달되지 않아야 한다."""
+    bus = EventBus()
+    received: list[Event] = []
+    bus.subscribe_all(received.append)
+    bus.unsubscribe_all(received.append)
+
+    await bus.start()
+    await bus.publish(_tick_event())
+    await _drain(bus)
+    await bus.stop()
+
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_all_unregistered_handler_is_noop():
+    """등록되지 않은 핸들러를 unsubscribe_all()해도 예외가 발생하지 않아야 한다."""
+    bus = EventBus()
+    received: list[Event] = []
+
+    bus.unsubscribe_all(received.append)  # 등록한 적 없음
+
+    await bus.start()
+    await bus.publish(_tick_event())
+    await _drain(bus)
+    await bus.stop()
+
+    assert received == []
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_all_does_not_affect_type_specific_subscription():
+    """unsubscribe_all()은 subscribe()로 등록한 타입별 핸들러에 영향을 주지 않아야 한다."""
+    bus = EventBus()
+    wildcard_received: list[Event] = []
+    typed_received: list[Event] = []
+
+    bus.subscribe_all(wildcard_received.append)
+    bus.subscribe(EventType.TICK, typed_received.append)
+    bus.unsubscribe_all(wildcard_received.append)
+
+    await bus.start()
+    await bus.publish(_tick_event())
+    await _drain(bus)
+    await bus.stop()
+
+    assert wildcard_received == []   # 와일드카드는 해제됨
+    assert len(typed_received) == 1  # 타입별 구독은 유지됨
