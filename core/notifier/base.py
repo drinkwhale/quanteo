@@ -7,17 +7,16 @@ Notifier — 기본 타입 & Protocol 정의.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
-
 
 # ---------------------------------------------------------------------------
 # 알림 레벨
 # ---------------------------------------------------------------------------
 
 
-class NotifyLevel(str, Enum):
+class NotifyLevel(StrEnum):
     """알림 중요도 레벨 (낮음 → 높음 순)."""
 
     DEBUG = "DEBUG"
@@ -54,7 +53,7 @@ class NotifyEvent:
     title: str
     body: str
     source: str = ""
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 # ---------------------------------------------------------------------------

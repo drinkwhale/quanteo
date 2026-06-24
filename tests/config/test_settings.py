@@ -1,10 +1,16 @@
 """Settings 모듈 단위 테스트."""
 
-import pytest
-import yaml
 from pathlib import Path
 
-from core.config.settings import Env, KisCredentials, Market, Settings, TelegramConfig, load_settings
+import pytest
+import yaml
+
+from core.config.settings import (
+    Env,
+    KisCredentials,
+    Market,
+    load_settings,
+)
 
 
 def _write_yaml(path: Path, data: dict) -> None:

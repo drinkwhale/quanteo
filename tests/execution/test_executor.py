@@ -15,7 +15,6 @@ from core.risk.models import Order, OrderSide, OrderType
 from core.store.db import StateStore
 from core.strategy.base import Signal, SignalSide
 
-
 # ---------------------------------------------------------------------------
 # 헬퍼
 # ---------------------------------------------------------------------------

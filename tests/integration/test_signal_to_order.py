@@ -28,7 +28,6 @@ from core.risk.models import (
 from core.store.db import StateStore
 from core.strategy.base import Signal, SignalSide
 
-
 # ---------------------------------------------------------------------------
 # 헬퍼
 # ---------------------------------------------------------------------------
@@ -160,8 +159,8 @@ class TestSignalToOrderHappyPath:
 class TestSignalToOrderRiskBlocked:
     async def test_kill_switch_blocks_buy(self):
         """KILL 수준 킬스위치가 활성화되면 BUY 주문이 거부된다."""
-        async with StateStore(":memory:") as store:
-            bus = EventBus()
+        async with StateStore(":memory:"):
+            EventBus()
             rm = RiskManager()
             await rm.graduated_halt(HaltLevel.KILL)
 

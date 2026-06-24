@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from core.events.bus import EventBus
 from core.events.types import Event, EventType
 from core.marketdata.models import Candle, Tick
-from core.strategy.base import MarketContext, Signal, SignalSide, Strategy
+from core.strategy.base import MarketContext, Signal, SignalSide
 from core.strategy.engine import StrategyEngine
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼
@@ -24,7 +23,7 @@ def _tick(symbol: str = "005930", price: float = 75000.0) -> Tick:
         symbol=symbol,
         price=price,
         volume=100,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market="domestic",
     )
 
@@ -37,7 +36,7 @@ def _candle(symbol: str = "005930", close: float = 75000.0) -> Candle:
         low=close,
         close=close,
         volume=1000,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market="domestic",
     )
 

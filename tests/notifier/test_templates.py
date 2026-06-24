@@ -107,8 +107,9 @@ def test_payload_missing_fields_uses_dash():
 
 
 def test_dataclass_payload_works():
-    from core.marketdata.models import Tick
     from datetime import datetime
+
+    from core.marketdata.models import Tick
     tick = Tick(symbol="005930", price=70000.0, volume=100, timestamp=datetime.now(), market="domestic")
     # TICK은 None 반환
     result = event_to_notify(Event(type=EventType.TICK, payload=tick))

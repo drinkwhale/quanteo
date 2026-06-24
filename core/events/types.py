@@ -7,12 +7,12 @@ Event 타입 정의.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     # 시세
     TICK = "tick"
     QUOTE = "quote"
@@ -42,5 +42,5 @@ class Event:
 
     type: EventType
     payload: Any
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     source: str = ""

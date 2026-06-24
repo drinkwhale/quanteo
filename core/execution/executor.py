@@ -15,7 +15,7 @@ from typing import Any, Protocol
 
 from core.events.bus import EventBus
 from core.events.types import Event, EventType
-from core.risk.models import Order, OrderSide
+from core.risk.models import Order
 from core.store.db import StateStore
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class _RestClient(Protocol):
-    async def place_order(self, order: Order) -> "OrderAck": ...
+    async def place_order(self, order: Order) -> OrderAck: ...
 
 
 # ---------------------------------------------------------------------------

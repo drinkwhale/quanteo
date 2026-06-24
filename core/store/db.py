@@ -8,10 +8,10 @@ StateStore: 단일 aiosqlite 연결을 관리하는 컨텍스트 매니저.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator
 
 import aiosqlite
 
@@ -171,7 +171,7 @@ class StateStore:
             for row in rows
         ]
 
-    async def __aenter__(self) -> "StateStore":
+    async def __aenter__(self) -> StateStore:
         await self.open()
         return self
 

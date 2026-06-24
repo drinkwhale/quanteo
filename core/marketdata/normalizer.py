@@ -8,7 +8,7 @@ KIS WebSocket 파이프 포맷과 REST 응답을 각각 정규화한다.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.marketdata.models import Candle, Quote, Tick
 
@@ -40,7 +40,7 @@ def normalize_domestic_tick(symbol: str, data_body: str) -> Tick | None:
             symbol=symbol,
             price=price,
             volume=volume,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             market="domestic",
         )
     except (IndexError, ValueError) as exc:
@@ -58,7 +58,7 @@ def normalize_domestic_quote(symbol: str, data_body: str) -> Quote | None:
             ask_price=float(parts[_D_QUOTE_ASKP1]),
             bid_qty=int(parts[_D_QUOTE_BIDP_RSQN1]),
             ask_qty=int(parts[_D_QUOTE_ASKP_RSQN1]),
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
     except (IndexError, ValueError) as exc:
         logger.warning("국내 호가 파싱 실패 (%s): %s | body=%s", symbol, exc, data_body[:80])
@@ -75,7 +75,7 @@ def normalize_overseas_tick(symbol: str, data_body: str) -> Tick | None:
             symbol=symbol,
             price=price,
             volume=volume,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             market="overseas",
         )
     except (IndexError, ValueError) as exc:
@@ -102,7 +102,7 @@ def normalize_price_to_candle(symbol: str, price_output: dict, market: str = "do
             low=float(price_output.get("stck_lwpr", 0)),
             close=float(price_output.get("stck_prpr", 0)),
             volume=int(price_output.get("acml_vol", 0)),
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             market=market,
             interval="1d",
         )
@@ -113,7 +113,7 @@ def normalize_price_to_candle(symbol: str, price_output: dict, market: str = "do
         low=float(price_output.get("low", 0)),
         close=float(price_output.get("last", 0)),
         volume=int(price_output.get("tvol", 0)),
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market=market,
         interval="1d",
     )

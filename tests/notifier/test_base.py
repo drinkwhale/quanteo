@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
-from core.notifier.base import NotifyEvent, NotifyLevel, Notifier, level_rank
+from core.notifier.base import Notifier, NotifyEvent, NotifyLevel, level_rank
 from core.notifier.mock import MockNotifier
 
 

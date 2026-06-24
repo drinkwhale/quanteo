@@ -1,4 +1,11 @@
-from core.config.settings import Env, KisCredentials, Market, Settings, TelegramConfig, load_settings
+from core.config.settings import (
+    Env,
+    KisCredentials,
+    Market,
+    Settings,
+    TelegramConfig,
+    load_settings,
+)
 
 __all__ = [
     "Env",

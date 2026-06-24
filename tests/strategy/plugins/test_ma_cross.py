@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from core.marketdata.models import Candle, Tick
 from core.strategy.base import MarketContext, SignalSide, Strategy
 from core.strategy.plugins.ma_cross import MACrossStrategy
-
 
 # ---------------------------------------------------------------------------
 # 헬퍼
@@ -24,7 +23,7 @@ def _candle(close: float, symbol: str = "005930") -> Candle:
         low=close,
         close=close,
         volume=1000,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market="domestic",
     )
 
@@ -34,7 +33,7 @@ def _tick(price: float, symbol: str = "005930") -> Tick:
         symbol=symbol,
         price=price,
         volume=100,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market="domestic",
     )
 

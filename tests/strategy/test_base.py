@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,7 +11,7 @@ from core.strategy.base import MarketContext, Signal, SignalSide, Strategy
 
 
 def _candle(close: float, ts: datetime | None = None) -> Candle:
-    ts = ts or datetime.now(timezone.utc)
+    ts = ts or datetime.now(UTC)
     return Candle(
         symbol="005930",
         open=close,
@@ -29,7 +29,7 @@ def _tick(price: float) -> Tick:
         symbol="005930",
         price=price,
         volume=100,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         market="domestic",
     )
 

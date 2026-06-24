@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from core.config.settings import Env, KisCredentials, Market
+from core.config.settings import Env, KisCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class AccessToken:
 
     def is_expired(self, buffer_seconds: int = 300) -> bool:
         """만료 buffer_seconds 전부터 만료됐다고 판단한다 (기본 5분)."""
-        return datetime.now(timezone.utc) >= self.expires_at - timedelta(seconds=buffer_seconds)
+        return datetime.now(UTC) >= self.expires_at - timedelta(seconds=buffer_seconds)
 
     def __str__(self) -> str:
         return self.token
@@ -176,7 +176,7 @@ class KisAuth:
 
         token_str: str = data["access_token"]
         expires_in: int = int(data.get("expires_in", 86400))
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
 
         return AccessToken(token=token_str, expires_at=expires_at)
 

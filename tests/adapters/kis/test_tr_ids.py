@@ -3,7 +3,6 @@
 import pytest
 
 from core.adapters.kis.tr_ids import (
-    TrIdSet,
     get_rest_domain,
     get_tr_ids,
     get_ws_domain,
