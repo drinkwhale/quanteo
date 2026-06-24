@@ -66,7 +66,7 @@
 
 ## Phase 7 — 안전 & 운영
 
-- [ ] **T029** Rate limit 스로틀러(KIS Adapter 내장) + 백오프
+- [x] **T029** Rate limit 스로틀러(KIS Adapter 내장) + 백오프
 - [ ] **T030** 재시작 복구: State Store에서 포지션/미체결 주문 복원
 - [ ] **T031** `prod` 실전 게이트(이중 확인 플래그) + 안전 게이트 테스트
 - [ ] **T032** 컨테이너화(Dockerfile) — 클라우드 확장 대비
