@@ -11,11 +11,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 📊 현재 구현 상태
 
-**Phase 1 (부트스트랩·인증)**: 완료 — T001~T005  
-**Phase 2 (시세·상태저장)**: 완료 — T006~T010  
-**다음**: Phase 2.5 (Telegram 알림, T033~T038) → Phase 3 (전략 엔진)
+**Phase 1~7 전체 완료 (T001~T038)**
 
-주요 구현 모듈: `core/config`, `core/adapters/kis/` (auth/rest/ws/tr_ids), `core/store/`, `core/marketdata/`, `core/events/`
+| Phase | 내용                          | Tasks     |
+| ----- | ----------------------------- | --------- |
+| 1     | 부트스트랩·인증               | T001~T005 |
+| 2     | 시세·상태저장                 | T006~T010 |
+| 2.5   | Telegram 알림                 | T033~T038 |
+| 3     | 전략 엔진                     | T011~T014 |
+| 4     | Risk Manager·주문 실행        | T015~T020 |
+| 5     | Control API (FastAPI)         | T021~T024 |
+| 6     | TypeScript 대시보드           | T025~T028 |
+| 7     | 안전·운영 (Rate Limit·Docker) | T029~T032 |
+
+**다음**: 신규 Phase 계획 필요 (specs/tasks.md 참고)
+
+주요 구현 모듈: `core/config`, `core/adapters/kis/` (auth/rest/ws/tr_ids), `core/store/`, `core/marketdata/`, `core/events/`,
+`core/strategy/`, `core/risk/`, `core/execution/`, `core/api/`, `core/notifier/`, `dashboard/` (React+Vite+Tailwind)
 
 코드를 작성하기 전에 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
 
@@ -150,9 +162,7 @@ gh pr create --base main --head phase/1-bootstrap
 
 ---
 
-## 명령어 (참고 API 기준 — 프로젝트 부트스트랩 후 갱신 필요)
-
-아직 이 저장소에는 빌드/테스트 설정이 없다. 참고 저장소 및 선택한 스택의 표준 명령:
+## 명령어
 
 **Python (uv, Python 3.12+):**
 
@@ -162,6 +172,17 @@ gh pr create --base main --head phase/1-bootstrap
 - 단일 테스트: `uv run pytest <path>::<test_name>`
 - 린트: `uv run ruff check .`
 - 포맷: `uv run ruff format .`
+
+**TypeScript 대시보드:**
+
+- 의존성: `cd dashboard && npm install`
+- 개발 서버: `cd dashboard && npm run dev`
+- 빌드: `cd dashboard && npm run build`
+
+**Docker:**
+
+- 전체 기동: `docker compose up -d`
+- 로그 확인: `docker compose logs -f`
 
 ## 규칙 및 제약
 
