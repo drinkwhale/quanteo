@@ -80,5 +80,4 @@ async def stream(websocket: WebSocket, container: ContainerDep) -> None:
     except Exception as exc:
         logger.error("WebSocket 오류: %s", exc, exc_info=True)
     finally:
-        container.bus.unsubscribe_all(_enqueue) if hasattr(container.bus, "unsubscribe_all") else None
-        container.bus._wildcard_handlers.remove(_enqueue) if _enqueue in container.bus._wildcard_handlers else None
+        container.bus.unsubscribe_all(_enqueue)

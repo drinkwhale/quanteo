@@ -8,11 +8,11 @@ asyncio.Queue 기반의 비동기 이벤트 버스.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from typing import Union
 
 from core.events.types import Event, EventType
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 SyncHandler = Callable[[Event], None]
 AsyncHandler = Callable[[Event], Awaitable[None]]
-Handler = Union[SyncHandler, AsyncHandler]
+Handler = SyncHandler | AsyncHandler
 
 
 class EventBus:
@@ -62,6 +62,11 @@ class EventBus:
         if handler in handlers:
             handlers.remove(handler)
 
+    def unsubscribe_all(self, handler: Handler) -> None:
+        """와일드카드 구독을 해제한다."""
+        if handler in self._wildcard_handlers:
+            self._wildcard_handlers.remove(handler)
+
     # ------------------------------------------------------------------
     # 발행
     # ------------------------------------------------------------------
@@ -97,10 +102,8 @@ class EventBus:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
         logger.info("EventBus 종료")
 
@@ -109,7 +112,7 @@ class EventBus:
         while self._running:
             try:
                 event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             await self._dispatch(event)

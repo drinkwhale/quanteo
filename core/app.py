@@ -158,7 +158,6 @@ async def run(
     # -----------------------------------------------------------------------
     # 모든 모듈을 TaskGroup으로 동시 실행
     # -----------------------------------------------------------------------
-    tasks: list[asyncio.Task] = []
 
     async def _serve_api() -> None:
         logger.info("Control API 시작: http://%s:%d", api_host, api_port)
@@ -280,7 +279,7 @@ def _start_trading_tasks(
         rest_client = KisRestClient(auth)
         feed = MarketDataFeed(ws_client=ws_client, env=settings.env, market=settings.market)  # type: ignore[attr-defined]
         engine = StrategyEngine(bus=bus)
-        executor = OrderExecutor(rest_client=rest_client, store=store, bus=bus)
+        OrderExecutor(rest_client=rest_client, store=store, bus=bus)
 
         tg.create_task(feed.run(), name="market-data-feed")
         tg.create_task(engine.run(), name="strategy-engine")
@@ -344,7 +343,7 @@ def main() -> None:
             )
         )
     except ProdGateError as exc:
-        print(str(exc))
+        logger.critical(str(exc))
         raise SystemExit(1) from exc
 
 
