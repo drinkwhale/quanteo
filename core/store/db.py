@@ -2,6 +2,7 @@
 SQLite DB 연결 및 초기화.
 
 StateStore: 단일 aiosqlite 연결을 관리하는 컨텍스트 매니저.
+재시작 복구용 메서드: get_open_positions(), get_pending_orders().
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import aiosqlite
 
@@ -65,6 +66,56 @@ class StateStore:
         if self._conn is None:
             raise RuntimeError("StateStore가 열려 있지 않습니다. open()을 먼저 호출하세요.")
         return self._conn
+
+    # ---------------------------------------------------------------------------
+    # 재시작 복구 메서드
+    # ---------------------------------------------------------------------------
+
+    async def get_open_positions(self, env: str | None = None) -> list[dict[str, Any]]:
+        """수량이 남아 있는 포지션을 반환한다.
+
+        Args:
+            env: 특정 환경('prod' | 'vps')만 필터. None이면 전체.
+
+        Returns:
+            positions 테이블 행을 dict 리스트로 반환.
+        """
+        if env:
+            cursor = await self.conn.execute(
+                "SELECT * FROM positions WHERE qty > 0 AND env = ? ORDER BY opened_at",
+                (env,),
+            )
+        else:
+            cursor = await self.conn.execute(
+                "SELECT * FROM positions WHERE qty > 0 ORDER BY opened_at"
+            )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_pending_orders(self, env: str | None = None) -> list[dict[str, Any]]:
+        """미체결(pending/submitted/partial) 주문을 반환한다.
+
+        Args:
+            env: 특정 환경만 필터. None이면 전체.
+
+        Returns:
+            orders 테이블 행을 dict 리스트로 반환.
+        """
+        statuses = ("pending", "submitted", "partial")
+        placeholders = ",".join("?" * len(statuses))
+
+        if env:
+            cursor = await self.conn.execute(
+                f"SELECT * FROM orders WHERE status IN ({placeholders}) AND env = ? ORDER BY created_at",
+                (*statuses, env),
+            )
+        else:
+            cursor = await self.conn.execute(
+                f"SELECT * FROM orders WHERE status IN ({placeholders}) ORDER BY created_at",
+                statuses,
+            )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
     async def __aenter__(self) -> "StateStore":
         await self.open()

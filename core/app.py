@@ -74,6 +74,9 @@ async def run(
     store = StateStore()
     await store.open()
 
+    # 재시작 복구: 직전 상태(포지션·미체결 주문) 로드
+    await _restore_state(store, env.value)
+
     bus = EventBus()
     risk = RiskManager(config=RiskConfig(), bus=bus)
     notifier = make_notifier(settings)
@@ -150,6 +153,54 @@ async def run(
     finally:
         await store.close()
         logger.info("quanteo 종료 완료")
+
+
+# ---------------------------------------------------------------------------
+# 재시작 복구
+# ---------------------------------------------------------------------------
+
+
+async def _restore_state(store: StateStore, env: str) -> None:
+    """재시작 시 State Store에서 직전 포지션·미체결 주문을 로드해 로깅한다.
+
+    현재는 로그 출력만 수행한다 (복구 정보를 RiskManager·Executor에 주입하는
+    심화 복구는 추후 구현). 로그를 통해 운영자가 재시작 후 상태를 즉시 파악할 수 있다.
+    """
+    try:
+        positions = await store.get_open_positions(env=env)
+        orders = await store.get_pending_orders(env=env)
+
+        if positions:
+            logger.info("♻️  재시작 복구 — 오픈 포지션 %d개:", len(positions))
+            for pos in positions:
+                logger.info(
+                    "  · %s %s | qty=%d avg_price=%.2f (env=%s)",
+                    pos["market"],
+                    pos["symbol"],
+                    pos["qty"],
+                    pos["avg_price"],
+                    pos["env"],
+                )
+        else:
+            logger.info("♻️  재시작 복구 — 오픈 포지션 없음")
+
+        if orders:
+            logger.warning("♻️  재시작 복구 — 미체결 주문 %d개 (수동 확인 필요):", len(orders))
+            for ord_ in orders:
+                logger.warning(
+                    "  · %s %s %s | qty=%d status=%s client_order_id=%s",
+                    ord_["env"],
+                    ord_["side"],
+                    ord_["symbol"],
+                    ord_["qty"],
+                    ord_["status"],
+                    ord_["client_order_id"],
+                )
+        else:
+            logger.info("♻️  재시작 복구 — 미체결 주문 없음")
+
+    except Exception as exc:
+        logger.error("재시작 복구 중 오류 (무시하고 계속): %s", exc)
 
 
 # ---------------------------------------------------------------------------
