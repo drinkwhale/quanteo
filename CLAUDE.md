@@ -12,7 +12,7 @@ git branch --show-current
 
 - `main` 브랜치라면 **즉시 작업 브랜치를 생성**한 후 수정을 시작한다.
 - `main`에 직접 커밋하지 않는다. 예외 없음.
-- 브랜치 명명 규칙: `fix/{slug}` / `task/T{NNN}-{slug}` / `phase/{N}-{slug}`
+- 브랜치 명명 규칙: `fix/{slug}` / `task/T{NNN}-{slug}` / `phase/{N}-{slug}` / `docs/{slug}`
 
 ## Project
 
@@ -47,6 +47,7 @@ git branch --show-current
 
 아키텍처와 작업 계획이 확정되어 `specs/`에 문서화되어 있다. **작업 시작 전 반드시 확인.**
 
+- **[PROJECT_INDEX.md](PROJECT_INDEX.md)** — 프로젝트 전체 현황 요약 (구조·의존성·엔드포인트). 새 세션 첫 진입 시 읽을 것.
 - **[specs/2026-06-18-quanteo-architecture.md](specs/2026-06-18-quanteo-architecture.md)** — 확정된 아키텍처 설계서(단일 진실 공급원). 구현이 달라지면 이 문서를 갱신.
 - **[specs/tasks.md](specs/tasks.md)** — Phase·Task 단위 구현 작업 목록. "T{번호}/Phase 진행" 요청 시 이 파일 기준.
 
@@ -69,7 +70,7 @@ git branch --show-current
   - `prod` = **실전투자(실제 주문/실제 돈)**
   - `vps` = **모의투자(paper trading)**
   - REST 도메인과 WebSocket 도메인, 앱키/시크릿이 환경별로 **각각 다름**. 코드/설정에서 환경을 명시적으로 다루고, 기본값은 항상 모의투자(`vps`)로 둘 것.
-- **설정 파일 `kis_devlp.yaml`:** 자격증명을 담으며 보통 `~/KIS/config/kis_devlp.yaml`에 위치(저장소 밖, 절대 커밋 금지). 실전/모의용 앱키·시크릿, HTS ID, 계좌번호(8자리 + 상품코드 2자리), User-Agent 포함.
+- **설정 파일 `kis_devlp.yaml`:** 기본 경로 `~/KIS/config/kis_devlp.yaml`(저장소 밖, 절대 커밋 금지). 경로 재지정: `export QUANTEO_CONFIG_PATH=/다른/경로/kis_devlp.yaml`. 실전/모의용 앱키·시크릿, HTS ID, 계좌번호(8자리 + 상품코드 2자리), User-Agent 포함.
 - **계좌번호:** `CANO`(8자리) + `ACNT_PRDT_CD`(상품코드 2자리, 예: 종합계좌 `01`)로 분리되어 전달됨.
 - **TR_ID:** 모든 REST 호출은 거래 ID(TR_ID)로 식별되며, **실전/모의에서 TR_ID가 다른 경우가 많다.** 주문/시세 함수 작성 시 환경에 맞는 TR_ID를 반드시 확인.
 - **WebSocket:** 실시간 시세/체결 구독. 별도 접속키(`auth_ws` 패턴)로 연결 후 종목별로 `subscribe`.
@@ -170,7 +171,7 @@ gh pr create --base main --head phase/1-bootstrap
 
 - `feat(kis): add access token auth with file caching`
 - `test(risk): add kill switch boundary case tests`
-- `chore: init uv project with Python 3.11`
+- `chore: init uv project with Python 3.12`
 
 ---
 
@@ -200,5 +201,5 @@ gh pr create --base main --head phase/1-bootstrap
 
 - **자격증명 격리:** `kis_devlp.yaml`, `.env`, 앱키/시크릿/토큰은 절대 커밋하지 않는다. 토큰 캐시 파일도 마찬가지.
 - **실전/모의 안전장치:** 주문(매수/매도) 로직은 환경(`prod`/`vps`)을 명시적 인자로 받고, 실전 주문은 의도적으로만 활성화되도록 설계. 테스트·개발 기본값은 모의투자.
-- **하이브리드 경계:** Python과 TypeScript의 역할 분담이 정해지면 디렉토리/모듈 경계를 이 문서에 명시할 것.
+- **하이브리드 경계:** `core/` (Python) — 매매 로직·KIS 연동·Control API(포트 8000). `dashboard/` (TypeScript) — 웹 UI 전용. 두 영역 간 통신은 Control API(REST/WS)만 사용.
 - 한국투자증권 API는 호출 빈도 제한(rate limit)이 있으므로, 시세 폴링·주문 루프는 제한을 고려해 구현.
