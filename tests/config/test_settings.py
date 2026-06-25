@@ -19,19 +19,17 @@ def _write_yaml(path: Path, data: dict) -> None:
         yaml.dump(data, f)
 
 
-# KIS 공식 포맷 (open-trading-api 샘플 기준, flat top-level keys)
+# KIS 공식 포맷 (open-trading-api 원본 변수명 기준)
 KIS_OFFICIAL_CONFIG = {
-    "user_agent": "TestAgent/1.0",
+    "my_agent": "TestAgent/1.0",
     "my_app": "PRODKEY1234567890123",
     "my_sec": "PRODSECRET12345678901234567890123456789012345678",
-    "my_acct": "87654321",
-    "my_acct_stock": "01",
-    "my_id": "prod_user",
+    "my_acct_stock": "87654321",    # 실전 증권계좌 8자리
+    "my_prod": "01",                # 계좌번호 뒤 2자리
+    "my_htsid": "prod_user",
     "paper_app": "VPSKEY12345678901234",
     "paper_sec": "VPSSECRET1234567890123456789012345678901234567",
-    "paper_acct": "12345678",
-    "paper_acct_stock": "01",
-    "paper_id": "test_user",
+    "my_paper_stock": "12345678",   # 모의투자 증권계좌 8자리
     "telegram": {
         "bot_token": "0000000000:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "chat_id": "-100123456789",
@@ -158,11 +156,11 @@ class TestLoadSettingsErrors:
 
     def test_missing_credentials_raises(self, tmp_path: Path) -> None:
         config_file = tmp_path / "kis_devlp.yaml"
-        # VPS 자격증명만 있고 PROD 없음
+        # VPS 자격증명만 있고 PROD(my_app) 없음
         _write_yaml(config_file, {
             "paper_app": "VPS_KEY",
             "paper_sec": "VPS_SEC",
-            "paper_acct": "12345678",
+            "my_paper_stock": "12345678",
         })
 
         with pytest.raises(ValueError, match="prod"):

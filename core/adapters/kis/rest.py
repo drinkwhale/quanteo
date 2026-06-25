@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
-from core.adapters.kis.auth import KisAuth
+from core.adapters.kis.auth import KisAuth, _kis_ssl_context
 from core.adapters.kis.throttler import FixedIntervalThrottler, with_retry
 from core.adapters.kis.tr_ids import get_rest_domain, get_tr_ids
 from core.config.settings import Env, Market
@@ -144,7 +144,7 @@ class KisRestClient:
                 else:
                     resp = await self._http_client.post(url, headers=headers, json=body, timeout=10.0)
             else:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(verify=_kis_ssl_context()) as client:
                     if method == "GET":
                         resp = await client.get(url, headers=headers, params=params, timeout=10.0)
                     else:
