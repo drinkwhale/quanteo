@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import ssl
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,14 @@ import httpx
 from core.config.settings import Env, KisCredentials
 
 logger = logging.getLogger(__name__)
+
+
+def _kis_ssl_context() -> ssl.SSLContext:
+    """KIS 서버는 TLS 1.3을 지원하지 않으므로 TLS 1.2로 상한을 고정한다."""
+    ctx = ssl.create_default_context()
+    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
 
 # ---------------------------------------------------------------------------
 # 도메인 상수 (T005 tr_ids.py와 일관성 유지)
@@ -164,7 +173,7 @@ class KisAuth:
                 timeout=10.0,
             )
         else:
-            async with httpx.AsyncClient() as c:
+            async with httpx.AsyncClient(verify=_kis_ssl_context()) as c:
                 resp = await c.post(
                     f"{self._base_url}/oauth2/tokenP",
                     json=payload,
@@ -193,7 +202,7 @@ class KisAuth:
         }
         headers = {"content-type": "application/json"}
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=_kis_ssl_context()) as client:
             resp = await client.post(
                 f"{self._base_url}/oauth2/revokeP",
                 json=payload,
@@ -231,7 +240,7 @@ class KisAuth:
             "authorization": f"Bearer {token.token}",
         }
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=_kis_ssl_context()) as client:
             resp = await client.post(
                 f"{self._base_url}/oauth2/Approval",
                 json=payload,
