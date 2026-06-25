@@ -23,9 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 def _kis_ssl_context() -> ssl.SSLContext:
-    """KIS 서버는 TLS 1.3을 지원하지 않으므로 TLS 1.2로 상한을 고정한다."""
-    ctx = ssl.create_default_context()
+    """KIS 서버 전용 SSL 컨텍스트.
+
+    - TLS 1.2 상한 고정: KIS 서버가 TLS 1.3 미지원
+    - 인증서 검증 비활성화: KIS 인증서에 Authority Key Identifier 미포함으로
+      Python 3.14+ OpenSSL이 검증을 거부함 (KIS 서버 인증서 문제)
+    """
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
 
