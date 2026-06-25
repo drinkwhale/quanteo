@@ -141,13 +141,18 @@ cd dashboard && npm install
 저장소 **밖**에 자격증명 파일을 생성한다. (절대 커밋 금지)
 
 ```bash
+mkdir -p ~/KIS/config
 cp kis_devlp.yaml.example ~/KIS/config/kis_devlp.yaml
 # 편집기로 앱키·시크릿·계좌번호·HTS ID를 채울 것
 ```
 
+앱키·시크릿은 [한국투자증권 개발자센터](https://apiportal.koreainvestment.com) → 앱 등록에서 발급한다.  
+**실전투자(prod)와 모의투자(vps) 앱키는 별도로 발급**받아야 하며, 파일 내 `my_*`(실전)와 `paper_*`(모의) 섹션에 각각 입력한다.
+
 `QUANTEO_CONFIG_PATH` 환경 변수로 경로를 재지정할 수 있다. (기본: `~/KIS/config/kis_devlp.yaml`)
 
 **Telegram 알림** 사용 시 `telegram` 섹션을 채우고 `enabled: true`로 변경.  
+채널 chat_id는 `-100` 접두사가 필요하다 (예: `-100123456789`).  
 `enabled: false`(기본값)이면 `MockNotifier`로 자동 대체되어 알림 없이 동작한다.
 
 ---

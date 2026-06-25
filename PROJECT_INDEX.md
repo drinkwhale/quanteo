@@ -28,7 +28,7 @@ Generated: 2026-06-24 (Phase 7 완료)
 | **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)          |
 | **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker |
 
-**테스트:** 275 passed (Python) · TypeScript tsc clean (2026-06-24 기준)
+**테스트:** 288 passed (Python) · TypeScript tsc clean (2026-06-24 기준)
 
 ---
 
@@ -120,7 +120,7 @@ quanteo/
 │   ├── tasks.md              # Phase·Task 체크박스 (구현 진척 관리)
 │   └── 2026-06-18-quanteo-architecture.md  # 확정 아키텍처 설계서
 ├── pyproject.toml            # uv 프로젝트 설정, 의존성, ruff/pytest 설정
-├── kis_devlp.yaml.example    # 자격증명 예시 (실제 파일은 저장소 밖)
+├── kis_devlp.yaml.example    # 자격증명 예시 — 실전(prod)/모의(vps) 섹션 분리 (실제 파일은 저장소 밖)
 └── CLAUDE.md                 # Claude Code 세션 지침
 ```
 
@@ -134,7 +134,7 @@ uv sync
 uv run python -m core.app                              # vps(모의투자), Control API만
 uv run python -m core.app --with-trading               # 시장데이터·전략·주문 포함
 uv run python -m core.app --env prod --i-understand-real-money  # 실전 (이중 확인 필수)
-uv run pytest                                          # 테스트 (275 cases)
+uv run pytest                                          # 테스트 (288 cases)
 uv run ruff check . && ruff format .                   # 린트·포맷
 
 # Docker

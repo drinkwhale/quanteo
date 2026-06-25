@@ -70,7 +70,7 @@ git branch --show-current
   - `prod` = **실전투자(실제 주문/실제 돈)**
   - `vps` = **모의투자(paper trading)**
   - REST 도메인과 WebSocket 도메인, 앱키/시크릿이 환경별로 **각각 다름**. 코드/설정에서 환경을 명시적으로 다루고, 기본값은 항상 모의투자(`vps`)로 둘 것.
-- **설정 파일 `kis_devlp.yaml`:** 기본 경로 `~/KIS/config/kis_devlp.yaml`(저장소 밖, 절대 커밋 금지). 경로 재지정: `export QUANTEO_CONFIG_PATH=/다른/경로/kis_devlp.yaml`. 실전/모의용 앱키·시크릿, HTS ID, 계좌번호(8자리 + 상품코드 2자리), User-Agent 포함.
+- **설정 파일 `kis_devlp.yaml`:** 기본 경로 `~/KIS/config/kis_devlp.yaml`(저장소 밖, 절대 커밋 금지). 경로 재지정: `export QUANTEO_CONFIG_PATH=/다른/경로/kis_devlp.yaml`. 앱키 발급: https://apiportal.koreainvestment.com → **실전(`my_*`)·모의(`paper_*`) 앱키는 별도 등록 필요**. HTS ID, 계좌번호(8자리 + 상품코드 2자리), User-Agent 포함. 포맷 예시: `kis_devlp.yaml.example`.
 - **계좌번호:** `CANO`(8자리) + `ACNT_PRDT_CD`(상품코드 2자리, 예: 종합계좌 `01`)로 분리되어 전달됨.
 - **TR_ID:** 모든 REST 호출은 거래 ID(TR_ID)로 식별되며, **실전/모의에서 TR_ID가 다른 경우가 많다.** 주문/시세 함수 작성 시 환경에 맞는 TR_ID를 반드시 확인.
 - **WebSocket:** 실시간 시세/체결 구독. 별도 접속키(`auth_ws` 패턴)로 연결 후 종목별로 `subscribe`.
