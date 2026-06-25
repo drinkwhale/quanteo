@@ -1,47 +1,38 @@
 # KIS Open Trading API 설정 예시
 # 실제 파일은 ~/KIS/config/kis_devlp.yaml 에 두세요 (저장소 밖, 커밋 금지).
-# 경로 재지정: QUANTEO_CONFIG_PATH 환경 변수 사용.
+# 경로 재지정: export QUANTEO_CONFIG_PATH=/원하는/경로/kis_devlp.yaml
+#
+# 앱키·시크릿 발급: https://apiportal.koreainvestment.com → 앱 등록
+# ※ 실전투자·모의투자는 앱키가 별도로 발급됩니다. 두 환경 모두 등록하세요.
 
 # ──────────────────────────────────────────────────────
-# KIS 공식 포맷 (open-trading-api 샘플 기준, 권장)
+# 실전투자 (prod) — 실제 돈이 오갑니다. 신중하게 입력하세요.
 # ──────────────────────────────────────────────────────
+my_app: "YOUR_PROD_APP_KEY"         # 실전 앱키 (40자)
+my_sec: "YOUR_PROD_APP_SECRET"      # 실전 앱시크릿 (180자)
+my_acct: "12345678"                 # 계좌번호 CANO 8자리
+my_acct_stock: "01"                 # 상품코드 2자리 (종합계좌: 01)
+my_id: "YOUR_HTS_ID"                # HTS 아이디
 
-# 실전투자 자격증명
-my_app: "YOUR_PROD_APP_KEY"
-my_sec: "YOUR_PROD_APP_SECRET"
-my_acct: "12345678"       # CANO 8자리
-my_acct_stock: "01"       # ACNT_PRDT_CD 2자리 (종합계좌: 01)
-my_id: "YOUR_HTS_ID"
+# ──────────────────────────────────────────────────────
+# 모의투자 (vps) — paper trading, 실제 주문 없음. 기본 실행 환경.
+# ──────────────────────────────────────────────────────
+paper_app: "YOUR_VPS_APP_KEY"       # 모의투자 앱키 (40자)
+paper_sec: "YOUR_VPS_APP_SECRET"    # 모의투자 앱시크릿 (180자)
+paper_acct: "12345678"              # 모의투자 계좌번호 CANO 8자리
+paper_acct_stock: "01"              # 상품코드 2자리
+paper_id: "YOUR_HTS_ID"             # HTS 아이디
 
-# 모의투자 자격증명
-paper_app: "YOUR_VPS_APP_KEY"
-paper_sec: "YOUR_VPS_APP_SECRET"
-paper_acct: "12345678"
-paper_acct_stock: "01"
-paper_id: "YOUR_HTS_ID"
-
+# ──────────────────────────────────────────────────────
 # 공통
+# ──────────────────────────────────────────────────────
 user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 
+# ──────────────────────────────────────────────────────
 # Telegram 알림 (선택)
+# ──────────────────────────────────────────────────────
 telegram:
   bot_token: "0000000000:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-  chat_id: "-100123456789"
-  level: "INFO"     # INFO | WARN | ERROR
-  enabled: false    # true로 바꾸면 실제 전송
-
-# ──────────────────────────────────────────────────────
-# 커스텀 포맷 (중첩 섹션 방식, 위 공식 포맷이 없을 때 fallback)
-# ──────────────────────────────────────────────────────
-# prod:
-#   app_key: "YOUR_PROD_APP_KEY"
-#   app_secret: "YOUR_PROD_APP_SECRET"
-#   account_no: "12345678"
-#   account_code: "01"
-#   hts_id: "YOUR_HTS_ID"
-# vps:
-#   app_key: "YOUR_VPS_APP_KEY"
-#   app_secret: "YOUR_VPS_APP_SECRET"
-#   account_no: "12345678"
-#   account_code: "01"
-#   hts_id: "YOUR_HTS_ID"
+  chat_id: "-100123456789"          # 채널은 -100 접두사 필요
+  level: "INFO"                     # INFO | WARN | ERROR
+  enabled: false                    # true 로 바꾸면 실제 전송
