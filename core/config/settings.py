@@ -108,34 +108,53 @@ class Settings(BaseModel):
 
 _DEFAULT_CONFIG_PATH = Path.home() / "KIS" / "config" / "kis_devlp.yaml"
 
-# KIS 공식 kis_devlp.yaml 포맷의 환경별 키 접두어
-# prod: my_app / my_sec / my_acct / my_acct_stock / my_id
-# vps:  paper_app / paper_sec / paper_acct / paper_acct_stock / paper_id
-_KIS_KEY_PREFIX: dict[Env, str] = {
-    Env.PROD: "my",
-    Env.VPS: "paper",
-}
+# KIS 공식 포맷 키 (open-trading-api 원본 기준)
+# prod: my_app / my_sec / my_acct_stock(계좌8) / my_prod(코드2) / my_htsid / my_agent
+# vps:  paper_app / paper_sec / my_paper_stock(계좌8) / my_prod / my_htsid / my_agent
 
 
 def _extract_credentials(raw: dict[str, Any], env: Env, path: Path) -> KisCredentials:
     """kis_devlp.yaml에서 환경별 자격증명을 추출한다.
 
-    KIS 공식 포맷(flat keys: my_app / paper_app 등)과
-    커스텀 포맷(중첩 섹션: prod: / vps:) 모두 지원한다.
+    KIS 공식 포맷(open-trading-api 원본)과 커스텀 포맷(중첩 섹션) 모두 지원한다.
     공식 포맷을 우선 시도하고, 없으면 커스텀 포맷을 시도한다.
     """
-    prefix = _KIS_KEY_PREFIX[env]
+    # ── KIS 공식 포맷 감지: my_app 또는 paper_app 존재 ───────────────────────
+    if "my_app" in raw or "paper_app" in raw:
+        user_agent = raw.get("my_agent", "Mozilla/5.0")
+        hts_id = raw.get("my_htsid", "")
+        account_code = raw.get("my_prod", "01")
 
-    # ── KIS 공식 포맷: my_app / paper_app 등 flat top-level keys ────────────
-    if f"{prefix}_app" in raw:
-        return KisCredentials(
-            app_key=raw[f"{prefix}_app"],
-            app_secret=raw[f"{prefix}_sec"],
-            account_no=raw[f"{prefix}_acct"],
-            account_code=raw.get(f"{prefix}_acct_stock", "01"),
-            hts_id=raw.get(f"{prefix}_id", ""),
-            user_agent=raw.get("user_agent", "Mozilla/5.0"),
-        )
+        if env == Env.PROD:
+            if "my_app" not in raw:
+                raise ValueError(
+                    f"설정 파일에서 'prod' 환경의 자격증명을 찾을 수 없습니다: {path}\n"
+                    "KIS 공식 포맷의 'my_app' 키가 필요합니다.\n"
+                    "kis_devlp.yaml.example을 참고하세요."
+                )
+            return KisCredentials(
+                app_key=raw["my_app"],
+                app_secret=raw["my_sec"],
+                account_no=raw.get("my_acct_stock", ""),
+                account_code=account_code,
+                hts_id=hts_id,
+                user_agent=user_agent,
+            )
+        else:  # VPS
+            if "paper_app" not in raw:
+                raise ValueError(
+                    f"설정 파일에서 'vps' 환경의 자격증명을 찾을 수 없습니다: {path}\n"
+                    "KIS 공식 포맷의 'paper_app' 키가 필요합니다.\n"
+                    "kis_devlp.yaml.example을 참고하세요."
+                )
+            return KisCredentials(
+                app_key=raw["paper_app"],
+                app_secret=raw["paper_sec"],
+                account_no=raw.get("my_paper_stock", ""),
+                account_code=account_code,
+                hts_id=hts_id,
+                user_agent=user_agent,
+            )
 
     # ── 커스텀 포맷: prod: / vps: 중첩 섹션 ──────────────────────────────────
     env_key = env.value
@@ -152,7 +171,7 @@ def _extract_credentials(raw: dict[str, Any], env: Env, path: Path) -> KisCreden
 
     raise ValueError(
         f"설정 파일에서 '{env.value}' 환경의 자격증명을 찾을 수 없습니다: {path}\n"
-        f"KIS 공식 포맷('{prefix}_app' 키) 또는 커스텀 포맷('{env_key}:' 섹션)이 필요합니다.\n"
+        "KIS 공식 포맷(my_app/paper_app 키) 또는 커스텀 포맷(prod:/vps: 섹션)이 필요합니다.\n"
         "kis_devlp.yaml.example을 참고하세요."
     )
 
