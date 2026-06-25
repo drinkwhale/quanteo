@@ -22,18 +22,27 @@ from core.config.settings import Env, KisCredentials
 logger = logging.getLogger(__name__)
 
 
+_KIS_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
 def _kis_ssl_context() -> ssl.SSLContext:
-    """KIS 서버 전용 SSL 컨텍스트.
+    """KIS 서버 전용 SSL 컨텍스트 (모듈 레벨 싱글톤).
 
     - TLS 1.2 상한 고정: KIS 서버가 TLS 1.3 미지원
     - 인증서 검증 비활성화: KIS 인증서에 Authority Key Identifier 미포함으로
       Python 3.14+ OpenSSL이 검증을 거부함 (KIS 서버 인증서 문제)
+
+    ⚠️  CERT_NONE은 MITM 공격에 취약합니다. KIS 인증서 문제 해결 전까지
+        모의투자(VPS) 환경에서만 사용하고, 실전 환경은 보안 네트워크에서 실행하세요.
     """
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    global _KIS_SSL_CONTEXT
+    if _KIS_SSL_CONTEXT is None:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        _KIS_SSL_CONTEXT = ctx
+    return _KIS_SSL_CONTEXT
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +150,11 @@ class KisAuth:
         self._base_url = _REST_DOMAIN[env]
         self._http_client = http_client
         self._access_token: AccessToken | None = None
+        if env == Env.PROD:
+            logger.warning(
+                "실전(PROD) 환경에서 인증서 검증이 비활성화됩니다 (KIS 서버 인증서 문제). "
+                "신뢰할 수 있는 네트워크에서만 실행하세요."
+            )
 
     # ------------------------------------------------------------------
     # Access Token

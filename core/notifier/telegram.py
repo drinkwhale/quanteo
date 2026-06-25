@@ -103,6 +103,25 @@ class TelegramNotifier:
         """전송 루프를 종료한다. 잔여 이벤트는 run() finally에서 배출된다."""
         self._running = False
 
+    async def send_once(self, event: NotifyEvent) -> None:
+        """단발 전송: 큐/루프 없이 즉시 전송하고 세션을 닫는다.
+
+        전송 실패 시 예외를 호출자에게 전파한다 (run() 루프와 달리 삼키지 않음).
+        스크립트나 one-shot 작업에서 사용한다.
+        """
+        text = _format_message(event)
+        try:
+            await self._bot.send_message(chat_id=self._chat_id, text=text)
+            logger.debug("Telegram 단발 전송 완료: %s", event.title)
+        except TelegramAPIError:
+            logger.error("Telegram API 오류 (send_once)", exc_info=False)
+            raise
+        except Exception:
+            logger.error("Telegram 전송 실패 (send_once)", exc_info=False)
+            raise
+        finally:
+            await self._bot.session.close()
+
     # ------------------------------------------------------------------
     # 내부 구현
     # ------------------------------------------------------------------
