@@ -50,6 +50,7 @@ git branch --show-current
 - **[PROJECT_INDEX.md](PROJECT_INDEX.md)** — 프로젝트 전체 현황 요약 (구조·의존성·엔드포인트). 새 세션 첫 진입 시 읽을 것.
 - **[specs/2026-06-18-quanteo-architecture.md](specs/2026-06-18-quanteo-architecture.md)** — 확정된 아키텍처 설계서(단일 진실 공급원). 구현이 달라지면 이 문서를 갱신.
 - **[specs/tasks.md](specs/tasks.md)** — Phase·Task 단위 구현 작업 목록. "T{번호}/Phase 진행" 요청 시 이 파일 기준.
+- **[specs/tossinvest/](specs/tossinvest/)** — Toss증권 Open API JSON 스펙 모음 (`open-api.json`, `auth.json`, `account.json`, `order.json`, `order-info.json`, `order-history.json`, `market-data.json`, `market-info.json`, `stock-info.json`, `asset.json`). Phase 8·9 구현 시 참고.
 
 ### 확정된 핵심 결정 (요약)
 

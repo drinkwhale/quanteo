@@ -118,7 +118,18 @@ quanteo/
 │   └── conftest.py           # 공통 fixture (AppContainer mock, DB)
 ├── specs/
 │   ├── tasks.md              # Phase·Task 체크박스 (구현 진척 관리)
-│   └── 2026-06-18-quanteo-architecture.md  # 확정 아키텍처 설계서
+│   ├── 2026-06-18-quanteo-architecture.md  # 확정 아키텍처 설계서
+│   └── tossinvest/           # Toss증권 Open API JSON 스펙 (Phase 8·9 구현 참고)
+│       ├── open-api.json     # 전체 OpenAPI 3.1 스펙 (20개 엔드포인트)
+│       ├── auth.json         # OAuth2 토큰 발급
+│       ├── account.json      # 계좌 조회 (accounts, holdings, buying-power, sellable-quantity)
+│       ├── order.json        # 주문 생성·취소·정정
+│       ├── order-info.json   # 주문 단건·목록 조회
+│       ├── order-history.json # 주문 이력 조회
+│       ├── market-data.json  # 현재가·캔들·호가·체결내역·환율
+│       ├── market-info.json  # 상하한가·수수료·마켓 캘린더(KR/US)
+│       ├── stock-info.json   # 종목 기본 정보·매수 유의사항
+│       └── asset.json        # 자산 포트폴리오 관련
 ├── pyproject.toml            # uv 프로젝트 설정, 의존성, ruff/pytest 설정
 ├── kis_devlp.yaml.example    # 자격증명 예시 — 실전(prod)/모의(vps) 섹션 분리 (실제 파일은 저장소 밖)
 └── CLAUDE.md                 # Claude Code 세션 지침
