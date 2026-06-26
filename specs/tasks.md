@@ -84,7 +84,7 @@
 > **계좌:** 앱 시작 시 `GET /api/v1/accounts` 호출 → `accountSeq` 획득 → 이후 `X-Tossinvest-Account` 헤더에 사용.
 
 - [ ] **T039** `BrokerAdapter` Protocol 도입 — `core/adapters/base.py`에 브로커 교체 가능 추상화 레이어 정의
-  - `BrokerAdapter(Protocol)`: `get_price()`, `get_balance()`, `place_order()` 3개 메서드 선언
+  - `BrokerAdapter(Protocol)`: `get_price()`, `get_balance()`, `place_order()` 3개 메서드 선언 (Phase 9 T050에서 `cancel_order()` / `modify_order()` / `list_orders()` 추가 예정 — Protocol 확장 vs. TossRestClient 단독 구현 여부는 T050 시작 시 결정)
   - `MarketPoller(Protocol)`: `start()`, `stop()`, `subscribe(symbol)` — 폴링/WS 피드 추상화
   - `KisRestClient`와 `TossRestClient` 모두 이 Protocol을 만족하도록 타입 어노테이션 추가
   - `OrderAck.kis_order_id` → `broker_order_id` 필드명 변경 (하위 호환 property alias 유지)
@@ -100,12 +100,13 @@
   - 토큰 캐시: `~/toss/cache/token.json` (기존 KIS 캐시 패턴 재사용, 경로만 분리)
   - 클라이언트당 유효 토큰 1개 원칙: 재발급 시 이전 토큰 즉시 무효화 → 캐시 갱신
   - **토큰 무효화 감지:** 캐시 로드 후 API 호출 시 `401 Unauthorized` 수신 → 캐시 삭제 후 즉시 재발급. 재시작·중복 인스턴스 실행으로 서버 측에서 이전 토큰이 무효화된 상황을 처리.
+  - **선제적 갱신 옵션:** `OAuth2TokenResponse.expires_in`(초) 기반으로 만료 60초 전에 백그라운드 재발급 — `401` 감지 방식과 함께 선택 구현 가능
   - `get_account_seq()` 는 `auth.py`에 두지 않음 — `TossRestClient.__init__` 또는 팩토리에서 처리 (단일 책임 원칙)
 
 - [ ] **T042** `core/adapters/toss/rest.py` — 시세 & 잔고 조회
   - `__init__` 에서 `GET /api/v1/accounts` 호출 → 첫 번째 `accountSeq` 획득 후 인스턴스 변수 저장
   - `get_price(symbol: str) -> PriceInfo`: `GET /api/v1/prices?symbols={symbol}` → `result[0].lastPrice`
-  - `get_balance() -> BalanceInfo`: `GET /api/v1/holdings` (`X-Tossinvest-Account: {accountSeq}` 헤더)
+  - `get_balance(symbol: str | None = None) -> BalanceInfo`: `GET /api/v1/holdings` (`X-Tossinvest-Account: {accountSeq}` 헤더) — `symbol` 파라미터로 특정 종목만 필터 가능 (전체 잔고는 생략)
   - 응답 envelope: `{"result": {...}}` → `data["result"]` 추출 헬퍼
   - 에러 처리: `{"error": {"code": ..., "message": ...}}` → `RuntimeError` 변환
   - **Rate Limit 그룹별 스로틀러 분리:** `MARKET_DATA` 그룹(시세·잔고)과 `ORDER` 그룹(주문)은 별도 `FixedIntervalThrottler` 인스턴스 사용. 주문 전송이 시세 폴링 버킷을 소모하지 않도록 격리.
@@ -164,12 +165,13 @@
   - `BuyingPowerInfo`, `Commission` 내부 타입 정의 (`core/adapters/toss/models.py`)
 
 - [ ] **T050** 주문 관리 완성 — 주문 목록·단건 조회·취소·정정
-  - `list_orders(status: str | None = None) -> list[Order]`: `GET /api/v1/orders` (페이지네이션 `nextPageToken` 지원)
-  - `get_order(order_id: str) -> Order`: `GET /api/v1/orders/{orderId}` → `orderId`, `status`, `execution` 등 전체 필드
-  - `cancel_order(order_id: str) -> bool`: `POST /api/v1/orders/{orderId}/cancel` → 성공 시 `True`, `409` 충돌 시 재조회 후 상태 반환
-  - `modify_order(order_id: str, quantity: int, price: Decimal, order_type: str) -> Order`: `POST /api/v1/orders/{orderId}/modify` 요청 바디 `{orderType, quantity, price}`
+  - `list_orders(status: Literal["OPEN", "CLOSED"], symbol: str | None = None, cursor: str | None = None, limit: int = 100) -> tuple[list[Order], str | None]`: `GET /api/v1/orders` — `status` 필수, 페이지네이션은 `cursor` / `nextCursor` / `hasNext` 사용 (`nextPageToken` 없음)
+  - `get_order(order_id: str) -> Order`: `GET /api/v1/orders/{orderId}` → `orderId`, `status`(enum: PENDING·PARTIAL_FILLED·FILLED·CANCELED 등), `execution` 전체 필드
+  - `cancel_order(order_id: str) -> OrderOperationResponse`: `POST /api/v1/orders/{orderId}/cancel` → `{ orderId }` 반환, `409` 충돌 시 재조회 후 상태 반환
+  - `modify_order(order_id: str, order_type: str, quantity: int | None = None, price: Decimal | None = None, confirm_high_value: bool = False) -> OrderOperationResponse`: `POST /api/v1/orders/{orderId}/modify` — `orderType`만 필수, `quantity`·`price`·`confirmHighValueOrder` 선택
   - State Store `orders` 테이블 동기화: 취소·정정 후 DB 레코드 상태 갱신
   - `OrderAck.cancel()` / `OrderAck.modify()` 헬퍼 메서드 추가 (Order Executor 레이어)
+  - **Protocol 확장 여부 결정:** T039 `BrokerAdapter`에 `cancel_order` / `modify_order` / `list_orders` 추가할지, `TossRestClient` 전용 메서드로 둘지 T050 시작 시 확정
 
 - [ ] **T051** 체결 내역 조회 — `GET /api/v1/trades`
   - `get_trades(count: int = 100) -> list[Fill]`: `price`, `volume`, `timestamp`, `currency` 필드 매핑
@@ -202,7 +204,7 @@
   - `Candle` 내부 타입: `timestamp`, `openPrice`, `highPrice`, `lowPrice`, `closePrice`, `volume`, `currency`
   - `normalize_toss_candle(result: dict) -> Candle` 정규화 함수 추가 (`core/marketdata/normalizer.py`)
   - Strategy Engine 백테스트 하니스(T014) 에 Toss 캔들 데이터 소스 연결 — `BacktestFeed` 클래스 Toss 어댑터 지원
-  - 지원 `interval` 값: `1m`, `3m`, `5m`, `10m`, `15m`, `30m`, `1h`, `4h`, `1d`, `1w`, `1M` (스펙 확인 후 정의)
+  - 지원 `interval` 값: 현재 스펙 enum `["1m", "1d"]` 두 가지만 확정. 추후 API 업데이트 시 확장 가능하도록 `Literal` 타입으로 정의
 
 - [ ] **T056** Control API 확장 & 대시보드 주문관리 UI
   - Control API `/market-status` 엔드포인트 추가: 국내·해외 개장 여부 + 캘린더 정보 (`KR`, `US`)
