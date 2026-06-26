@@ -98,15 +98,17 @@
 - [ ] **T041** `core/adapters/toss/auth.py` — Toss OAuth2 인증
   - `POST /oauth2/token` (`application/x-www-form-urlencoded`, `grant_type=client_credentials`)
   - 토큰 캐시: `~/toss/cache/token.json` (기존 KIS 캐시 패턴 재사용, 경로만 분리)
-  - 클라이언트당 유효 토큰 1개 원칙: 재발급 시 이전 토큰 자동 무효화 → 캐시 갱신
-  - `get_account_seq() -> int`: 앱 시작 시 1회 호출, `GET /api/v1/accounts` → 첫 번째 `accountSeq` 반환
+  - 클라이언트당 유효 토큰 1개 원칙: 재발급 시 이전 토큰 즉시 무효화 → 캐시 갱신
+  - **토큰 무효화 감지:** 캐시 로드 후 API 호출 시 `401 Unauthorized` 수신 → 캐시 삭제 후 즉시 재발급. 재시작·중복 인스턴스 실행으로 서버 측에서 이전 토큰이 무효화된 상황을 처리.
+  - `get_account_seq()` 는 `auth.py`에 두지 않음 — `TossRestClient.__init__` 또는 팩토리에서 처리 (단일 책임 원칙)
 
 - [ ] **T042** `core/adapters/toss/rest.py` — 시세 & 잔고 조회
+  - `__init__` 에서 `GET /api/v1/accounts` 호출 → 첫 번째 `accountSeq` 획득 후 인스턴스 변수 저장
   - `get_price(symbol: str) -> PriceInfo`: `GET /api/v1/prices?symbols={symbol}` → `result[0].lastPrice`
   - `get_balance() -> BalanceInfo`: `GET /api/v1/holdings` (`X-Tossinvest-Account: {accountSeq}` 헤더)
   - 응답 envelope: `{"result": {...}}` → `data["result"]` 추출 헬퍼
   - 에러 처리: `{"error": {"code": ..., "message": ...}}` → `RuntimeError` 변환
-  - Rate Limit: `MARKET_DATA` 그룹 (기존 `FixedIntervalThrottler` 재사용)
+  - **Rate Limit 그룹별 스로틀러 분리:** `MARKET_DATA` 그룹(시세·잔고)과 `ORDER` 그룹(주문)은 별도 `FixedIntervalThrottler` 인스턴스 사용. 주문 전송이 시세 폴링 버킷을 소모하지 않도록 격리.
 
 - [ ] **T043** `core/adapters/toss/rest.py` — 주문 생성
   - `place_order(order: Order) -> OrderAck`: `POST /api/v1/orders`
@@ -121,7 +123,7 @@
   - 종목 목록 관리: `subscribe()` 호출 시 내부 집합에 추가 → 폴링 시 콤마 조인
 
 - [ ] **T045** `core/marketdata/normalizer.py` — Toss JSON 포맷 정규화
-  - 기존 KIS 파이프(`^`) 구분 파서 전체 제거 (삭제 또는 `normalizer_kis.py`로 이동)
+  - 기존 KIS 파이프(`^`) 구분 파서를 **반드시 `normalizer_kis.py`로 이동** (삭제 금지 — KIS 하위 호환 및 기존 테스트 유지)
   - `normalize_toss_price(symbol: str, result: dict) -> Tick`: `lastPrice`, `timestamp` 필드 매핑
   - `normalize_toss_holdings(result: dict) -> BalanceInfo`: `items[].quantity`, `averagePurchasePrice`, `marketValue` 매핑
   - 국내·해외 통합 처리 (`marketCountry: "KR"|"US"` + `currency: "KRW"|"USD"` 필드로 구분)
@@ -132,11 +134,17 @@
   - `core/adapters/kis/` 파일 전체 보존 (KIS 하위 호환 보장)
 
 - [ ] **T047** 통합 테스트 + Toss 어댑터 단위 테스트
-  - `tests/adapters/toss/test_auth.py`: 토큰 발급·캐시 로드·재발급 흐름 (httpx mock)
-  - `tests/adapters/toss/test_rest.py`: 현재가·잔고·주문 요청 파라미터 및 응답 파싱 검증
+  - `tests/adapters/toss/test_auth.py`: 토큰 발급·캐시 로드·재발급·`401` 감지 후 재발급 흐름 (httpx mock)
+  - `tests/adapters/toss/test_rest.py`: 현재가·잔고·주문 요청 파라미터 및 응답 파싱 검증, Rate Limit 그룹 격리 검증
   - `tests/marketdata/test_feed_polling.py`: 폴링 루프에서 Tick 핸들러 호출 검증
   - `tests/integration/test_toss_roundtrip.py`: 시그널 → Risk Manager → Toss 주문 라운드트립 (MockRestClient)
   - 기존 KIS 테스트 전체 유지 (병존)
+
+- [ ] **T048** `specs/2026-06-18-quanteo-architecture.md` — Toss 어댑터 기준으로 아키텍처 문서 갱신
+  - KIS 전용 다이어그램·설명을 "브로커 어댑터 레이어" 추상화 기준으로 업데이트
+  - Toss 어댑터 구조(REST only, 폴링 피드, Rate Limit 그룹) 반영
+  - KIS 어댑터는 "기존 브로커 구현체" 섹션으로 병존 유지 명시
+  - `tossinvest.json` 위치를 `specs/tossinvest.json`으로 이동 (`git mv`)
 
 ---
 
