@@ -160,3 +160,6 @@ uv.lock
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/
+
+# Playwright MCP
+.playwright-mcp/
