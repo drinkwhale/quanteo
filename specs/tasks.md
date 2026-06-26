@@ -148,6 +148,72 @@
 
 ---
 
+## Phase 9 — Toss증권 어댑터 운영 완성
+
+> **목표:** Phase 8에서 커버하지 못한 Toss OpenAPI 15개 엔드포인트를 구현해 실거래 운용에 필요한 안전망과 기능을 갖춘다.
+>
+> **커버리지 기준:** Phase 8은 인증·현재가·잔고·주문생성 5개 엔드포인트만 다룬다. Phase 9는 주문관리(취소·정정·조회), 매수가능금액, 판매가능수량, 상하한가, 캘린더, 체결내역, 종목정보, 환율, 과거 캔들 등 나머지 15개를 채운다.
+>
+> **우선순위:** `prod` 전환 전 필수(T049~T053) → 선택 기능(T054~T056).
+
+- [ ] **T049** `TossRestClient` 확장 — 매수가능금액·판매가능수량·수수료 조회
+  - `get_buying_power(currency: str = "KRW") -> BuyingPowerInfo`: `GET /api/v1/buying-power?currency={currency}` → `cashBuyingPower` 필드
+  - `get_sellable_quantity(symbol: str) -> int`: `GET /api/v1/sellable-quantity?symbol={symbol}` → `sellableQuantity` 필드
+  - `get_commissions() -> list[Commission]`: `GET /api/v1/commissions` → `commissionRate`, `startDate`, `endDate` 필드
+  - **Risk Manager 연동:** 주문 전 `get_buying_power()` / `get_sellable_quantity()` 호출하여 주문 수량·금액 사전 검증 — `insufficient-buying-power` 에러보다 앞서 차단
+  - `BuyingPowerInfo`, `Commission` 내부 타입 정의 (`core/adapters/toss/models.py`)
+
+- [ ] **T050** 주문 관리 완성 — 주문 목록·단건 조회·취소·정정
+  - `list_orders(status: str | None = None) -> list[Order]`: `GET /api/v1/orders` (페이지네이션 `nextPageToken` 지원)
+  - `get_order(order_id: str) -> Order`: `GET /api/v1/orders/{orderId}` → `orderId`, `status`, `execution` 등 전체 필드
+  - `cancel_order(order_id: str) -> bool`: `POST /api/v1/orders/{orderId}/cancel` → 성공 시 `True`, `409` 충돌 시 재조회 후 상태 반환
+  - `modify_order(order_id: str, quantity: int, price: Decimal, order_type: str) -> Order`: `POST /api/v1/orders/{orderId}/modify` 요청 바디 `{orderType, quantity, price}`
+  - State Store `orders` 테이블 동기화: 취소·정정 후 DB 레코드 상태 갱신
+  - `OrderAck.cancel()` / `OrderAck.modify()` 헬퍼 메서드 추가 (Order Executor 레이어)
+
+- [ ] **T051** 체결 내역 조회 — `GET /api/v1/trades`
+  - `get_trades(count: int = 100) -> list[Fill]`: `price`, `volume`, `timestamp`, `currency` 필드 매핑
+  - `normalize_toss_trade(result: dict) -> Fill` 정규화 함수 추가 (`core/marketdata/normalizer.py`)
+  - State Store `fills` 테이블 동기화: 봇 재시작 시 미동기화 체결 복원 (`recovery.py` 연동)
+  - 체결 이벤트 → Event Bus 발행 → Telegram 알림 트리거 검증 (`FillEvent` 경로)
+
+- [ ] **T052** 마켓 정보 & 캘린더 API
+  - `get_price_limits(symbol: str) -> PriceLimits`: `GET /api/v1/price-limits?symbol={symbol}` → `upperLimitPrice`, `lowerLimitPrice`, `timestamp`
+  - **Risk Manager 연동:** 주문 가격이 상하한가 범위 초과 시 `RiskError` 발생 — `confirm-high-value-required` 에러 이전에 차단
+  - `get_market_calendar_kr(date: str | None = None) -> KrMarketCalendar`: `GET /api/v1/market-calendar/KR` → `today`, `previousBusinessDay`, `nextBusinessDay`
+  - `get_market_calendar_us(date: str | None = None) -> UsMarketCalendar`: `GET /api/v1/market-calendar/US`
+  - `is_market_open(market: Literal["KR", "US"]) -> bool` 헬퍼: 캘린더 기반 개장 여부 → 폴링 루프·주문 루프 진입 가드로 활용
+
+- [ ] **T053** 종목 정보 & 매수 유의사항
+  - `get_stocks(symbols: list[str]) -> list[StockInfo]`: `GET /api/v1/stocks?symbols=A,B,C` → `symbol`, `name`, `market`, `status`, `currency` 등
+  - `get_stock_warnings(symbol: str) -> list[StockWarning]`: `GET /api/v1/stocks/{symbol}/warnings` → `warningType`, `startDate`, `endDate`
+  - **Risk Manager 연동:** `warningType` 있는 종목 주문 시 `RiskError` 발생 (매수 유의종목 차단)
+  - 전략 엔진 `subscribe()` 시 종목 기본 정보 캐싱 → Strategy Plugin이 `StockInfo` 참조 가능
+  - `tests/adapters/toss/test_stock_info.py`: warnings 차단 동작 검증
+
+- [ ] **T054** 환율 조회 & 해외 주식 KRW 환산
+  - `get_exchange_rate(base_currency: str = "USD", quote_currency: str = "KRW") -> ExchangeRate`: `GET /api/v1/exchange-rate` → `rate`, `midRate`, `rateChangeType`, `validFrom`, `validUntil`
+  - `BalanceInfo` 확장: `total_krw: Decimal` 필드 추가 — 해외 주식 보유분을 `midRate` 기준 KRW 환산합산
+  - 환율 캐시: TTL 60초 인메모리 캐시 (`asyncio.Lock` 기반) — 폴링 루프마다 호출 방지
+  - 대시보드 `/positions` 응답에 `krw_value` 필드 노출
+
+- [ ] **T055** 과거 캔들 데이터 & 백테스트 소스 연결
+  - `get_candles(symbol: str, interval: str, count: int = 100, before: str | None = None, adjusted: bool = True) -> list[Candle]`: `GET /api/v1/candles`
+  - `Candle` 내부 타입: `timestamp`, `openPrice`, `highPrice`, `lowPrice`, `closePrice`, `volume`, `currency`
+  - `normalize_toss_candle(result: dict) -> Candle` 정규화 함수 추가 (`core/marketdata/normalizer.py`)
+  - Strategy Engine 백테스트 하니스(T014) 에 Toss 캔들 데이터 소스 연결 — `BacktestFeed` 클래스 Toss 어댑터 지원
+  - 지원 `interval` 값: `1m`, `3m`, `5m`, `10m`, `15m`, `30m`, `1h`, `4h`, `1d`, `1w`, `1M` (스펙 확인 후 정의)
+
+- [ ] **T056** Control API 확장 & 대시보드 주문관리 UI
+  - Control API `/market-status` 엔드포인트 추가: 국내·해외 개장 여부 + 캘린더 정보 (`KR`, `US`)
+  - Control API `/risk-metrics` 확장 응답: `buyingPower`, `sellableQuantity`, `priceLimits` 포함
+  - 대시보드 주문 내역 화면(T026)에 **취소** / **정정** 버튼 추가 → `cancel_order` / `modify_order` API 호출
+  - 체결 내역(`/trades`) 전용 탭 추가: 체결가·수량·타임스탬프 표시
+  - `tests/api/test_market_status.py`: 개장 여부 엔드포인트 응답 검증
+
+---
+
 ## 다음 단계
 
 구현을 시작하려면 "Phase 8 진행해줘" 또는 "T039까지 진행해줘"로 요청.
+Phase 9는 Phase 8 완료 후 "Phase 9 진행해줘" 또는 "T049까지 진행해줘"로 시작.
