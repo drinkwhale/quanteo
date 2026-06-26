@@ -73,6 +73,73 @@
 
 ---
 
+## Phase 8 — Toss증권 어댑터 마이그레이션
+
+> **목표:** KIS 어댑터를 Toss증권 Open API로 교체한다.
+> 전략·리스크·이벤트·State Store·대시보드는 무수정. 어댑터 레이어와 시세 피드만 교체.
+>
+> **핵심 제약:** Toss API는 WebSocket 미지원(추후 지원 예정) → REST 폴링 방식으로 전환.
+> **모의투자 구분 없음:** Toss는 단일 URL. `Env` 개념은 유지하되 Toss 어댑터는 항상 동일 엔드포인트 사용.
+> **인증:** OAuth2 Client Credentials (`application/x-www-form-urlencoded`), `client_id` + `client_secret`.
+> **계좌:** 앱 시작 시 `GET /api/v1/accounts` 호출 → `accountSeq` 획득 → 이후 `X-Tossinvest-Account` 헤더에 사용.
+
+- [ ] **T039** `BrokerAdapter` Protocol 도입 — `core/adapters/base.py`에 브로커 교체 가능 추상화 레이어 정의
+  - `BrokerAdapter(Protocol)`: `get_price()`, `get_balance()`, `place_order()` 3개 메서드 선언
+  - `MarketPoller(Protocol)`: `start()`, `stop()`, `subscribe(symbol)` — 폴링/WS 피드 추상화
+  - `KisRestClient`와 `TossRestClient` 모두 이 Protocol을 만족하도록 타입 어노테이션 추가
+  - `OrderAck.kis_order_id` → `broker_order_id` 필드명 변경 (하위 호환 property alias 유지)
+
+- [ ] **T040** `TossCredentials` 설정 + `core/config/settings.py` 업데이트
+  - `TossCredentials(BaseModel)`: `client_id: str`, `client_secret: SecretStr`
+  - `AppSettings`에 `broker: Literal["kis", "toss"] = "kis"` 필드 추가
+  - `kis_devlp.yaml.example`에 `toss:` 섹션 예시 추가 (`client_id`, `client_secret`)
+  - 설정 로딩 시 `broker` 값 기반으로 KIS 또는 Toss 자격증명 선택
+
+- [ ] **T041** `core/adapters/toss/auth.py` — Toss OAuth2 인증
+  - `POST /oauth2/token` (`application/x-www-form-urlencoded`, `grant_type=client_credentials`)
+  - 토큰 캐시: `~/toss/cache/token.json` (기존 KIS 캐시 패턴 재사용, 경로만 분리)
+  - 클라이언트당 유효 토큰 1개 원칙: 재발급 시 이전 토큰 자동 무효화 → 캐시 갱신
+  - `get_account_seq() -> int`: 앱 시작 시 1회 호출, `GET /api/v1/accounts` → 첫 번째 `accountSeq` 반환
+
+- [ ] **T042** `core/adapters/toss/rest.py` — 시세 & 잔고 조회
+  - `get_price(symbol: str) -> PriceInfo`: `GET /api/v1/prices?symbols={symbol}` → `result[0].lastPrice`
+  - `get_balance() -> BalanceInfo`: `GET /api/v1/holdings` (`X-Tossinvest-Account: {accountSeq}` 헤더)
+  - 응답 envelope: `{"result": {...}}` → `data["result"]` 추출 헬퍼
+  - 에러 처리: `{"error": {"code": ..., "message": ...}}` → `RuntimeError` 변환
+  - Rate Limit: `MARKET_DATA` 그룹 (기존 `FixedIntervalThrottler` 재사용)
+
+- [ ] **T043** `core/adapters/toss/rest.py` — 주문 생성
+  - `place_order(order: Order) -> OrderAck`: `POST /api/v1/orders`
+  - 요청 바디: `{clientOrderId, symbol, side, orderType, quantity, price}` (TR_ID·시장 분기 불필요)
+  - `clientOrderId` 네이티브 지원 → 멱등성 Toss 서버 보장 (`409 request-in-progress` 처리)
+  - `1억원 이상 주문 확인` 에러(`confirm-high-value-required`) → Risk Manager 한도에서 사전 차단
+
+- [ ] **T044** `core/marketdata/feed.py` — WebSocket → REST 폴링 전환
+  - `MarketDataFeed.__init__` 인자: `KisWsClient` 제거 → `rest_client: BrokerAdapter`, `poll_interval: float = 2.0`
+  - 폴링 루프: `asyncio.sleep(poll_interval)` → `GET /api/v1/prices?symbols=A,B,C` 배치 조회 → 종목별 `Tick` 생성 → 핸들러 호출
+  - `subscribe(symbol)` / `start()` / `stop()` 인터페이스 유지 (Strategy Engine 무수정)
+  - 종목 목록 관리: `subscribe()` 호출 시 내부 집합에 추가 → 폴링 시 콤마 조인
+
+- [ ] **T045** `core/marketdata/normalizer.py` — Toss JSON 포맷 정규화
+  - 기존 KIS 파이프(`^`) 구분 파서 전체 제거 (삭제 또는 `normalizer_kis.py`로 이동)
+  - `normalize_toss_price(symbol: str, result: dict) -> Tick`: `lastPrice`, `timestamp` 필드 매핑
+  - `normalize_toss_holdings(result: dict) -> BalanceInfo`: `items[].quantity`, `averagePurchasePrice`, `marketValue` 매핑
+  - 국내·해외 통합 처리 (`marketCountry: "KR"|"US"` + `currency: "KRW"|"USD"` 필드로 구분)
+
+- [ ] **T046** `core/app.py` — Toss 어댑터 wiring + KIS 어댑터 병존
+  - `broker` 설정 값 기반 분기: `"toss"` 선택 시 Toss 어댑터 조립, `"kis"` 선택 시 기존 흐름 유지
+  - Toss 선택 시: `TossAuth` → `accountSeq` 획득 → `TossRestClient` → `MarketDataFeed(폴링)` 조립
+  - `core/adapters/kis/` 파일 전체 보존 (KIS 하위 호환 보장)
+
+- [ ] **T047** 통합 테스트 + Toss 어댑터 단위 테스트
+  - `tests/adapters/toss/test_auth.py`: 토큰 발급·캐시 로드·재발급 흐름 (httpx mock)
+  - `tests/adapters/toss/test_rest.py`: 현재가·잔고·주문 요청 파라미터 및 응답 파싱 검증
+  - `tests/marketdata/test_feed_polling.py`: 폴링 루프에서 Tick 핸들러 호출 검증
+  - `tests/integration/test_toss_roundtrip.py`: 시그널 → Risk Manager → Toss 주문 라운드트립 (MockRestClient)
+  - 기존 KIS 테스트 전체 유지 (병존)
+
+---
+
 ## 다음 단계
 
-구현을 시작하려면 "Phase 1 진행해줘" 또는 "T001까지 진행해줘"로 요청.
+구현을 시작하려면 "Phase 8 진행해줘" 또는 "T039까지 진행해줘"로 요청.
