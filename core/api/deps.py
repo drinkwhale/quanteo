@@ -11,11 +11,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated
 
+from typing import TYPE_CHECKING
+
 from fastapi import Depends, Request
 
 from core.events.bus import EventBus
 from core.risk.manager import RiskManager
 from core.store.db import StateStore
+
+if TYPE_CHECKING:
+    from core.adapters.toss.rest import TossRestClient
 
 
 @dataclass
@@ -31,6 +36,8 @@ class AppContainer:
     env: str = "vps"
     market: str = "domestic"
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Toss 브로커 어댑터 (선택: Toss 환경에서만 주입)
+    broker: "TossRestClient | None" = None
 
 
 def _get_container(request: Request) -> AppContainer:

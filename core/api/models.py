@@ -94,6 +94,94 @@ class OrderList(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# /orders 취소·정정 요청
+# ---------------------------------------------------------------------------
+
+
+class OrderCancelResponse(BaseModel):
+    """주문 취소 응답."""
+
+    success: bool
+    order_id: str
+    message: str = ""
+
+
+class OrderModifyRequest(BaseModel):
+    """주문 정정 요청 바디."""
+
+    order_type: str  # LIMIT | MARKET
+    quantity: int | None = None
+    price: float | None = None
+    confirm_high_value: bool = False
+
+
+class OrderModifyResponse(BaseModel):
+    """주문 정정 응답."""
+
+    success: bool
+    order_id: str
+    message: str = ""
+
+
+# ---------------------------------------------------------------------------
+# /trades
+# ---------------------------------------------------------------------------
+
+
+class FillItem(BaseModel):
+    """체결 내역 1건."""
+
+    symbol: str
+    price: float
+    volume: int
+    timestamp: datetime
+    currency: str
+    side: str | None = None
+
+
+class FillList(BaseModel):
+    """체결 내역 목록 응답."""
+
+    total: int
+    items: list[FillItem]
+
+
+# ---------------------------------------------------------------------------
+# /market-status
+# ---------------------------------------------------------------------------
+
+
+class MarketDayStatus(BaseModel):
+    """단일 시장 당일 개장 상태."""
+
+    market: str  # KR | US
+    is_open: bool
+    today_date: str
+    open_time: str | None = None
+    close_time: str | None = None
+
+
+class MarketStatus(BaseModel):
+    """국내·해외 마켓 개장 상태 응답."""
+
+    markets: list[MarketDayStatus]
+
+
+# ---------------------------------------------------------------------------
+# /risk-metrics
+# ---------------------------------------------------------------------------
+
+
+class RiskMetrics(BaseModel):
+    """Risk Manager 현재 지표 스냅샷."""
+
+    halt_level: str
+    daily_order_count: int
+    buying_power: float | None = None
+    buying_power_currency: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # /stream 메시지 (WebSocket)
 # ---------------------------------------------------------------------------
 
