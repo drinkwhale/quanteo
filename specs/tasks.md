@@ -215,7 +215,111 @@
 
 ---
 
+## Phase 10 — 정보 수집 & 알람 시스템
+
+> **목표:** SK하이닉스(000660) 매매 판단에 영향을 주는 국내외 뉴스·환율·실적발표·경제지표를 자동 수집하고, Claude Haiku로 중요도를 분류하여 Telegram 즉시 알람과 Google Calendar 일정 자동 저장까지 연결한다.
+>
+> **설계 근거:** [specs/info-alarm.md](info-alarm.md) 1~8절 전체.
+> **신규 디렉토리:** `info/` — 독립 실행 가능한 정보 수집·알람 서브시스템. `core/app.py`에 선택적(`enabled` 플래그)으로 통합.
+> **기존 재사용:** `core/notifier/TelegramNotifier` 주입·래핑. `core/config/settings.py` 확장. asyncio 기반 APScheduler.
+>
+> **단계 우선순위:** 즉시 가치(T057~~T062) → 환율 자동화(T063~~T064) → 캘린더 연동(T065~~T066) → 풀 통합(T067~~T068).
+
+- [ ] **T057** `info/` 스캐폴드 & 의존성 추가
+  - `pyproject.toml`에 추가: `feedparser`, `beautifulsoup4`, `OpenDartReader`, `yfinance`, `pandas`, `gcsa`, `google-auth-oauthlib`, `icalendar`, `apscheduler`
+  - `info/` 디렉토리 스캐폴드: `news/`, `fx/`, `calendar/`, `ai_filter/`, `telegram/` 서브패키지 생성 (`__init__.py` 포함)
+  - `quanteo.yaml.example`에 `info:` 섹션 추가 — `dart.api_key`, `finnhub.api_key`, `google_calendar.credentials_path`, `anthropic.api_key`, `telegram.chat_id`
+  - `core/config/settings.py`에 `InfoSettings(BaseModel)` 추가: 각 API 키·경로·알람 임계값(`fx_alert_threshold`) 로딩
+
+- [ ] **T058** AI 중요도 필터 (`info/ai_filter/claude_filter.py`)
+  - `CRITICAL_KEYWORDS` 사전 필터 상수 정의 (스펙 5절 기준) — Claude 호출 전 키워드 매칭으로 LOW 사전 제거, API 비용 절감
+  - `FilterResult` 데이터클래스: `score: Literal["HIGH", "MEDIUM", "LOW"]`, `reason: str`, `action: Literal["매수검토","매도검토","관망"]`
+  - `ClaudeFilter.classify(title: str, body: str) -> FilterResult`: Claude Haiku(`claude-haiku-4-5-20251001`) 호출, 시스템 프롬프트는 스펙 5절 그대로 사용
+  - API 호출 실패 시 키워드 매칭 수 기반 폴백 (CRITICAL_KEYWORDS 2개↑ → MEDIUM, 미만 → LOW)
+  - `tests/info/test_claude_filter.py`: 키워드 사전 필터 경계 케이스 + Haiku JSON 응답 파싱 검증 (httpx mock)
+
+- [ ] **T059** 국내 뉴스 RSS 수집기 (`info/news/rss_collector.py`)
+  - `NewsItem` 데이터클래스: `title`, `url`, `source`, `published_kst: datetime`, `raw_body: str`
+  - `RssCollector.fetch() -> list[NewsItem]`: 한국경제·매일경제·이데일리 RSS `feedparser` 비동기 병렬 수집 (`asyncio.gather`)
+  - UTC→KST 변환 (`pytz.timezone("Asia/Seoul")`)
+  - 중복 제거: URL 기반 `seen_urls: set` 인메모리 캐시, TTL 24시간 (재시작 시 초기화)
+  - 수집 후 `ClaudeFilter.classify()` 호출 → HIGH만 `InfoNotifier.send_news_alert()` 발송
+  - `tests/info/test_rss_collector.py`: feedparser mock으로 중복 제거·KST 변환·HIGH 필터 연동 검증
+
+- [ ] **T060** DART 공시 수집기 (`info/news/dart_collector.py`)
+  - `DartCollector.fetch(corp_code: str = "00164779") -> list[NewsItem]`: `OpenDartReader` 기반 SK하이닉스 최신 공시 조회
+  - 필터 대상: 유상증자·전환사채·주요사항보고서 (`report_tp` 코드 기반)
+  - 공시 수신 시 중요도 강제 HIGH → `InfoNotifier.send_news_alert()` 즉시 발송 (Claude 필터 생략)
+  - `tests/info/test_dart_collector.py`: OpenDartReader mock으로 공시 유형 필터링·HIGH 강제 로직 검증
+
+- [ ] **T061** 해외 뉴스 수집기 (`info/news/finnhub_collector.py`)
+  - `FinnhubCollector.fetch(symbols: list[str]) -> list[NewsItem]`: `GET https://finnhub.io/api/v1/company-news` — NVDA·MU·TSM·AMD·ASML 등 티커별 수집
+  - Rate limit 준수: 60 req/min — `asyncio.Semaphore` + 1초 인터벌
+  - `YahooRssCollector.fetch() -> list[NewsItem]`: Yahoo Finance RSS `feedparser` 수집 (무료, 글로벌 시황)
+  - 두 소스 모두 `ClaudeFilter.classify()` 통과 후 HIGH만 Telegram 발송
+  - `tests/info/test_finnhub_collector.py`: httpx mock으로 응답 파싱·Rate limit Semaphore 동작 검증
+
+- [ ] **T062** Telegram 알람 메시지 포맷 확장 (`info/telegram/info_notifier.py`)
+  - `InfoNotifier`: 기존 `core/notifier/TelegramNotifier`를 **생성자 주입**으로 받아 래핑 (중복 구현 금지)
+  - `send_news_alert(item: NewsItem, result: FilterResult)`: 스펙 4-1절 포맷 (`🚨 [HIGH]` 헤더, 분석·대응·타임스탬프)
+  - `send_earnings_alert(event: EarningsEvent)`: 스펙 4-2절 포맷 (1시간 전 사전 알람, 컨센서스 EPS·매출 포함)
+  - `send_fx_alert(snapshot: FxSnapshot)`: 스펙 4-3절 포맷 (`💱` 환율 급변, SK하이닉스 영향 한줄)
+  - `send_fx_daily_report(report: FxDailyReport)`: 스펙 4-4절 포맷 (USD·DXY·JPY·CNY 4종 종가 리포트)
+  - `send_morning_brief(events: list)`: 08:00 장전 당일 일정 브리핑
+  - `tests/info/test_info_notifier.py`: 각 포맷 함수 출력 문자열 스냅샷 검증 (MockTelegramNotifier)
+
+- [ ] **T063** 환율 수집 & 급변 감지 (`info/fx/rate_monitor.py`)
+  - `FxSnapshot` 데이터클래스: `usdkrw`, `dxy`, `jpykrw`, `cnykrw`, `eurusd` — 각 현재가·전일종가·일중변동률
+  - `FxRateMonitor.snapshot() -> FxSnapshot`: `yfinance` 티커 배치 조회 (`USDKRW=X`, `DX-Y.NYB`, `JPYKRW=X`, `CNYKRW=X`, `EURUSD=X`)
+  - 기준가 캐시: 09:00 KST 첫 스냅샷을 `base_snapshot`으로 저장 → 이후 변동률은 기준가 대비 계산
+  - 급변 감지 임계값 (스펙 2-5절): USD/KRW ±1%↑ → 🔴 즉시 / ±0.5~1% → 🟡 일반 / DXY ±0.5% / JPY/KRW ±1.5% / CNY/KRW ±1% / EUR/USD ±0.7%
+  - `tests/info/test_rate_monitor.py`: yfinance mock으로 임계값 경계 케이스(±0.999%, ±1.001%) 검증
+
+- [ ] **T064** 환율 일일 마감 리포트 (`info/fx/daily_report.py`)
+  - `FxDailyReport` 데이터클래스: 4종 환율 종가·일중변동률·종합 평가 텍스트
+  - `FxDailyReporter.generate() -> FxDailyReport`: 오후 4시 기준 yfinance 조회
+  - 원화 강세/약세 종합 평가 룰 (`rate_rule.py`): 스펙 2-5절 "환율-주가 상관 해석 룰" 테이블 구현 (상황·해석·대응 매핑)
+  - 생성 후 `InfoNotifier.send_fx_daily_report()` 호출
+  - `tests/info/test_daily_report.py`: 룰 매핑 경계 케이스 + 리포트 텍스트 생성 검증
+
+- [ ] **T065** Google Calendar API 연동 (`info/calendar/google_cal.py`)
+  - `CalEvent` 데이터클래스: `summary`, `start: datetime`, `end: datetime`, `importance: Literal["CRITICAL","HIGH","MEDIUM","FX","KR"]`, `description: str`
+  - `GoogleCalendarClient`: `gcsa` 라이브러리 OAuth2 인증 (`credentials.json` 경로는 `quanteo.yaml`)
+  - `add_event(event: CalEvent)`: 색상 코딩 자동 적용 — CRITICAL→11(Tomato), HIGH→6(Tangerine), MEDIUM→5(Banana), FX→7(Peacock), KR→2(Sage)
+  - 알람 설정 자동화: FOMC·NVDA·MU → 2중(120분+30분 전), CPI·NFP·TSM → 60분 전, 기타 → 30분 전
+  - 중복 방지: 동일 `summary`+`start` 이벤트 검색 후 존재 시 스킵
+  - `tests/info/test_google_cal.py`: gcsa mock으로 색상·알람·중복 방지 로직 검증
+
+- [ ] **T066** 실적발표 & 경제지표 캘린더 데이터 (`info/calendar/earnings_data.py`, `macro_events.py`)
+  - `EARNINGS_SCHEDULE: list[CalEvent]`: 스펙 2-4절 2026 하반기 실적 하드코딩 (ASML·TSM·AMD·NVDA·AVGO·MU + AMAT·LRCX·KLAC·MRVL·META·MSFT·GOOGL·AMZN)
+  - `MACRO_SCHEDULE`: 미국(FOMC·CPI·NFP·PCE·PPI·GDP·ISM)·한국(기준금리·수출입)·중국(PMI) 반복 스케줄 룰 정의
+  - `next_events(days: int = 7) -> list[CalEvent]`: 오늘 기준 N일 내 이벤트 필터링
+  - `GoogleCalendarClient.bulk_add(events)`: 매월 1일 00:00 다음 달 전체 일정 일괄 저장
+  - `tests/info/test_calendar_data.py`: 날짜 필터링·중요도 매핑·bulk_add 중복 방지 검증
+
+- [ ] **T067** APScheduler 스케줄러 통합 (`info/scheduler.py`, `info/main.py`)
+  - `InfoScheduler`: `AsyncIOScheduler` 기반 — 아래 크론 잡 전체 등록 (스펙 7절 기준):
+    - `cron(hour=8, minute=0)` KST — 장전 뉴스 수집 + 당일 일정 브리핑
+    - `interval(minutes=5)` 09:00~15:30 — 국내 RSS 폴링 + HIGH 알람
+    - `interval(minutes=30)` 09:00~15:30 — USD/KRW 환율 체크 + 급변 알람
+    - `cron(hour=15, minute=30)` — 미국 당일 장후 실적 예정 Telegram 안내
+    - `cron(hour=16, minute=0)` — 환율 일일 마감 리포트
+    - `interval(minutes=10)` 22:00~06:00 — 미국 뉴스 폴링 (Finnhub·Yahoo)
+    - `cron(day=1, hour=0, minute=0)` — 다음 달 캘린더 자동 저장
+  - `InfoSystem`: 모든 컴포넌트 wiring + `start()` / `stop()` 라이프사이클 (의존성 주입 패턴)
+  - `core/app.py` 통합: `info.enabled: true` 플래그 시 `InfoSystem.start()`를 `asyncio.gather`에 추가
+  - `tests/info/test_scheduler.py`: APScheduler mock으로 잡 등록 수·크론 표현식 검증
+
+- [ ] **T068** 통합 테스트 & 문서 갱신
+  - `tests/info/test_integration_news.py`: RSS 수집 → AI 필터 → Telegram 전송 엔드투엔드 (MockTelegramNotifier 사용)
+  - `tests/info/test_integration_fx.py`: FxRateMonitor 급변 감지 → Telegram 알람 라운드트립
+  - `tests/info/test_integration_calendar.py`: 실적발표 데이터 → Google Calendar 저장 → 중복 방지 라운드트립
+  - `specs/2026-06-18-quanteo-architecture.md` 갱신: Phase 10 정보 수집·알람 서브시스템 섹션 추가
+  - `quanteo.yaml.example` 최종 정비: `info:` 전체 섹션 완성
+  - `CLAUDE.md` 구현 상태표에 Phase 10 행 추가
+
+---
+
 ## 다음 단계
 
-구현을 시작하려면 "Phase 8 진행해줘" 또는 "T039까지 진행해줘"로 요청.
-Phase 9는 Phase 8 완료 후 "Phase 9 진행해줘" 또는 "T049까지 진행해줘"로 시작.
+구현을 시작하려면 "Phase 10 진행해줘" 또는 "T057까지 진행해줘"로 요청.
