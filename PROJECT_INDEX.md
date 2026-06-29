@@ -1,6 +1,6 @@
 # Project Index: quanteo
 
-Generated: 2026-06-29 (Phase 8 완료)
+Generated: 2026-06-29 (Phase 9 완료)
 
 ## 🔗 참고 저장소
 
@@ -15,7 +15,7 @@ Generated: 2026-06-29 (Phase 8 완료)
 
 ## 📋 Status
 
-**Phase 1~8 전체 완료** — T001~T048 모든 구현 Task 완료.
+**Phase 1~9 전체 완료** — T001~T056 모든 구현 Task 완료.
 
 | Phase    | Tasks     | 상태    | 내용                                                                            |
 | -------- | --------- | ------- | ------------------------------------------------------------------------------- |
@@ -28,8 +28,9 @@ Generated: 2026-06-29 (Phase 8 완료)
 | **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                       |
 | **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                              |
 | **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트 |
+| **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI    |
 
-**테스트:** 288+ passed (Python) · TypeScript tsc clean (2026-06-29 기준)
+**테스트:** 352+ passed (Python) · TypeScript tsc clean (2026-06-29 기준)
 
 ---
 
@@ -48,17 +49,20 @@ quanteo/
 │   │   │   └── tr_ids.py     # 환경(prod/vps)×시장(domestic/overseas) TR_ID 매핑
 │   │   └── toss/             # Toss증권 구현체 (REST only)
 │   │       ├── auth.py       # OAuth2 Client Credentials, 토큰 캐시, 401 재발급
-│   │       └── rest.py       # 현재가·잔고·주문 REST, Rate Limit 그룹 분리
+│   │       ├── models.py     # Phase 9 도메인 타입 (BuyingPowerInfo/TossOrder/Fill/PriceLimits/StockInfo/ExchangeRate/TossCandle 등)
+│   │       └── rest.py       # 20개 엔드포인트 전체: 시세·잔고·주문CRUD·체결·캘린더·종목정보·환율·캔들
 │   ├── api/                  # Control API (FastAPI)
 │   │   ├── app.py            # create_app() 팩토리
-│   │   ├── deps.py           # AppContainer 의존성 주입
-│   │   ├── models.py         # BotStatus/PositionList/OrderList/StreamMessage
+│   │   ├── deps.py           # AppContainer 의존성 주입 (broker: TossRestClient|None 포함)
+│   │   ├── models.py         # BotStatus/PositionList/OrderList/FillList/MarketStatus/RiskMetrics
 │   │   └── routes/
 │   │       ├── status.py     # GET /status
 │   │       ├── positions.py  # GET /positions
-│   │       ├── orders.py     # GET /orders
+│   │       ├── orders.py     # GET /orders, POST /orders/{id}/cancel, POST /orders/{id}/modify
 │   │       ├── control.py    # POST /control/pause|resume|kill
-│   │       └── stream.py     # WS /stream (Event Bus 브로드캐스트)
+│   │       ├── stream.py     # WS /stream (Event Bus 브로드캐스트)
+│   │       ├── market.py     # GET /market-status, GET /risk-metrics (Phase 9)
+│   │       └── trades.py     # GET /trades (체결 내역, Phase 9)
 │   ├── config/settings.py    # AppSettings (Pydantic), kis_devlp.yaml 로딩
 │   ├── events/
 │   │   ├── bus.py            # EventBus (asyncio.Queue pub/sub)
@@ -95,17 +99,19 @@ quanteo/
 │   │   │   ├── client.ts     # REST fetch 래퍼 + WebSocket 팩토리
 │   │   │   └── types.ts      # BotStatus/PositionItem/OrderItem/StreamMessage 타입
 │   │   ├── components/
-│   │   │   ├── StatusBar.tsx     # 봇 상태 상단바 (halt_level·env·uptime)
+│   │   │   ├── StatusBar.tsx      # 봇 상태 상단바 (halt_level·env·uptime)
 │   │   │   ├── PositionsTable.tsx # 포지션 테이블
-│   │   │   ├── OrdersTable.tsx    # 주문내역 테이블
+│   │   │   ├── OrdersTable.tsx    # 주문내역 테이블 + 취소 버튼 (Phase 9)
+│   │   │   ├── FillsTable.tsx     # 체결 내역 테이블 (Phase 9)
 │   │   │   ├── StreamLog.tsx      # 실시간 이벤트 로그 뷰
 │   │   │   └── ControlPanel.tsx   # 일시정지/재개/킬스위치 UI
 │   │   ├── hooks/
-│   │   │   ├── useStatus.ts   # 3초 폴링
+│   │   │   ├── useStatus.ts    # 3초 폴링
 │   │   │   ├── usePositions.ts # 5초 폴링
-│   │   │   ├── useOrders.ts   # 5초 폴링
-│   │   │   └── useStream.ts   # WebSocket + 3초 재연결
-│   │   ├── App.tsx           # 레이아웃 조립 (2/3 데이터 + 1/3 제어)
+│   │   │   ├── useOrders.ts    # 5초 폴링
+│   │   │   ├── useFills.ts     # 10초 폴링 (Phase 9)
+│   │   │   └── useStream.ts    # WebSocket + 3초 재연결
+│   │   ├── App.tsx           # 3탭 레이아웃: 포지션·주문·체결 (Phase 9)
 │   │   └── main.tsx          # React 18 진입점
 │   ├── vite.config.ts        # /api → localhost:8000 proxy
 │   ├── tailwind.config.js    # 다크 트레이딩 테마
@@ -113,10 +119,10 @@ quanteo/
 ├── Dockerfile                # 멀티스테이지 빌드 (builder/runtime, 비루트 유저, T032)
 ├── .dockerignore             # 자격증명·테스트·대시보드 제외
 ├── docker-compose.yml        # vps 기본 실행, KIS 볼륨 마운트, healthcheck
-├── tests/                    # pytest (288+ cases)
+├── tests/                    # pytest (352+ cases)
 │   ├── adapters/kis/         # auth·rest·tr_ids·ws·throttler 단위 테스트
-│   ├── adapters/toss/        # TossAuth (8) + TossRestClient (9) 단위 테스트
-│   ├── api/                  # Control API 엔드포인트 테스트
+│   ├── adapters/toss/        # TossAuth (8) + TossRestClient (9) + Phase9 (24) 단위 테스트
+│   ├── api/                  # Control API 엔드포인트 테스트 (market-status·trades 포함)
 │   ├── config/, events/, execution/, marketdata/
 │   ├── marketdata/test_feed_polling.py  # REST 폴링 MarketDataFeed 테스트 (5)
 │   ├── notifier/             # Telegram·Mock·template·wiring 테스트
@@ -172,15 +178,20 @@ npm run build  # 프로덕션 빌드 (~154KB gzipped 49KB)
 
 ## 🔌 Control API 엔드포인트
 
-| Method | Path              | 설명                            |
-| ------ | ----------------- | ------------------------------- |
-| GET    | `/status`         | 봇 상태 (halt_level·env·uptime) |
-| GET    | `/positions`      | 보유 포지션 목록                |
-| GET    | `/orders`         | 주문 내역                       |
-| POST   | `/control/pause`  | 일시정지                        |
-| POST   | `/control/resume` | 재개                            |
-| POST   | `/control/kill`   | 킬스위치 활성화                 |
-| WS     | `/stream`         | Event Bus 실시간 브로드캐스트   |
+| Method | Path                  | 설명                                      |
+| ------ | --------------------- | ----------------------------------------- |
+| GET    | `/status`             | 봇 상태 (halt_level·env·uptime)           |
+| GET    | `/positions`          | 보유 포지션 목록                          |
+| GET    | `/orders`             | 주문 내역                                 |
+| POST   | `/orders/{id}/cancel` | 주문 취소 (Phase 9)                       |
+| POST   | `/orders/{id}/modify` | 주문 정정 (Phase 9)                       |
+| GET    | `/trades`             | 체결 내역 조회 (Phase 9)                  |
+| GET    | `/market-status`      | 국내·해외 개장 여부 + 캘린더 (Phase 9)    |
+| GET    | `/risk-metrics`       | 리스크 지표 (halt_level·buying_power, P9) |
+| POST   | `/control/pause`      | 일시정지                                  |
+| POST   | `/control/resume`     | 재개                                      |
+| POST   | `/control/kill`       | 킬스위치 활성화                           |
+| WS     | `/stream`             | Event Bus 실시간 브로드캐스트             |
 
 ---
 
