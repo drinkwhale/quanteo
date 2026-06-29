@@ -117,7 +117,7 @@
   - `clientOrderId` 네이티브 지원 → 멱등성 Toss 서버 보장 (`409 request-in-progress` 처리)
   - `1억원 이상 주문 확인` 에러(`confirm-high-value-required`) → Risk Manager 한도에서 사전 차단
 
-- [ ] **T044** `core/marketdata/feed.py` — WebSocket → REST 폴링 전환
+- [x] **T044** `core/marketdata/feed.py` — WebSocket → REST 폴링 전환
   - `MarketDataFeed.__init__` 인자: `KisWsClient` 제거 → `rest_client: BrokerAdapter`, `poll_interval: float = 2.0`
   - 폴링 루프: `asyncio.sleep(poll_interval)` → `GET /api/v1/prices?symbols=A,B,C` 배치 조회 → 종목별 `Tick` 생성 → 핸들러 호출
   - `subscribe(symbol)` / `start()` / `stop()` 인터페이스 유지 (Strategy Engine 무수정)

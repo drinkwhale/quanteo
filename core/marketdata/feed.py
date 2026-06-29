@@ -1,103 +1,121 @@
 """
-MarketDataFeed — 시세 데이터 공급 컨테이너.
+MarketDataFeed — 브로커 어댑터 기반 시세 데이터 공급 컨테이너.
 
-WebSocket 수신 메시지를 정규화해서 구독자에게 전달하는 중간 계층.
+브로커에 따라 두 가지 동작 모드를 지원한다:
+  - KIS: KisWsClientFeed (feed_kis.py) — WebSocket 실시간 수신
+  - Toss: PollingFeed (이 파일) — REST 폴링 방식 (WebSocket 미지원)
+
+StrategyEngine은 subscribe() / start() / stop() 인터페이스만 바라보므로
+브로커 교체 시 Strategy Engine 코드를 수정할 필요가 없다.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
 
-from core.adapters.kis.tr_ids import get_tr_ids
-from core.adapters.kis.ws import KisWsClient, WsMessage
-from core.config.settings import Env, Market
-from core.marketdata.models import Quote, Tick
-from core.marketdata.normalizer import (
-    normalize_domestic_quote,
-    normalize_domestic_tick,
-    normalize_overseas_tick,
-)
+from core.marketdata.models import Tick
 
 logger = logging.getLogger(__name__)
 
 TickHandler = Callable[[Tick], None]
-QuoteHandler = Callable[[Quote], None]
+
+
+# ---------------------------------------------------------------------------
+# REST 폴링 기반 피드 (Toss 어댑터용)
+# ---------------------------------------------------------------------------
 
 
 class MarketDataFeed:
-    """시세 데이터 공급자.
+    """REST 폴링 방식 시세 피드.
 
-    KisWsClient 위에서 동작하며, 수신 메시지를 Tick/Quote로 정규화해
-    등록된 핸들러에 전달한다.
+    BrokerAdapter의 get_price()를 주기적으로 호출해 Tick을 생성한다.
+    Toss API는 WebSocket을 미지원하므로 이 방식을 사용한다.
 
     Args:
-        ws_client: KisWsClient 인스턴스.
-        env: 투자 환경.
-        market: 대상 시장.
+        rest_client: BrokerAdapter Protocol을 만족하는 REST 클라이언트.
+        poll_interval: 폴링 주기 (초). 기본값 2.0.
     """
 
     def __init__(
         self,
-        ws_client: KisWsClient,
-        env: Env = Env.VPS,
-        market: Market = Market.DOMESTIC,
+        rest_client: object,  # BrokerAdapter Protocol — 런타임 임포트 순환 방지용
+        poll_interval: float = 2.0,
     ) -> None:
-        self._ws = ws_client
-        self._env = env
-        self._market = market
-        self._tr_ids = get_tr_ids(env, market)
-
+        self._rest = rest_client
+        self._poll_interval = poll_interval
+        self._symbols: set[str] = set()
         self._tick_handlers: list[TickHandler] = []
-        self._quote_handlers: list[QuoteHandler] = []
-        self._symbol_map: dict[str, str] = {}  # tr_key → symbol
+        self._running = False
+        self._stop_event = asyncio.Event()
 
-        # on_message 콜백 연결
-        self._ws.on_message = self._on_ws_message
+    def subscribe(self, symbol: str) -> None:
+        """종목을 구독 등록한다.
 
-    def subscribe(self, symbol: str, price: bool = True, quote: bool = False) -> None:
-        """종목을 구독 등록한다."""
-        if price:
-            self._ws.subscribe_price(symbol)
-            self._symbol_map[symbol] = symbol
-        if quote and self._market == Market.DOMESTIC:
-            self._ws.subscribe_quote(symbol)
+        폴링 루프가 실행 중일 때 호출해도 다음 폴링 주기부터 반영된다.
+        """
+        self._symbols.add(symbol)
+        logger.debug("Toss 폴링 구독 추가: %s (총 %d종목)", symbol, len(self._symbols))
 
     def on_tick(self, handler: TickHandler) -> None:
         """Tick 수신 핸들러를 등록한다."""
         self._tick_handlers.append(handler)
 
-    def on_quote(self, handler: QuoteHandler) -> None:
-        """Quote 수신 핸들러를 등록한다."""
-        self._quote_handlers.append(handler)
+    async def start(self) -> None:
+        """폴링 루프를 시작한다 (MarketPoller Protocol)."""
+        await self.run()
 
     async def run(self) -> None:
-        """WebSocket 수신 루프를 시작한다."""
-        await self._ws.run()
+        """폴링 루프 실행 — stop()이 호출될 때까지 지속."""
+        self._running = True
+        self._stop_event.clear()
+        logger.info(
+            "Toss REST 폴링 시작 (interval=%.1fs)", self._poll_interval
+        )
+
+        while not self._stop_event.is_set():
+            if self._symbols:
+                await self._poll_once()
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(self._stop_event.wait()),
+                    timeout=self._poll_interval,
+                )
+                break  # stop_event 수신 시 종료
+            except asyncio.TimeoutError:
+                pass  # 정상 폴링 주기 완료, 계속 진행
+
+        self._running = False
+        logger.info("Toss REST 폴링 종료")
 
     async def stop(self) -> None:
-        """수신 루프를 종료한다."""
-        await self._ws.stop()
+        """폴링 루프를 종료한다."""
+        self._stop_event.set()
 
-    def _on_ws_message(self, msg: WsMessage) -> None:
-        """WebSocket 메시지를 받아 정규화 후 핸들러로 전달한다."""
-        tr_id = msg.tr_id
-        symbol = self._symbol_map.get(msg.tr_key)
-        if symbol is None:
-            logger.debug("미구독 tr_key 수신, 무시: %s", msg.tr_key)
-            return
+    # ------------------------------------------------------------------
+    # 폴링 실행
+    # ------------------------------------------------------------------
 
-        if tr_id == self._tr_ids.ws_price:
-            if self._market == Market.DOMESTIC:
-                tick = normalize_domestic_tick(symbol, msg.data_body)
-            else:
-                tick = normalize_overseas_tick(symbol, msg.data_body)
-            if tick:
-                for h in self._tick_handlers:
-                    h(tick)
+    async def _poll_once(self) -> None:
+        """등록된 모든 종목에 대해 현재가를 조회하고 Tick을 생성한다.
 
-        elif tr_id == self._tr_ids.ws_quote:
-            quote = normalize_domestic_quote(symbol, msg.data_body)
-            if quote:
-                for h in self._quote_handlers:
-                    h(quote)
+        Toss API는 콤마 구분으로 배치 조회를 지원하지만,
+        get_price() 인터페이스가 단일 종목이므로 종목별로 호출한다.
+        배치 최적화는 T042 확장 시 고려한다.
+        """
+        for symbol in list(self._symbols):
+            try:
+                price_info = await self._rest.get_price(symbol)  # type: ignore[attr-defined]
+                tick = Tick(
+                    symbol=symbol,
+                    price=price_info.current_price,
+                    volume=price_info.volume,
+                    timestamp=datetime.now(UTC),
+                    market="domestic" if price_info.market.value == "domestic" else "overseas",
+                )
+                for handler in self._tick_handlers:
+                    handler(tick)
+            except Exception as exc:
+                logger.warning("Toss 폴링 오류 (%s): %s", symbol, exc)
