@@ -225,7 +225,7 @@
 >
 > **단계 우선순위:** 즉시 가치(T057~~T062) → 환율 자동화(T063~~T064) → 캘린더 연동(T065~~T066) → 풀 통합(T067~~T068).
 
-- [ ] **T057** `info/` 스캐폴드 & 의존성 추가
+- [x] **T057** `info/` 스캐폴드 & 의존성 추가
   - `pyproject.toml`에 추가: `feedparser`, `beautifulsoup4`, `OpenDartReader`, `yfinance`, `pandas`, `gcsa`, `google-auth-oauthlib`, `icalendar`, `apscheduler` (**`schedule` 라이브러리는 추가하지 않는다** — apscheduler 단독 사용, cron 표현식 지원 필요)
   - `info/` 디렉토리 스캐폴드: `news/`, `fx/`, `calendar/`, `ai_filter/`, `telegram/` 서브패키지 생성 (`__init__.py` 포함)
   - `quanteo.yaml.example`에 `info:` 섹션 추가 — `dart.api_key`, `finnhub.api_key`, `google_calendar.credentials_path`, `anthropic.api_key`, `telegram.chat_id`
