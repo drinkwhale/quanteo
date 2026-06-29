@@ -89,7 +89,7 @@
   - `KisRestClient`와 `TossRestClient` 모두 이 Protocol을 만족하도록 타입 어노테이션 추가
   - `OrderAck.kis_order_id` → `broker_order_id` 필드명 변경 (하위 호환 property alias 유지)
 
-- [ ] **T040** `TossCredentials` 설정 + `core/config/settings.py` 업데이트
+- [x] **T040** `TossCredentials` 설정 + `core/config/settings.py` 업데이트
   - `TossCredentials(BaseModel)`: `client_id: str`, `client_secret: SecretStr`
   - `AppSettings`에 `broker: Literal["kis", "toss"] = "kis"` 필드 추가
   - `kis_devlp.yaml.example`에 `toss:` 섹션 예시 추가 (`client_id`, `client_secret`)
