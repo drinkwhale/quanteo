@@ -83,7 +83,7 @@
 > **인증:** OAuth2 Client Credentials (`application/x-www-form-urlencoded`), `client_id` + `client_secret`.
 > **계좌:** 앱 시작 시 `GET /api/v1/accounts` 호출 → `accountSeq` 획득 → 이후 `X-Tossinvest-Account` 헤더에 사용.
 
-- [ ] **T039** `BrokerAdapter` Protocol 도입 — `core/adapters/base.py`에 브로커 교체 가능 추상화 레이어 정의
+- [x] **T039** `BrokerAdapter` Protocol 도입 — `core/adapters/base.py`에 브로커 교체 가능 추상화 레이어 정의
   - `BrokerAdapter(Protocol)`: `get_price()`, `get_balance()`, `place_order()` 3개 메서드 선언 (Phase 9 T050에서 `cancel_order()` / `modify_order()` / `list_orders()` 추가 예정 — Protocol 확장 vs. TossRestClient 단독 구현 여부는 T050 시작 시 결정)
   - `MarketPoller(Protocol)`: `start()`, `stop()`, `subscribe(symbol)` — 폴링/WS 피드 추상화
   - `KisRestClient`와 `TossRestClient` 모두 이 Protocol을 만족하도록 타입 어노테이션 추가
@@ -155,7 +155,7 @@
 >
 > **커버리지 기준:** Phase 8은 인증·현재가·잔고·주문생성 5개 엔드포인트만 다룬다. Phase 9는 주문관리(취소·정정·조회), 매수가능금액, 판매가능수량, 상하한가, 캘린더, 체결내역, 종목정보, 환율, 과거 캔들 등 나머지 15개를 채운다.
 >
-> **우선순위:** `prod` 전환 전 필수(T049~T053) → 선택 기능(T054~T056).
+> **우선순위:** `prod` 전환 전 필수(T049~~T053) → 선택 기능(T054~~T056).
 
 - [ ] **T049** `TossRestClient` 확장 — 매수가능금액·판매가능수량·수수료 조회
   - `get_buying_power(currency: str = "KRW") -> BuyingPowerInfo`: `GET /api/v1/buying-power?currency={currency}` → `cashBuyingPower` 필드
