@@ -34,7 +34,7 @@ class BotStatus(BaseModel):
 
     running: bool
     halt_level: str  # "none" | "reduce" | "pause" | "kill"
-    env: str         # "vps" | "prod"
+    env: str         # "prod" (Toss는 항상 실전, 모의투자 환경 없음)
     market: str      # "domestic" | "overseas"
     uptime_seconds: float
     started_at: datetime | None = None

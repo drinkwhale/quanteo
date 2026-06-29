@@ -21,9 +21,6 @@ class ThrottlerConfig:
     """스로틀러 파라미터."""
 
     calls_per_second: float = 15.0
-    max_retries: int = 5
-    base_backoff_seconds: float = 1.0
-    max_backoff_seconds: float = 60.0
 
 
 class RateLimitExceeded(Exception):

@@ -10,6 +10,7 @@ Order Executor — 주문 전송, 멱등성 보장, 체결 추적.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -35,36 +36,23 @@ class _RestClient(Protocol):
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
 class OrderAck:
     """브로커 주문 응답.
 
     Args:
         client_order_id: 클라이언트 주문 ID (멱등키).
-        broker_order_id: 브로커가 발급한 주문 번호 (KIS: ODNO, Toss: orderId).
+        broker_order_id: 브로커가 발급한 주문 번호 (예: orderId).
         symbol: 종목 코드.
         status: 주문 상태 ('submitted' | 'rejected').
         raw: 브로커 API 원시 응답.
     """
 
-    def __init__(
-        self,
-        client_order_id: str,
-        broker_order_id: str,
-        symbol: str,
-        status: str,
-        raw: dict[str, Any],
-    ) -> None:
-        self.client_order_id = client_order_id
-        self.broker_order_id = broker_order_id
-        self.symbol = symbol
-        self.status = status
-        self.raw = raw
-
-    def __repr__(self) -> str:
-        return (
-            f"OrderAck(client_order_id={self.client_order_id!r}, "
-            f"broker_order_id={self.broker_order_id!r}, status={self.status!r})"
-        )
+    client_order_id: str
+    broker_order_id: str
+    symbol: str
+    status: str
+    raw: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +133,7 @@ class OrderExecutor:
         )
         await self._store.conn.commit()
 
-        # KIS API 호출
+        # Broker API 호출
         try:
             ack = await self._rest.place_order(order)
         except Exception as exc:

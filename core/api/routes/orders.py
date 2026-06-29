@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -33,7 +34,6 @@ async def get_orders(
     status 파라미터로 특정 상태만 필터링할 수 있다.
     """
     if status and status not in _VALID_STATUSES:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"유효하지 않은 상태: {status!r}")
 
     if status:
@@ -94,7 +94,6 @@ async def cancel_order(order_id: str, container: ContainerDep) -> OrderCancelRes
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # StateStore 상태 갱신 — 브로커 취소 성공 후 DB 불일치 방지
-    from datetime import UTC, datetime
     now = datetime.now(UTC).isoformat()
     try:
         await container.store.conn.execute(
@@ -102,11 +101,15 @@ async def cancel_order(order_id: str, container: ContainerDep) -> OrderCancelRes
             (now, order_id),
         )
         await container.store.conn.commit()
-    except Exception:
+    except Exception as db_exc:
         logger.exception(
             "cancel_order DB 갱신 실패 (order_id=%s) — 브로커 취소 성공, 로컬 상태 불일치 주의",
             order_id,
         )
+        raise HTTPException(
+            status_code=500,
+            detail=f"브로커 취소는 성공했지만 DB 갱신 실패 — 수동 확인 필요 (order_id={order_id})",
+        ) from db_exc
 
     return OrderCancelResponse(success=True, order_id=result.order_id, message="주문 취소 완료")
 
@@ -142,7 +145,6 @@ async def modify_order(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    from datetime import UTC, datetime
     now = datetime.now(UTC).isoformat()
     try:
         if body.quantity is not None:
@@ -156,10 +158,14 @@ async def modify_order(
                 (str(body.price), now, order_id),
             )
         await container.store.conn.commit()
-    except Exception:
+    except Exception as db_exc:
         logger.exception(
             "modify_order DB 갱신 실패 (order_id=%s) — 브로커 정정 성공, 로컬 상태 불일치 주의",
             order_id,
         )
+        raise HTTPException(
+            status_code=500,
+            detail=f"브로커 정정은 성공했지만 DB 갱신 실패 — 수동 확인 필요 (order_id={order_id})",
+        ) from db_exc
 
     return OrderModifyResponse(success=True, order_id=result.order_id, message="주문 정정 완료")

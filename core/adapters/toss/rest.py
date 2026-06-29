@@ -233,7 +233,7 @@ class TossRestClient:
         GET /api/v1/prices?symbols={symbol}
 
         Returns:
-            PriceInfo — KIS 어댑터와 동일한 타입을 반환해 상위 레이어 무수정.
+            PriceInfo를 반환해 상위 레이어 변경 없이 호환된다.
         """
         data = await self._request_market("GET", "/api/v1/prices", params={"symbols": symbol})
         results = data.get("result", [])
@@ -850,8 +850,10 @@ class TossRestClient:
             logger.warning("get_candles: 예상치 못한 응답 구조 (candles 키 없음): keys=%s", list(result.keys()))
         items = result.get("candles", result) if isinstance(result, dict) else result
         if not isinstance(items, list):
-            logger.error("get_candles: items가 list가 아닙니다 (type=%s) — 빈 리스트 반환", type(items).__name__)
-            return []
+            raise RuntimeError(
+                f"get_candles: Toss API 응답 구조 오류 — items가 list가 아닙니다 "
+                f"(type={type(items).__name__}, symbol={symbol}). 응답 구조를 확인하세요."
+            )
 
         candles = []
         for item in items:
@@ -859,6 +861,7 @@ class TossRestClient:
             try:
                 ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
             except Exception:
+                logger.warning("get_candles: 타임스탬프 파싱 실패 (raw=%r, symbol=%s) — 현재 시각으로 대체", raw_ts, symbol)
                 ts = datetime.now(UTC)
             candles.append(
                 TossCandle(

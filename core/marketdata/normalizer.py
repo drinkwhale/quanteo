@@ -36,6 +36,7 @@ def normalize_toss_price(symbol: str, result: dict) -> Tick:
             else:
                 timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
         except Exception:
+            logger.warning("normalize_toss_price: 타임스탬프 파싱 실패 (symbol=%s, raw=%r) — 현재 시각으로 대체", symbol, raw_ts)
             timestamp = datetime.now(UTC)
     else:
         timestamp = datetime.now(UTC)
@@ -59,6 +60,7 @@ def normalize_toss_trade(symbol: str, result: dict) -> Fill:
             else:
                 timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
         except Exception:
+            logger.warning("normalize_toss_trade: 타임스탬프 파싱 실패 (symbol=%s, raw=%r) — 현재 시각으로 대체", symbol, raw_ts)
             timestamp = datetime.now(UTC)
     else:
         timestamp = datetime.now(UTC)
@@ -83,6 +85,7 @@ def normalize_toss_candle(symbol: str, result: dict, interval: str = "1d") -> Ca
             else:
                 timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
         except Exception:
+            logger.warning("normalize_toss_candle: 타임스탬프 파싱 실패 (symbol=%s, raw=%r) — 현재 시각으로 대체", symbol, raw_ts)
             timestamp = datetime.now(UTC)
     else:
         timestamp = datetime.now(UTC)

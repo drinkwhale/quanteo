@@ -261,7 +261,8 @@ def _start_trading_tasks(
         tg.create_task(_init_and_run(), name="toss-trading")
 
     except Exception as exc:
-        logger.warning("Toss 트레이딩 모듈 시작 실패: %s", exc)
+        logger.error("Toss 트레이딩 모듈 시작 실패: %s", exc, exc_info=True)
+        raise RuntimeError(f"트레이딩 모듈 초기화 실패 — 실전 주문 불가: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------

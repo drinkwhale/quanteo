@@ -1,5 +1,6 @@
 """Settings 모듈 단위 테스트."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,26 @@ class TestLoadSettings:
 
         assert isinstance(settings, Settings)
         assert isinstance(settings.credentials, TossCredentials)
+
+    def test_missing_client_secret_raises(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(config_path, {"toss": {"client_id": "only-id"}})
+
+        with pytest.raises((KeyError, ValueError)):
+            load_settings(config_path=config_path)
+
+    def test_malformed_yaml_raises(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        config_path.write_text("toss:\n  client_id: [\ninvalid yaml", encoding="utf-8")
+
+        with pytest.raises(Exception):
+            load_settings(config_path=config_path)
+
+    def test_env_var_config_path(self, tmp_path: Path, monkeypatch) -> None:
+        config_path = tmp_path / "custom.yaml"
+        _write_yaml(config_path, TOSS_CONFIG)
+        monkeypatch.setenv("QUANTEO_CONFIG_PATH", str(config_path))
+
+        settings = load_settings()
+
+        assert settings.credentials.client_id == "test-client-id"
