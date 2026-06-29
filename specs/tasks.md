@@ -250,7 +250,7 @@
     - **추가:** Haiku 응답 JSON 누락 필드(`score` 없음, 빈 문자열) 시 예외 처리 검증
     - **추가:** CRITICAL_KEYWORDS 빈 리스트일 때 2단 폴백 → 운영자 알람 발송 검증
 
-- [ ] **T059** 국내 뉴스 RSS 수집기 (`info/news/rss_collector.py`)
+- [x] **T059** 국내 뉴스 RSS 수집기 (`info/news/rss_collector.py`)
   - `NewsItem` 데이터클래스: `title`, `url`, `source`, `published_kst: datetime`, `raw_body: str`
   - `RssCollector.fetch() -> list[NewsItem]`: 한국경제·매일경제·이데일리 RSS `feedparser` 비동기 병렬 수집 (`asyncio.gather`)
   - UTC→KST 변환 (`pytz.timezone("Asia/Seoul")`)
