@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.config.settings import Env, Market
+from core.config.settings import Market
 from core.events.bus import EventBus
 from core.events.types import EventType
 from core.execution.executor import OrderAck, OrderExecutor
@@ -28,7 +28,6 @@ def _order(symbol: str = "005930", qty: int = 5) -> Order:
     return Order(
         symbol=symbol,
         market=Market.DOMESTIC,
-        env=Env.VPS,
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
         qty=qty,
@@ -70,11 +69,11 @@ class TestOrderExecutorSubmit:
             ack = await executor.submit(order)
 
             assert ack.status == "submitted"
-            assert ack.kis_order_id == "KIS-0001"
+            assert ack.broker_order_id == "KIS-0001"
 
             row = await executor._fetch_existing(order.client_order_id)
             assert row["status"] == "submitted"
-            assert row["kis_order_id"] == "KIS-0001"
+            assert row["broker_order_id"] == "KIS-0001"
 
     async def test_submit_publishes_order_submitted_event(self):
         async with StateStore(":memory:") as store:

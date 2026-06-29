@@ -22,8 +22,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
-from core.adapters.kis.rest import BalanceInfo, BalanceItem, PriceInfo
-from core.adapters.kis.throttler import FixedIntervalThrottler, ThrottlerConfig
+from core.adapters.models import BalanceInfo, BalanceItem, PriceInfo
+from core.adapters.throttler import FixedIntervalThrottler, ThrottlerConfig
 from core.adapters.toss.auth import TossAuth
 from core.adapters.toss.models import (
     BuyingPowerInfo,

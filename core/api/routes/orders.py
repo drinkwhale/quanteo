@@ -38,14 +38,14 @@ async def get_orders(
 
     if status:
         sql = (
-            "SELECT client_order_id, kis_order_id, symbol, market, env, side, "
+            "SELECT client_order_id, broker_order_id, symbol, market, env, side, "
             "order_type, qty, price, status, created_at, updated_at "
             "FROM orders WHERE status = ? ORDER BY created_at DESC LIMIT ?"
         )
         params: tuple = (status, limit)
     else:
         sql = (
-            "SELECT client_order_id, kis_order_id, symbol, market, env, side, "
+            "SELECT client_order_id, broker_order_id, symbol, market, env, side, "
             "order_type, qty, price, status, created_at, updated_at "
             "FROM orders ORDER BY created_at DESC LIMIT ?"
         )
@@ -57,7 +57,7 @@ async def get_orders(
     items = [
         OrderItem(
             client_order_id=row["client_order_id"],
-            kis_order_id=row["kis_order_id"],
+            broker_order_id=row["broker_order_id"],
             symbol=row["symbol"],
             market=row["market"],
             env=row["env"],
@@ -98,7 +98,7 @@ async def cancel_order(order_id: str, container: ContainerDep) -> OrderCancelRes
     now = datetime.now(UTC).isoformat()
     try:
         await container.store.conn.execute(
-            "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE kis_order_id = ?",
+            "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE broker_order_id = ?",
             (now, order_id),
         )
         await container.store.conn.commit()
@@ -147,12 +147,12 @@ async def modify_order(
     try:
         if body.quantity is not None:
             await container.store.conn.execute(
-                "UPDATE orders SET qty = ?, updated_at = ? WHERE kis_order_id = ?",
+                "UPDATE orders SET qty = ?, updated_at = ? WHERE broker_order_id = ?",
                 (body.quantity, now, order_id),
             )
         if body.price is not None:
             await container.store.conn.execute(
-                "UPDATE orders SET price = ?, updated_at = ? WHERE kis_order_id = ?",
+                "UPDATE orders SET price = ?, updated_at = ? WHERE broker_order_id = ?",
                 (str(body.price), now, order_id),
             )
         await container.store.conn.commit()

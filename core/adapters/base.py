@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from core.adapters.kis.rest import BalanceInfo, PriceInfo
+    from core.adapters.models import BalanceInfo, PriceInfo
     from core.execution.executor import OrderAck
     from core.risk.models import Order
 

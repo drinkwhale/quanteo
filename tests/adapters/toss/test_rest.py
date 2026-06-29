@@ -10,9 +10,9 @@ import pytest
 
 from core.adapters.toss.auth import OAuth2Token, TossAuth
 from core.adapters.toss.rest import TossRestClient
-from core.adapters.kis.throttler import FixedIntervalThrottler, ThrottlerConfig
+from core.adapters.throttler import FixedIntervalThrottler, ThrottlerConfig
 from core.config.settings import TossCredentials
-from core.config.settings import Env, Market
+from core.config.settings import Market
 from core.risk.models import Order, OrderSide, OrderType
 from core.strategy.base import Signal, SignalSide
 
@@ -209,7 +209,6 @@ def _make_order(side: OrderSide = OrderSide.BUY) -> Order:
     return Order(
         symbol="005930",
         market=Market.DOMESTIC,
-        env=Env.VPS,
         side=side,
         order_type=OrderType.LIMIT,
         qty=10,

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from core.config.settings import Env, Market
+from core.config.settings import Market
 from core.strategy.base import Signal
 
 if TYPE_CHECKING:
@@ -56,14 +56,12 @@ class Position:
     Args:
         symbol: 종목 코드.
         market: 시장 구분.
-        env: 투자 환경.
         qty: 보유 수량.
         avg_price: 평균 매입 단가.
     """
 
     symbol: str
     market: Market
-    env: Env
     qty: int
     avg_price: float
 
@@ -115,7 +113,6 @@ class Order:
         client_order_id: 클라이언트 측 주문 ID (UUID4, 멱등성 보장).
         symbol: 종목 코드.
         market: 시장 구분.
-        env: 투자 환경.
         side: 매수/매도.
         order_type: 시장가/지정가.
         qty: 주문 수량.
@@ -126,7 +123,6 @@ class Order:
 
     symbol: str
     market: Market
-    env: Env
     side: OrderSide
     order_type: OrderType
     qty: int

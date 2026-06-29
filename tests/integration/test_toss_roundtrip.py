@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.adapters.kis.rest import BalanceInfo, BalanceItem, PriceInfo
-from core.config.settings import Env, Market
+from core.adapters.models import BalanceInfo, BalanceItem, PriceInfo
+from core.config.settings import Market
 from core.events.bus import EventBus
 from core.events.types import EventType
 from core.execution.executor import OrderAck, OrderExecutor
@@ -119,7 +119,6 @@ async def test_idempotency_prevents_duplicate_toss_order():
     order = Order(
         symbol="005930",
         market=Market.DOMESTIC,
-        env=Env.VPS,
         side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
         qty=5,

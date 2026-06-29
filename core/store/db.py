@@ -19,7 +19,7 @@ from core.store.schema import ALL_TABLES, CREATE_INDEXES
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB_PATH = Path.home() / "KIS" / "data" / "quanteo.db"
+_DEFAULT_DB_PATH = Path.home() / "quanteo" / "data" / "quanteo.db"
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ class StateStore:
         """수량이 남아 있는 포지션을 반환한다.
 
         Args:
-            env: 특정 환경('prod' | 'vps')만 필터. None이면 전체.
+            env: 특정 환경만 필터. None이면 전체.
 
         Returns:
             PositionSnapshot 리스트.

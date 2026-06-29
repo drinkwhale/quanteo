@@ -74,7 +74,7 @@ class OrderItem(BaseModel):
     """주문 1건."""
 
     client_order_id: str
-    kis_order_id: str | None
+    broker_order_id: str | None
     symbol: str
     market: str
     env: str

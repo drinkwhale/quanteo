@@ -33,7 +33,7 @@ class AppContainer:
     store: StateStore
     risk: RiskManager
     bus: EventBus
-    env: str = "vps"
+    env: str = "prod"
     market: str = "domestic"
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     # Toss 브로커 어댑터 (선택: Toss 환경에서만 주입)

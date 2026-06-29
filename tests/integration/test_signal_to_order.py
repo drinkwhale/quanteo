@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.config.settings import Env, Market
+from core.config.settings import Market
 from core.events.bus import EventBus
 from core.events.types import EventType
 from core.execution.executor import OrderAck, OrderExecutor
@@ -46,7 +46,7 @@ def _empty_portfolio() -> Portfolio:
 
 
 def _portfolio_with_position(symbol: str, qty: int, avg_price: float) -> Portfolio:
-    pos = Position(symbol=symbol, market=Market.DOMESTIC, env=Env.VPS, qty=qty, avg_price=avg_price)
+    pos = Position(symbol=symbol, market=Market.DOMESTIC, qty=qty, avg_price=avg_price)
     return Portfolio(positions={symbol: pos}, deposit=5_000_000.0)
 
 
@@ -212,7 +212,7 @@ class TestExitPipelineIntegration:
             executor = OrderExecutor(rest_client=_make_rest_mock(), store=store, bus=bus)
 
             pos = Position(
-                symbol="005930", market=Market.DOMESTIC, env=Env.VPS,
+                symbol="005930", market=Market.DOMESTIC,
                 qty=10, avg_price=10_000.0,
             )
             # 현재가 -6% → 손절 트리거
@@ -231,7 +231,7 @@ class TestExitPipelineIntegration:
             executor = OrderExecutor(rest_client=_make_rest_mock(), store=store, bus=bus)
 
             pos = Position(
-                symbol="005930", market=Market.DOMESTIC, env=Env.VPS,
+                symbol="005930", market=Market.DOMESTIC,
                 qty=5, avg_price=10_000.0,
             )
             # 현재가 +16% → 익절 트리거
