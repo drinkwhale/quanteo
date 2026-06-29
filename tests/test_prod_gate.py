@@ -1,109 +1,68 @@
-"""prod 실전 게이트 안전 테스트.
+"""트레이딩 게이트 안전 테스트.
 
-아키텍처 설계서 7항 '안전 설계' 요구사항:
-- prod 전환은 설정 파일 + 실행 시 명시 플래그(--i-understand-real-money) 이중 확인.
-- 플래그 없이 prod 환경으로는 절대 진입되지 않아야 한다.
+Toss증권은 항상 실제 자금을 사용하므로 --with-trading 시 반드시
+--i-understand-real-money 플래그가 필요하다.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from core.app import ProdGateError, _check_prod_gate
-from core.config.settings import Env
-
-# ---------------------------------------------------------------------------
-# 핵심 게이트 함수
-# ---------------------------------------------------------------------------
+from core.app import TradingGateError, _check_trading_gate
 
 
-def test_vps_without_flag_passes():
-    """VPS 환경은 확인 플래그 없어도 통과."""
-    _check_prod_gate(Env.VPS, prod_confirmed=False)  # 예외 없음
+def test_no_trading_without_flag_passes():
+    """트레이딩 없이 Control API만 시작할 때는 플래그 불필요."""
+    _check_trading_gate(with_trading=False, confirmed=False)  # 예외 없음
 
 
-def test_vps_with_flag_passes():
-    """VPS 환경은 플래그가 있어도 통과."""
-    _check_prod_gate(Env.VPS, prod_confirmed=True)  # 예외 없음
+def test_no_trading_with_flag_passes():
+    """트레이딩 없이 Control API만 시작할 때 플래그가 있어도 무방."""
+    _check_trading_gate(with_trading=False, confirmed=True)  # 예외 없음
 
 
-def test_prod_without_flag_raises():
-    """prod 환경에서 확인 플래그 없으면 ProdGateError 발생."""
-    with pytest.raises(ProdGateError, match="실전.*prod.*환경 진입 차단"):
-        _check_prod_gate(Env.PROD, prod_confirmed=False)
+def test_trading_without_flag_raises():
+    """--with-trading 에 --i-understand-real-money 없으면 TradingGateError."""
+    with pytest.raises(TradingGateError, match="트레이딩 시작 차단"):
+        _check_trading_gate(with_trading=True, confirmed=False)
 
 
-def test_prod_with_flag_passes():
-    """prod 환경에서도 확인 플래그가 있으면 통과."""
-    _check_prod_gate(Env.PROD, prod_confirmed=True)  # 예외 없음
+def test_trading_with_flag_passes():
+    """--with-trading + --i-understand-real-money 이면 통과."""
+    _check_trading_gate(with_trading=True, confirmed=True)  # 예외 없음
 
 
-def test_prod_gate_error_message_contains_instruction():
+def test_gate_error_message_contains_instruction():
     """에러 메시지에 올바른 플래그 사용법이 포함되어야 한다."""
-    with pytest.raises(ProdGateError) as exc_info:
-        _check_prod_gate(Env.PROD, prod_confirmed=False)
+    with pytest.raises(TradingGateError) as exc_info:
+        _check_trading_gate(with_trading=True, confirmed=False)
 
     msg = str(exc_info.value)
     assert "--i-understand-real-money" in msg
-    assert "--env prod" in msg
-
-
-# ---------------------------------------------------------------------------
-# run() 함수 레벨 게이트 검증
-# ---------------------------------------------------------------------------
+    assert "--with-trading" in msg
 
 
 @pytest.mark.asyncio
-async def test_run_rejects_prod_without_flag():
-    """run()에 prod + prod_confirmed=False 전달 시 ProdGateError 발생.
-
-    settings 파일 없어도 게이트가 먼저 동작해야 한다.
-    """
-    from core.app import run
-    from core.config.settings import Env
-
-    with pytest.raises(ProdGateError):
-        await run(env=Env.PROD, prod_confirmed=False)
-
-
-@pytest.mark.asyncio
-async def test_run_blocks_prod_before_settings_load():
-    """prod 게이트는 설정 파일 로딩보다 먼저 실행된다.
-
-    설정 파일(kis_devlp.yaml)이 없어도 ProdGateError가 먼저 발생해야 한다.
-    (FileNotFoundError가 발생하면 게이트가 너무 늦게 동작하는 것.)
-    """
-    from pathlib import Path
-
+async def test_run_rejects_trading_without_flag():
+    """run(with_trading=True, confirmed=False) 시 TradingGateError 발생."""
     from core.app import run
 
-    with pytest.raises(ProdGateError):
-        await run(
-            env=Env.PROD,
-            prod_confirmed=False,
-            config_path=Path("/nonexistent/path/kis_devlp.yaml"),
-        )
+    with pytest.raises(TradingGateError):
+        await run(with_trading=True, confirmed=False)
 
 
 @pytest.mark.asyncio
-async def test_run_with_prod_confirmed_passes_gate():
-    """prod + prod_confirmed=True 이면 게이트를 통과하고 다음 단계로 진입한다.
-
-    설정 파일이 없으므로 FileNotFoundError(또는 ConfigError)가 발생해야 한다.
-    ProdGateError가 아닌 다른 예외는 게이트를 통과했다는 의미다.
-    """
+async def test_run_with_confirmed_passes_gate():
+    """run(with_trading=True, confirmed=True) 이면 게이트 통과 후 다음 단계 진입."""
     from pathlib import Path
 
     from core.app import run
 
     with pytest.raises(Exception) as exc_info:
         await run(
-            env=Env.PROD,
-            prod_confirmed=True,
-            config_path=Path("/nonexistent/path/kis_devlp.yaml"),
+            with_trading=True,
+            confirmed=True,
+            config_path=Path("/nonexistent/quanteo.yaml"),
         )
 
-    # prod 게이트 에러가 아닌 다른 예외여야 한다 (설정 파일 미존재 등)
-    assert not isinstance(exc_info.value, ProdGateError), (
-        "prod_confirmed=True 인데 ProdGateError가 발생했습니다 — 게이트 로직 오류"
-    )
+    assert not isinstance(exc_info.value, TradingGateError)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from core.config.settings import Env, Market
+from core.config.settings import Market
 from core.risk.manager import RiskConfig, RiskManager
 from core.risk.models import (
     HaltLevel,
@@ -40,7 +40,7 @@ def _portfolio_with(
     avg_price: float,
     deposit: float = 10_000_000.0,
 ) -> Portfolio:
-    pos = Position(symbol=symbol, market=Market.DOMESTIC, env=Env.VPS, qty=qty, avg_price=avg_price)
+    pos = Position(symbol=symbol, market=Market.DOMESTIC, qty=qty, avg_price=avg_price)
     return Portfolio(positions={symbol: pos}, deposit=deposit)
 
 
@@ -128,7 +128,7 @@ class TestRiskLimits:
 
 class TestCheckExit:
     def _make_position(self, qty: int, avg_price: float, symbol: str = "005930") -> Position:
-        return Position(symbol=symbol, market=Market.DOMESTIC, env=Env.VPS, qty=qty, avg_price=avg_price)
+        return Position(symbol=symbol, market=Market.DOMESTIC, qty=qty, avg_price=avg_price)
 
     def test_stop_loss_triggers_sell(self):
         config = RiskConfig(stop_loss_pct=-0.05)

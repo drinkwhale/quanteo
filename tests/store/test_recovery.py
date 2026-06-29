@@ -24,7 +24,7 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-async def _insert_position(store: StateStore, symbol: str, qty: int, env: str = "vps") -> None:
+async def _insert_position(store: StateStore, symbol: str, qty: int, env: str = "prod") -> None:
     now = _now()
     await store.conn.execute(
         "INSERT INTO positions (symbol, market, env, qty, avg_price, opened_at, updated_at) "
@@ -34,7 +34,7 @@ async def _insert_position(store: StateStore, symbol: str, qty: int, env: str = 
     await store.conn.commit()
 
 
-async def _insert_order(store: StateStore, symbol: str, status: str, env: str = "vps") -> None:
+async def _insert_order(store: StateStore, symbol: str, status: str, env: str = "prod") -> None:
     now = _now()
     await store.conn.execute(
         "INSERT INTO orders (client_order_id, symbol, market, env, side, qty, status, created_at, updated_at) "
@@ -77,17 +77,15 @@ async def test_get_open_positions_returns_position_snapshot_type(store: StateSto
 
 @pytest.mark.asyncio
 async def test_get_open_positions_filters_by_env(store: StateStore):
-    await _insert_position(store, "005930", qty=5, env="vps")
+    await _insert_position(store, "005930", qty=5, env="prod")
     await _insert_position(store, "000660", qty=3, env="prod")
 
-    vps_result = await store.get_open_positions(env="vps")
     prod_result = await store.get_open_positions(env="prod")
 
-    assert len(vps_result) == 1
-    assert vps_result[0].symbol == "005930"
-
-    assert len(prod_result) == 1
-    assert prod_result[0].symbol == "000660"
+    assert len(prod_result) == 2
+    symbols = {r.symbol for r in prod_result}
+    assert "005930" in symbols
+    assert "000660" in symbols
 
 
 @pytest.mark.asyncio
@@ -131,13 +129,13 @@ async def test_get_pending_orders_returns_pending_order_type(store: StateStore):
 
 @pytest.mark.asyncio
 async def test_get_pending_orders_filters_by_env(store: StateStore):
-    await _insert_order(store, "005930", "pending", env="vps")
+    await _insert_order(store, "005930", "pending", env="prod")
     await _insert_order(store, "000660", "submitted", env="prod")
 
-    vps_result = await store.get_pending_orders(env="vps")
+    prod_result = await store.get_pending_orders(env="prod")
 
-    assert len(vps_result) == 1
-    assert vps_result[0].env == "vps"
+    assert len(prod_result) == 2
+    assert all(o.env == "prod" for o in prod_result)
 
 
 @pytest.mark.asyncio
@@ -154,13 +152,13 @@ async def test_get_pending_orders_empty(store: StateStore):
 @pytest.mark.asyncio
 async def test_restore_state_scenario(store: StateStore):
     """재시작 후 포지션·주문 모두 정확히 복원되는 시나리오."""
-    await _insert_position(store, "005930", qty=10, env="vps")
-    await _insert_position(store, "000660", qty=0, env="vps")  # 청산 — 제외
-    await _insert_order(store, "005930", "submitted", env="vps")
-    await _insert_order(store, "000660", "filled", env="vps")  # 체결 — 제외
+    await _insert_position(store, "005930", qty=10, env="prod")
+    await _insert_position(store, "000660", qty=0, env="prod")  # 청산 — 제외
+    await _insert_order(store, "005930", "submitted", env="prod")
+    await _insert_order(store, "000660", "filled", env="prod")  # 체결 — 제외
 
-    positions = await store.get_open_positions(env="vps")
-    orders = await store.get_pending_orders(env="vps")
+    positions = await store.get_open_positions(env="prod")
+    orders = await store.get_pending_orders(env="prod")
 
     assert len(positions) == 1
     assert positions[0].symbol == "005930"
@@ -180,11 +178,11 @@ async def test_log_persisted_state_logs_positions_and_orders(store: StateStore, 
     """_log_persisted_state() 가 포지션·미체결 주문을 로그에 출력한다."""
     from core.app import _log_persisted_state
 
-    await _insert_position(store, "005930", qty=10, env="vps")
-    await _insert_order(store, "005930", "submitted", env="vps")
+    await _insert_position(store, "005930", qty=10, env="prod")
+    await _insert_order(store, "005930", "submitted", env="prod")
 
     with caplog.at_level(logging.INFO, logger="core.app"):
-        await _log_persisted_state(store, "vps")
+        await _log_persisted_state(store)
 
     assert "오픈 포지션 1개" in caplog.text
     assert "미체결 주문 1개" in caplog.text
@@ -201,7 +199,7 @@ async def test_log_persisted_state_handles_db_error_gracefully(store: StateStore
         caplog.at_level(logging.WARNING, logger="core.app"),
     ):
         # 예외가 전파되지 않아야 한다
-        await _log_persisted_state(store, "vps")
+        await _log_persisted_state(store)
 
     assert "DB를 확인하세요" in caplog.text
     assert "빈 상태에서 시작" in caplog.text

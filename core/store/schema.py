@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS positions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol      TEXT    NOT NULL,
     market      TEXT    NOT NULL CHECK(market IN ('domestic', 'overseas')),
-    env         TEXT    NOT NULL CHECK(env IN ('prod', 'vps')),
+    env         TEXT    NOT NULL DEFAULT 'prod',
     qty         INTEGER NOT NULL DEFAULT 0,
     avg_price   REAL    NOT NULL DEFAULT 0.0,
     opened_at   TEXT    NOT NULL,
@@ -28,7 +28,7 @@ CREATE_ORDERS = """
 CREATE TABLE IF NOT EXISTS orders (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     client_order_id  TEXT    NOT NULL UNIQUE,
-    kis_order_id     TEXT,
+    broker_order_id  TEXT,
     symbol           TEXT    NOT NULL,
     market           TEXT    NOT NULL,
     env              TEXT    NOT NULL,

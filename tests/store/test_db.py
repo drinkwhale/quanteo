@@ -79,7 +79,7 @@ async def test_insert_and_select_order(store: StateStore):
         """INSERT INTO orders
            (client_order_id, symbol, market, env, side, qty, price, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("ORD-001", "005930", "domestic", "vps", "buy", 10, 75000.0, now, now),
+        ("ORD-001", "005930", "domestic", "prod", "buy", 10, 75000.0, now, now),
     )
     await store.conn.commit()
 
@@ -102,7 +102,7 @@ async def test_order_status_update(store: StateStore):
         """INSERT INTO orders
            (client_order_id, symbol, market, env, side, qty, price, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("ORD-002", "AAPL", "overseas", "vps", "sell", 5, 185.5, now, now),
+        ("ORD-002", "AAPL", "overseas", "prod", "sell", 5, 185.5, now, now),
     )
     await store.conn.execute(
         "UPDATE orders SET status=?, updated_at=? WHERE client_order_id=?",
@@ -128,12 +128,12 @@ async def test_insert_and_select_position(store: StateStore):
     await store.conn.execute(
         """INSERT INTO positions (symbol, market, env, qty, avg_price, opened_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        ("005930", "domestic", "vps", 10, 74000.0, now, now),
+        ("005930", "domestic", "prod", 10, 74000.0, now, now),
     )
     await store.conn.commit()
 
     async with store.conn.execute(
-        "SELECT qty, avg_price FROM positions WHERE symbol=? AND env=?", ("005930", "vps")
+        "SELECT qty, avg_price FROM positions WHERE symbol=? AND env=?", ("005930", "prod")
     ) as cur:
         row = await cur.fetchone()
 
@@ -155,7 +155,7 @@ async def test_insert_and_select_fill(store: StateStore):
         """INSERT INTO orders
            (client_order_id, symbol, market, env, side, qty, price, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("ORD-003", "005930", "domestic", "vps", "buy", 10, 75000.0, now, now),
+        ("ORD-003", "005930", "domestic", "prod", "buy", 10, 75000.0, now, now),
     )
     async with store.conn.execute("SELECT id FROM orders WHERE client_order_id=?", ("ORD-003",)) as cur:
         order_row = await cur.fetchone()
@@ -164,7 +164,7 @@ async def test_insert_and_select_fill(store: StateStore):
     await store.conn.execute(
         """INSERT INTO fills (order_id, client_order_id, symbol, env, fill_qty, fill_price, filled_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (order_id, "ORD-003", "005930", "vps", 10, 75000.0, now),
+        (order_id, "ORD-003", "005930", "prod", 10, 75000.0, now),
     )
     await store.conn.commit()
 

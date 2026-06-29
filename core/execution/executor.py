@@ -10,6 +10,7 @@ Order Executor — 주문 전송, 멱등성 보장, 체결 추적.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -35,41 +36,23 @@ class _RestClient(Protocol):
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
 class OrderAck:
     """브로커 주문 응답.
 
     Args:
         client_order_id: 클라이언트 주문 ID (멱등키).
-        broker_order_id: 브로커가 발급한 주문 번호 (KIS: ODNO, Toss: orderId).
+        broker_order_id: 브로커가 발급한 주문 번호 (예: orderId).
         symbol: 종목 코드.
         status: 주문 상태 ('submitted' | 'rejected').
         raw: 브로커 API 원시 응답.
     """
 
-    def __init__(
-        self,
-        client_order_id: str,
-        broker_order_id: str,
-        symbol: str,
-        status: str,
-        raw: dict[str, Any],
-    ) -> None:
-        self.client_order_id = client_order_id
-        self.broker_order_id = broker_order_id
-        self.symbol = symbol
-        self.status = status
-        self.raw = raw
-
-    @property
-    def kis_order_id(self) -> str:
-        """하위 호환 alias — broker_order_id를 반환한다."""
-        return self.broker_order_id
-
-    def __repr__(self) -> str:
-        return (
-            f"OrderAck(client_order_id={self.client_order_id!r}, "
-            f"broker_order_id={self.broker_order_id!r}, status={self.status!r})"
-        )
+    client_order_id: str
+    broker_order_id: str
+    symbol: str
+    status: str
+    raw: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +68,7 @@ class OrderExecutor:
         ack = await executor.submit(order)
 
     Args:
-        rest_client: KIS REST 클라이언트 (place_order 구현 필요).
+        rest_client: 브로커 REST 클라이언트 (place_order 구현 필요).
         store: 주문·체결 영속화용 StateStore.
         bus: 주문 이벤트 발행용 EventBus.
     """
@@ -96,7 +79,7 @@ class OrderExecutor:
         self._bus = bus
 
     async def submit(self, order: Order) -> OrderAck:
-        """주문을 KIS에 전송하고 DB에 영속화한다.
+        """주문을 브로커에 전송하고 DB에 영속화한다.
 
         멱등성: 동일 client_order_id로 재호출 시 기존 레코드를 반환한다.
 
@@ -104,10 +87,10 @@ class OrderExecutor:
             order: Risk Manager가 승인한 주문.
 
         Returns:
-            OrderAck: KIS 응답 요약.
+            OrderAck: 브로커 응답 요약.
 
         Raises:
-            RuntimeError: KIS API 호출 실패 시.
+            RuntimeError: 브로커 API 호출 실패 시.
         """
         # 멱등성 체크 — 이미 처리된 주문이면 DB에서 반환
         existing = await self._fetch_existing(order.client_order_id)
@@ -120,7 +103,7 @@ class OrderExecutor:
             logger.info("중복 주문 무시 (client_id=%s, status=%s)", order.client_order_id, existing["status"])
             return OrderAck(
                 client_order_id=order.client_order_id,
-                broker_order_id=existing["kis_order_id"] or "",
+                broker_order_id=existing["broker_order_id"] or "",
                 symbol=order.symbol,
                 status=existing["status"],
                 raw={},
@@ -139,7 +122,7 @@ class OrderExecutor:
                 order.client_order_id,
                 order.symbol,
                 order.market.value,
-                order.env.value,
+                "prod",
                 order.side.value,
                 order.order_type.value,
                 order.qty,
@@ -150,12 +133,12 @@ class OrderExecutor:
         )
         await self._store.conn.commit()
 
-        # KIS API 호출
+        # Broker API 호출
         try:
             ack = await self._rest.place_order(order)
         except Exception as exc:
             logger.error("주문 전송 실패: %s (client_id=%s)", exc, order.client_order_id)
-            await self._update_status(order.client_order_id, "rejected", kis_order_id=None)
+            await self._update_status(order.client_order_id, "rejected", broker_order_id=None)
             self._bus.publish_nowait(
                 Event(
                     type=EventType.ORDER_REJECTED,
@@ -166,7 +149,7 @@ class OrderExecutor:
             raise
 
         # DB 상태 업데이트 (submitted)
-        await self._update_status(order.client_order_id, "submitted", kis_order_id=ack.broker_order_id)
+        await self._update_status(order.client_order_id, "submitted", broker_order_id=ack.broker_order_id)
 
         # Event Bus 발행
         self._bus.publish_nowait(
@@ -238,7 +221,7 @@ class OrderExecutor:
             total_filled: int = (await cursor.fetchone())[0]
 
         new_status = "filled" if total_filled >= row["qty"] else "partial"
-        await self._update_status(client_order_id, new_status, kis_order_id=None)
+        await self._update_status(client_order_id, new_status, broker_order_id=None)
 
         self._bus.publish_nowait(
             Event(
@@ -279,14 +262,14 @@ class OrderExecutor:
         self,
         client_order_id: str,
         status: str,
-        kis_order_id: str | None,
+        broker_order_id: str | None,
     ) -> None:
         """주문 상태를 업데이트한다."""
         now = datetime.now(UTC).isoformat()
-        if kis_order_id is not None:
+        if broker_order_id is not None:
             await self._store.conn.execute(
-                "UPDATE orders SET status = ?, kis_order_id = ?, updated_at = ? WHERE client_order_id = ?",
-                (status, kis_order_id, now, client_order_id),
+                "UPDATE orders SET status = ?, broker_order_id = ?, updated_at = ? WHERE client_order_id = ?",
+                (status, broker_order_id, now, client_order_id),
             )
         else:
             await self._store.conn.execute(

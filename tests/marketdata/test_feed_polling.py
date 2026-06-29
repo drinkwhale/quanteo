@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.adapters.kis.rest import PriceInfo
+from core.adapters.models import PriceInfo
 from core.config.settings import Market
 from core.marketdata.feed import MarketDataFeed
 from core.marketdata.models import Tick

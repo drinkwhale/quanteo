@@ -1,0 +1,21 @@
+# quanteo 설정 예시
+# 실제 파일은 ~/quanteo/config/quanteo.yaml 에 두세요 (저장소 밖, 커밋 금지).
+# 경로 재지정: export QUANTEO_CONFIG_PATH=/원하는/경로/quanteo.yaml
+#
+# Toss증권 앱키 발급: https://openapi.tossinvest.com → 앱 등록
+
+# ──────────────────────────────────────────────────────
+# Toss증권 OAuth2 자격증명
+# ──────────────────────────────────────────────────────
+toss:
+  client_id: "your-toss-client-id"
+  client_secret: "your-toss-client-secret"
+
+# ──────────────────────────────────────────────────────
+# Telegram 알림 (선택)
+# ──────────────────────────────────────────────────────
+telegram:
+  bot_token: "0000000000:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  chat_id: "-100123456789"   # 채널은 -100 접두사 필요, 개인은 숫자만
+  level: "INFO"              # INFO | WARN | ERROR
+  enabled: false             # true 로 바꾸면 실제 전송

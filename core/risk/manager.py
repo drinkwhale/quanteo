@@ -277,12 +277,11 @@ class RiskManager:
 
     def _build_order(self, signal: Signal, qty: int) -> Order:
         """Signal로부터 Order를 생성한다."""
-        from core.config.settings import Env, Market
+        from core.config.settings import Market
 
         return Order(
             symbol=signal.symbol,
             market=Market.DOMESTIC,  # 추후 Signal에 market 필드 추가 시 변경
-            env=Env.VPS,             # 기본값 VPS — 실전은 명시적 override
             side=OrderSide.BUY if signal.side == SignalSide.BUY else OrderSide.SELL,
             order_type=OrderType.LIMIT if signal.price else OrderType.MARKET,
             qty=qty,

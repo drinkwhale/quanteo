@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from core.adapters.kis.throttler import FixedIntervalThrottler, ThrottlerConfig
+from core.adapters.throttler import FixedIntervalThrottler, ThrottlerConfig
 from core.adapters.toss.auth import OAuth2Token, TossAuth
 from core.adapters.toss.rest import TossRestClient
 

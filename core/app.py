@@ -9,15 +9,9 @@ quanteo 애플리케이션 진입점.
   3. EventBus 시작
   4. RiskManager 초기화
   5. Notifier 초기화 + Event Bus 연결
-  6. MarketDataFeed 초기화 (선택적 — KIS 자격증명 없을 때 스킵)
-  7. StrategyEngine 초기화 (선택적)
-  8. OrderExecutor 초기화 (선택적)
-  9. Control API (FastAPI/uvicorn) 시작
- 10. 종료 시그널 대기 → 정상 종료
-
-asyncio 이벤트 루프 구조 (NautilusTrader 패턴):
-  asyncio.TaskGroup으로 각 모듈의 run()을 동시 실행.
-  한 모듈이 예외로 종료되면 TaskGroup이 나머지도 취소한다.
+  6. (선택) Toss 트레이딩 모듈 시작
+  7. Control API (FastAPI/uvicorn) 시작
+  8. 종료 시그널 대기 → 정상 종료
 """
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ import uvicorn
 
 from core.api.app import create_app
 from core.api.deps import AppContainer
-from core.config.settings import Env, Market, load_settings
+from core.config.settings import Market, load_settings
 from core.events.bus import EventBus
 from core.notifier.factory import make_notifier
 from core.notifier.wiring import wire_notifier
@@ -42,76 +36,76 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# 메인 부팅 함수
+# 트레이딩 게이트 (실전 자금 이중 확인)
 # ---------------------------------------------------------------------------
 
 
-class ProdGateError(RuntimeError):
-    """실전(prod) 환경 이중 확인 게이트 실패."""
+class TradingGateError(RuntimeError):
+    """트레이딩 시작 전 이중 확인 게이트 실패."""
 
 
-def _check_prod_gate(env: Env, prod_confirmed: bool) -> None:
-    """실전 환경 진입 전 이중 확인 게이트.
+def _check_trading_gate(with_trading: bool, confirmed: bool) -> None:
+    """트레이딩 시작 전 이중 확인 게이트.
 
-    prod 환경은 명시적으로 prod_confirmed=True 를 전달해야만 진입된다.
-    누락 시 즉시 예외를 발생시켜 실수로 실전 주문이 나가는 것을 방지한다.
+    Toss증권은 항상 실제 자금을 사용한다.
+    --with-trading 플래그를 사용할 때는 --i-understand-real-money 도 함께 전달해야 한다.
 
     Args:
-        env: 투자 환경.
-        prod_confirmed: CLI에서 --i-understand-real-money 플래그가 전달되었는지 여부.
+        with_trading: 트레이딩 모듈(MarketData/Strategy/Executor) 시작 여부.
+        confirmed: CLI에서 --i-understand-real-money 플래그가 전달되었는지 여부.
 
     Raises:
-        ProdGateError: prod 환경이지만 확인 플래그가 없을 때.
+        TradingGateError: with_trading=True인데 confirmed=False일 때.
     """
-    if env == Env.PROD and not prod_confirmed:
-        raise ProdGateError(
+    if with_trading and not confirmed:
+        raise TradingGateError(
             "\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "⛔  실전(prod) 환경 진입 차단\n"
+            "⛔  트레이딩 시작 차단\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "--env prod 는 실제 돈을 사용합니다.\n"
-            "의도적으로 실전 환경을 시작하려면 아래 플래그를 추가하세요:\n\n"
-            "  uv run quanteo --env prod --i-understand-real-money\n"
+            "Toss증권은 항상 실제 자금을 사용합니다.\n"
+            "트레이딩을 시작하려면 아래 플래그를 추가하세요:\n\n"
+            "  uv run quanteo --with-trading --i-understand-real-money\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
 
 
+# ---------------------------------------------------------------------------
+# 메인 부팅 함수
+# ---------------------------------------------------------------------------
+
+
 async def run(
-    env: Env = Env.VPS,
     market: Market = Market.DOMESTIC,
     config_path: Path | None = None,
     api_host: str = "127.0.0.1",
     api_port: int = 8000,
     with_trading: bool = False,
-    prod_confirmed: bool = False,
+    confirmed: bool = False,
 ) -> None:
     """quanteo 코어 전체를 시작한다.
 
     Args:
-        env: 투자 환경. 기본값 VPS(모의투자).
         market: 대상 시장. 기본값 DOMESTIC.
-        config_path: kis_devlp.yaml 경로.
+        config_path: quanteo.yaml 경로.
         api_host: Control API 바인드 호스트.
         api_port: Control API 바인드 포트.
         with_trading: True이면 MarketData / Strategy / Executor 도 시작.
                       False이면 Control API + Notifier만 구동 (개발/검수용).
-        prod_confirmed: CLI --i-understand-real-money 플래그. prod 환경 진입 이중 확인용.
+        confirmed: CLI --i-understand-real-money 플래그.
+                   with_trading=True 시 반드시 함께 지정.
 
     Raises:
-        ProdGateError: prod 환경인데 prod_confirmed=False 일 때.
+        TradingGateError: with_trading=True인데 confirmed=False일 때.
     """
-    _check_prod_gate(env, prod_confirmed)
-    settings = load_settings(env=env, market=market, config_path=config_path)
-    logger.info("quanteo 시작 (env=%s market=%s)", settings.env, settings.market)
+    _check_trading_gate(with_trading, confirmed)
+    settings = load_settings(market=market, config_path=config_path)
+    logger.info("quanteo 시작 (market=%s)", settings.market)
 
-    # -----------------------------------------------------------------------
-    # 핵심 컴포넌트 초기화
-    # -----------------------------------------------------------------------
     store = StateStore()
     await store.open()
 
-    # 재시작 복구: 직전 상태(포지션·미체결 주문) 로드 및 로깅
-    await _log_persisted_state(store, env.value)
+    await _log_persisted_state(store)
 
     bus = EventBus()
     risk = RiskManager(config=RiskConfig(), bus=bus)
@@ -123,14 +117,11 @@ async def run(
         store=store,
         risk=risk,
         bus=bus,
-        env=settings.env.value,
+        env="prod",
         market=settings.market.value,
     )
     fastapi_app = create_app(container)
 
-    # -----------------------------------------------------------------------
-    # 종료 시그널 처리
-    # -----------------------------------------------------------------------
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
@@ -141,23 +132,15 @@ async def run(
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _on_signal)
 
-    # -----------------------------------------------------------------------
-    # uvicorn 서버 (Control API)
-    # -----------------------------------------------------------------------
     uvicorn_config = uvicorn.Config(
         app=fastapi_app,
         host=api_host,
         port=api_port,
         log_level="info",
-        loop="none",  # 이미 실행 중인 루프 사용
+        loop="none",
     )
     uvicorn_server = uvicorn.Server(uvicorn_config)
-    # uvicorn 내부 시그널 핸들러 비활성화 (우리가 직접 처리)
     uvicorn_server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
-
-    # -----------------------------------------------------------------------
-    # 모든 모듈을 TaskGroup으로 동시 실행
-    # -----------------------------------------------------------------------
 
     async def _serve_api() -> None:
         logger.info("Control API 시작: http://%s:%d", api_host, api_port)
@@ -195,28 +178,21 @@ async def run(
 # ---------------------------------------------------------------------------
 
 
-async def _log_persisted_state(store: StateStore, env: str) -> None:
-    """재시작 시 State Store에서 직전 포지션·미체결 주문을 조회해 로깅한다.
-
-    현재는 로그 출력만 수행한다. 운영자가 재시작 후 상태를 즉시 파악할 수 있게 한다.
-
-    TODO: RiskManager·Executor에 포지션·미체결 주문을 실제로 주입하는
-          심화 복구 로직 추가 (현재는 로그만 — 재시작 후 포지션이 0으로 초기화됨).
-    """
+async def _log_persisted_state(store: StateStore) -> None:
+    """재시작 시 State Store에서 직전 포지션·미체결 주문을 조회해 로깅한다."""
     try:
-        positions = await store.get_open_positions(env=env)
-        orders = await store.get_pending_orders(env=env)
+        positions = await store.get_open_positions()
+        orders = await store.get_pending_orders()
 
         if positions:
             logger.info("♻️  재시작 복구 — 오픈 포지션 %d개:", len(positions))
             for pos in positions:
                 logger.info(
-                    "  · %s %s | qty=%d avg_price=%.2f (env=%s)",
+                    "  · %s %s | qty=%d avg_price=%.2f",
                     pos.market,
                     pos.symbol,
                     pos.qty,
                     pos.avg_price,
-                    pos.env,
                 )
         else:
             logger.info("♻️  재시작 복구 — 오픈 포지션 없음")
@@ -225,8 +201,7 @@ async def _log_persisted_state(store: StateStore, env: str) -> None:
             logger.warning("♻️  재시작 복구 — 미체결 주문 %d개 (수동 확인 필요):", len(orders))
             for ord_ in orders:
                 logger.warning(
-                    "  · %s %s %s | qty=%d status=%s client_order_id=%s",
-                    ord_.env,
+                    "  · %s %s | qty=%d status=%s client_order_id=%s",
                     ord_.side,
                     ord_.symbol,
                     ord_.qty,
@@ -237,75 +212,20 @@ async def _log_persisted_state(store: StateStore, env: str) -> None:
             logger.info("♻️  재시작 복구 — 미체결 주문 없음")
 
     except Exception as exc:
-        # DB 오류 시 빈 상태로 부팅되므로 운영자에게 경고를 전달한다.
-        # 미체결 주문이 있을 경우 수동 확인이 필요하다.
         logger.error(
-            "재시작 복구 중 오류 — DB를 확인하세요. 포지션·주문 정보 없이 계속합니다: %s",
+            "재시작 복구 중 오류 — DB를 확인하세요: %s",
             exc,
             exc_info=True,
         )
-        logger.warning(
-            "⚠️  DB 복구 실패로 인해 빈 상태에서 시작합니다. "
-            "미체결 주문이 있으면 수동으로 확인하세요."
-        )
+        logger.warning("⚠️  DB 복구 실패로 인해 빈 상태에서 시작합니다.")
 
 
 # ---------------------------------------------------------------------------
-# 트레이딩 태스크 (with_trading=True 시 추가)
+# 트레이딩 태스크
 # ---------------------------------------------------------------------------
 
 
 def _start_trading_tasks(
-    tg: asyncio.TaskGroup,
-    settings: object,
-    bus: EventBus,
-    risk: RiskManager,
-    store: StateStore,
-) -> None:
-    """MarketDataFeed / StrategyEngine / OrderExecutor 태스크를 추가한다.
-
-    broker 설정 값에 따라 KIS 또는 Toss 어댑터를 조립한다.
-    자격증명이 없으면 ImportError·RuntimeError를 로깅하고 스킵한다.
-    """
-    broker = getattr(settings, "broker", "kis")
-    if broker == "toss":
-        _start_toss_trading_tasks(tg, settings, bus, risk, store)
-    else:
-        _start_kis_trading_tasks(tg, settings, bus, risk, store)
-
-
-def _start_kis_trading_tasks(
-    tg: asyncio.TaskGroup,
-    settings: object,
-    bus: EventBus,
-    risk: RiskManager,
-    store: StateStore,
-) -> None:
-    """KIS 어댑터 조립 (기존 흐름 유지)."""
-    try:
-        from core.adapters.kis.auth import KisAuth
-        from core.adapters.kis.rest import KisRestClient
-        from core.adapters.kis.ws import KisWsClient
-        from core.execution.executor import OrderExecutor
-        from core.marketdata.feed_kis import MarketDataFeed as KisMarketDataFeed
-        from core.strategy.engine import StrategyEngine
-
-        auth = KisAuth(settings)  # type: ignore[arg-type]
-        ws_client = KisWsClient(auth)
-        rest_client = KisRestClient(auth)
-        feed = KisMarketDataFeed(ws_client=ws_client, env=settings.env, market=settings.market)  # type: ignore[attr-defined]
-        engine = StrategyEngine(bus=bus)
-        OrderExecutor(rest_client=rest_client, store=store, bus=bus)
-
-        tg.create_task(feed.run(), name="market-data-feed")
-        tg.create_task(engine.run(), name="strategy-engine")
-
-        logger.info("KIS 트레이딩 모듈 시작 완료")
-    except Exception as exc:
-        logger.warning("KIS 트레이딩 모듈 시작 실패: %s", exc)
-
-
-def _start_toss_trading_tasks(
     tg: asyncio.TaskGroup,
     settings: object,
     bus: EventBus,
@@ -320,14 +240,13 @@ def _start_toss_trading_tasks(
         from core.marketdata.feed import MarketDataFeed
         from core.strategy.engine import StrategyEngine
 
-        toss_creds = getattr(settings, "toss_credentials", None)
-        if toss_creds is None:
-            raise ValueError("Toss 브로커 선택 시 toss_credentials 설정이 필요합니다.")
+        creds = getattr(settings, "credentials", None)
+        if creds is None:
+            raise ValueError("quanteo.yaml에 toss 자격증명이 없습니다.")
 
-        auth = TossAuth(toss_creds)
+        auth = TossAuth(creds)
         rest_client = TossRestClient(auth)
 
-        # accountSeq 획득은 비동기이므로 태스크로 실행
         async def _init_and_run() -> None:
             await rest_client.initialize()
             feed = MarketDataFeed(rest_client=rest_client, poll_interval=2.0)
@@ -342,7 +261,8 @@ def _start_toss_trading_tasks(
         tg.create_task(_init_and_run(), name="toss-trading")
 
     except Exception as exc:
-        logger.warning("Toss 트레이딩 모듈 시작 실패: %s", exc)
+        logger.error("Toss 트레이딩 모듈 시작 실패: %s", exc, exc_info=True)
+        raise RuntimeError(f"트레이딩 모듈 초기화 실패 — 실전 주문 불가: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -368,8 +288,7 @@ def main() -> None:
     """CLI 진입점."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="quanteo 자동매매 봇")
-    parser.add_argument("--env", choices=["vps", "prod"], default="vps", help="투자 환경 (기본: vps)")
+    parser = argparse.ArgumentParser(description="quanteo 자동매매 봇 (Toss증권)")
     parser.add_argument("--market", choices=["domestic", "overseas"], default="domestic")
     parser.add_argument("--host", default="127.0.0.1", help="Control API 호스트")
     parser.add_argument("--port", type=int, default=8000, help="Control API 포트")
@@ -377,8 +296,8 @@ def main() -> None:
     parser.add_argument(
         "--i-understand-real-money",
         action="store_true",
-        dest="prod_confirmed",
-        help="실전(prod) 환경 이중 확인 플래그. --env prod 시 반드시 함께 지정.",
+        dest="confirmed",
+        help="실제 자금 사용 확인 플래그. --with-trading 시 반드시 함께 지정.",
     )
     args = parser.parse_args()
 
@@ -390,15 +309,14 @@ def main() -> None:
     try:
         asyncio.run(
             run(
-                env=Env(args.env),
                 market=Market(args.market),
                 api_host=args.host,
                 api_port=args.port,
                 with_trading=args.with_trading,
-                prod_confirmed=args.prod_confirmed,
+                confirmed=args.confirmed,
             )
         )
-    except ProdGateError as exc:
+    except TradingGateError as exc:
         logger.critical(str(exc))
         raise SystemExit(1) from exc
 
