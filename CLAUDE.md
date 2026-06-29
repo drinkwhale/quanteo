@@ -16,14 +16,14 @@ git branch --show-current
 
 ## Project
 
-**quanteo** — 한국투자증권(KIS) Open Trading API를 이용한 주식 자동매매(트레이딩) 봇.
+**quanteo** — Toss증권 Open API를 이용한 주식 자동매매(트레이딩) 봇.
 
-- 참고 API/샘플 저장소: https://github.com/koreainvestment/open-trading-api (Python 주력 + TypeScript 포팅 + MCP)
-- 구현 전략: **Python + TypeScript 하이브리드**. 공식 `open-trading-api` 샘플 코드를 이 저장소로 **복사/적응(copy & adapt)** 하는 방식으로 개발.
+- **브로커:** Toss증권 단일 브로커 (KIS 완전 제거, Phase 8-9에서 마이그레이션 완료)
+- 구현 전략: **Python + TypeScript 하이브리드**. Toss OpenAPI JSON 스펙(`specs/tossinvest/`) 기반으로 구현.
 
 ## 📊 현재 구현 상태
 
-**Phase 1~7 전체 완료 (T001~T038)**
+**Phase 1~~9 전체 완료 (T001~~T056)**
 
 | Phase | 내용                          | Tasks     |
 | ----- | ----------------------------- | --------- |
@@ -35,10 +35,12 @@ git branch --show-current
 | 5     | Control API (FastAPI)         | T021~T024 |
 | 6     | TypeScript 대시보드           | T025~T028 |
 | 7     | 안전·운영 (Rate Limit·Docker) | T029~T032 |
+| 8     | Toss증권 어댑터 마이그레이션  | T039~T048 |
+| 9     | Toss증권 어댑터 운영 완성     | T049~T056 |
 
-**다음**: 신규 Phase 계획 필요 (specs/tasks.md 참고)
+**다음:** 신규 Phase 계획 필요 (specs/tasks.md 참고)
 
-주요 구현 모듈: `core/config`, `core/adapters/kis/` (auth/rest/ws/tr_ids), `core/store/`, `core/marketdata/`, `core/events/`,
+주요 구현 모듈: `core/config`, `core/adapters/toss/` (auth/rest/models), `core/adapters/base.py` (BrokerAdapter Protocol), `core/store/`, `core/marketdata/`, `core/events/`,
 `core/strategy/`, `core/risk/`, `core/execution/`, `core/api/`, `core/notifier/`, `dashboard/` (React+Vite+Tailwind)
 
 코드를 작성하기 전에 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
@@ -59,33 +61,19 @@ git branch --show-current
 - **스택:** Python 매매 코어 + TypeScript 웹 대시보드
 - **전략:** 규칙 기반 지표 전략, 플러그인 교체형 (전략은 **시그널만** 생성)
 - **아키텍처(접근 B):** 모듈형 단일 Python 프로세스 + 얇은 Control API(FastAPI REST/WS) + TS 대시보드. 클라우드 확장 대비 모듈 경계 명확화.
-- **모듈:** KIS Adapter → Market Data → Strategy Engine → Risk Manager → Order Executor / State Store(SQLite) / Event Bus / Notifier(Telegram) / Control API / Dashboard
+- **모듈:** Toss Adapter (REST 폴링, WS 미지원) → Market Data → Strategy Engine → Risk Manager → Order Executor / State Store(SQLite) / Event Bus / Notifier(Telegram) / Control API / Dashboard
 - **안전 원칙:** 모든 주문은 **반드시 Risk Manager 통과**. 기본 환경 `vps`(모의투자), `prod`는 명시 플래그로만.
 
-## KIS API 핵심 개념 (반드시 숙지)
+## Toss증권 API 핵심 개념 (반드시 숙지)
 
 자동매매의 정확성과 안전성이 직결되는 부분이라 가장 먼저 이해해야 한다.
 
-- **인증 (`kis_auth.py` 패턴):** 앱키/시크릿으로 access token을 발급받아 REST 호출과 WebSocket 접속키를 관리. 토큰은 캐싱/재사용하며 만료 시 재발급.
-- **환경 구분 (절대 혼동 금지):**
-  - `prod` = **실전투자(실제 주문/실제 돈)**
-  - `vps` = **모의투자(paper trading)**
-  - REST 도메인과 WebSocket 도메인, 앱키/시크릿이 환경별로 **각각 다름**. 코드/설정에서 환경을 명시적으로 다루고, 기본값은 항상 모의투자(`vps`)로 둘 것.
-- **설정 파일 `kis_devlp.yaml`:** 기본 경로 `~/KIS/config/kis_devlp.yaml`(저장소 밖, 절대 커밋 금지). 경로 재지정: `export QUANTEO_CONFIG_PATH=/다른/경로/kis_devlp.yaml`. 앱키 발급: https://apiportal.koreainvestment.com → **실전(`my_*`)·모의(`paper_*`) 앱키는 별도 등록 필요**. HTS ID, 계좌번호(8자리 + 상품코드 2자리), User-Agent 포함. 포맷 예시: `kis_devlp.yaml.example`.
-- **계좌번호:** `CANO`(8자리) + `ACNT_PRDT_CD`(상품코드 2자리, 예: 종합계좌 `01`)로 분리되어 전달됨.
-- **TR_ID:** 모든 REST 호출은 거래 ID(TR_ID)로 식별되며, **실전/모의에서 TR_ID가 다른 경우가 많다.** 주문/시세 함수 작성 시 환경에 맞는 TR_ID를 반드시 확인.
-- **WebSocket:** 실시간 시세/체결 구독. 별도 접속키(`auth_ws` 패턴)로 연결 후 종목별로 `subscribe`.
-
-## 공식 샘플 저장소 구조 (복사 출처)
-
-`open-trading-api`에서 코드를 가져올 때 참고하는 두 가지 병렬 구조:
-
-- `examples_llm/` — **함수 단위** 샘플. `inquire_price.py`(기능) + `chk_inquire_price.py`(테스트) 형태. 개별 API를 골라 적응할 때 출처.
-- `examples_user/` — **카테고리 통합** 샘플. `domestic_stock_functions.py`(함수 모음) + `domestic_stock_examples.py`(실행 예제). 실전 흐름 참고용.
-- 상품 카테고리: `domestic_stock/`, `overseas_stock/`, `domestic_futureoption/`, `domestic_bond/`, `etfetn/`, `elw/` 등.
-- `auth/` — 토큰 발급(REST/WebSocket).
-
-샘플을 복사할 때는 출처 경로를 커밋 메시지나 주석에 남겨, 이후 공식 저장소 업데이트와 대조할 수 있게 할 것.
+- **인증:** OAuth2 Client Credentials (`POST https://openapi.tossinvest.com/oauth2/token`, `application/x-www-form-urlencoded`). `client_id` + `client_secret` → access token 발급. 캐시: `~/toss/cache/token.json`. 401 수신 시 캐시 삭제 후 즉시 재발급.
+- **모의투자 구분 없음:** Toss는 단일 URL(`https://openapi.tossinvest.com`). `prod`/`vps` 환경 구분이 코드에 남아 있으나 Toss 어댑터는 항상 동일 엔드포인트 사용.
+- **계좌:** 앱 시작 시 `GET /api/v1/accounts` 호출 → `accountSeq` 획득 → 이후 `X-Tossinvest-Account` 헤더에 사용.
+- **WebSocket 미지원:** 실시간 시세는 REST 폴링(`GET /api/v1/prices?symbols=...`, 기본 2초 간격)으로 대체. 추후 지원 예정.
+- **설정 파일 `quanteo.yaml`:** 기본 경로 `~/quanteo/config/quanteo.yaml`(저장소 밖, 절대 커밋 금지). 경로 재지정: `export QUANTEO_CONFIG_PATH=/다른/경로/quanteo.yaml`. 앱키 발급: https://openapi.tossinvest.com → 앱 등록 후 `client_id`/`client_secret` 획득. 포맷 예시: `quanteo.yaml.example`.
+- **스펙 참고:** `specs/tossinvest/` 디렉토리의 JSON 파일 (`open-api.json`, `auth.json`, `market-data.json`, `order.json` 등).
 
 ## 🌿 브랜치 전략 (Branch Strategy)
 
@@ -200,7 +188,7 @@ gh pr create --base main --head phase/1-bootstrap
 
 ## 규칙 및 제약
 
-- **자격증명 격리:** `kis_devlp.yaml`, `.env`, 앱키/시크릿/토큰은 절대 커밋하지 않는다. 토큰 캐시 파일도 마찬가지.
+- **자격증명 격리:** `quanteo.yaml`, `.env`, `client_id`/`client_secret`/토큰 캐시(`~/toss/cache/`)는 절대 커밋하지 않는다.
 - **실전/모의 안전장치:** 주문(매수/매도) 로직은 환경(`prod`/`vps`)을 명시적 인자로 받고, 실전 주문은 의도적으로만 활성화되도록 설계. 테스트·개발 기본값은 모의투자.
-- **하이브리드 경계:** `core/` (Python) — 매매 로직·KIS 연동·Control API(포트 8000). `dashboard/` (TypeScript) — 웹 UI 전용. 두 영역 간 통신은 Control API(REST/WS)만 사용.
-- 한국투자증권 API는 호출 빈도 제한(rate limit)이 있으므로, 시세 폴링·주문 루프는 제한을 고려해 구현.
+- **하이브리드 경계:** `core/` (Python) — 매매 로직·Toss 연동·Control API(포트 8000). `dashboard/` (TypeScript) — 웹 UI 전용. 두 영역 간 통신은 Control API(REST/WS)만 사용.
+- **Rate Limit:** `MARKET_DATA` 그룹(시세·잔고)과 `ORDER` 그룹(주문)은 **별도 스로틀러 버킷** 사용(`core/adapters/throttler.py`). 주문 버킷이 시세 버킷을 소모하지 않도록 격리.
