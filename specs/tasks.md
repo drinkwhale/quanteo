@@ -313,7 +313,7 @@
     - **추가:** yfinance None/NaN 반환 시 해당 쌍 알람 미발송 + logger.warning 검증
     - **추가:** 장 마감 시간대 stale 데이터 반환 시 알람 미발송 검증
 
-- [ ] **T064** 환율 일일 마감 리포트 (`info/fx/daily_report.py`)
+- [x] **T064** 환율 일일 마감 리포트 (`info/fx/daily_report.py`)
   - `FxDailyReport` 데이터클래스: 4종 환율 종가·일중변동률·종합 평가 텍스트
   - `FxDailyReporter.generate() -> FxDailyReport`: 오후 4시 기준 yfinance 조회
   - 원화 강세/약세 종합 평가 룰 (`rate_rule.py`): 스펙 2-5절 "환율-주가 상관 해석 룰" 테이블 구현 (상황·해석·대응 매핑)
