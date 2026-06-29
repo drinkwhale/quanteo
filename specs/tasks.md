@@ -134,7 +134,7 @@
   - Toss 선택 시: `TossAuth` → `accountSeq` 획득 → `TossRestClient` → `MarketDataFeed(폴링)` 조립
   - `core/adapters/kis/` 파일 전체 보존 (KIS 하위 호환 보장)
 
-- [ ] **T047** 통합 테스트 + Toss 어댑터 단위 테스트
+- [x] **T047** 통합 테스트 + Toss 어댑터 단위 테스트
   - `tests/adapters/toss/test_auth.py`: 토큰 발급·캐시 로드·재발급·`401` 감지 후 재발급 흐름 (httpx mock)
   - `tests/adapters/toss/test_rest.py`: 현재가·잔고·주문 요청 파라미터 및 응답 파싱 검증, Rate Limit 그룹 격리 검증
   - `tests/marketdata/test_feed_polling.py`: 폴링 루프에서 Tick 핸들러 호출 검증
