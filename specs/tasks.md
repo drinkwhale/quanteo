@@ -264,7 +264,7 @@
     - **추가:** 일부 피드 실패 + 일부 성공 시 성공 결과만 반환 검증
     - **추가:** SQLite dedup — 재시작 후 동일 URL 재수신 시 발송 차단 검증
 
-- [ ] **T060** DART 공시 수집기 (`info/news/dart_collector.py`)
+- [x] **T060** DART 공시 수집기 (`info/news/dart_collector.py`)
   - `DartCollector.fetch(corp_code: str = "00164779") -> list[NewsItem]`: `OpenDartReader` 기반 SK하이닉스 최신 공시 조회
   - 필터 대상: 유상증자·전환사채·주요사항보고서 (`report_tp` 코드 기반)
   - 공시 수신 시 중요도 강제 HIGH → `InfoNotifier.send_news_alert()` 즉시 발송 (Claude 필터 생략)
