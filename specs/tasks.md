@@ -123,7 +123,7 @@
   - `subscribe(symbol)` / `start()` / `stop()` 인터페이스 유지 (Strategy Engine 무수정)
   - 종목 목록 관리: `subscribe()` 호출 시 내부 집합에 추가 → 폴링 시 콤마 조인
 
-- [ ] **T045** `core/marketdata/normalizer.py` — Toss JSON 포맷 정규화
+- [x] **T045** `core/marketdata/normalizer.py` — Toss JSON 포맷 정규화
   - 기존 KIS 파이프(`^`) 구분 파서를 **반드시 `normalizer_kis.py`로 이동** (삭제 금지 — KIS 하위 호환 및 기존 테스트 유지)
   - `normalize_toss_price(symbol: str, result: dict) -> Tick`: `lastPrice`, `timestamp` 필드 매핑
   - `normalize_toss_holdings(result: dict) -> BalanceInfo`: `items[].quantity`, `averagePurchasePrice`, `marketValue` 매핑

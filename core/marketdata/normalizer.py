@@ -1,119 +1,115 @@
 """
-KIS 원시 데이터 → 내부 표준(Tick/Quote/Candle) 정규화.
+시세 데이터 정규화 모듈 — 통합 진입점.
 
-KIS WebSocket 파이프 포맷과 REST 응답을 각각 정규화한다.
-파이프 포맷 참조: open-trading-api 실시간 시세 필드 정의
+브로커별 정규화 함수를 하나의 모듈로 통합한다.
+  - KIS 파이프 포맷: normalizer_kis.py (기존 코드 보존)
+  - Toss JSON 포맷: 이 파일에 정의
+
+하위 호환을 위해 KIS 함수를 그대로 re-export한다.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Literal
 
-from core.marketdata.models import Candle, Quote, Tick
+from core.adapters.kis.rest import BalanceInfo, BalanceItem
+from core.marketdata.models import Candle, Tick
+
+# KIS 정규화 함수 re-export (기존 테스트·코드 무수정 유지)
+from core.marketdata.normalizer_kis import (
+    normalize_domestic_quote,
+    normalize_domestic_tick,
+    normalize_overseas_tick,
+    normalize_price_to_candle,
+)
 
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# WebSocket 파이프 포맷 정규화
-# ---------------------------------------------------------------------------
-# KIS 국내 실시간 체결가(H0STCNT0) 파이프 포맷 필드 인덱스
-_D_PRICE_STCK_CNTG_UNPR = 2   # 체결 단가
-_D_PRICE_CNTG_VOL = 9         # 체결 거래량
-_D_PRICE_STCK_CNTG_HOUR = 1   # 체결 시간 (HHMMSS)
-
-# KIS 국내 호가(H0STASP0) 파이프 포맷 필드 인덱스
-_D_QUOTE_ASKP1 = 3    # 매도호가1
-_D_QUOTE_BIDP1 = 13   # 매수호가1
-_D_QUOTE_ASKP_RSQN1 = 23  # 매도호가잔량1
-_D_QUOTE_BIDP_RSQN1 = 33  # 매수호가잔량1
-
-
-def normalize_domestic_tick(symbol: str, data_body: str) -> Tick | None:
-    """국내 실시간 체결가(H0STCNT0) 파이프 문자열을 Tick으로 변환한다."""
-    parts = data_body.split("^")
-    try:
-        price = float(parts[_D_PRICE_STCK_CNTG_UNPR])
-        volume = int(parts[_D_PRICE_CNTG_VOL])
-        return Tick(
-            symbol=symbol,
-            price=price,
-            volume=volume,
-            timestamp=datetime.now(UTC),
-            market="domestic",
-        )
-    except (IndexError, ValueError) as exc:
-        logger.warning("국내 체결가 파싱 실패 (%s): %s | body=%s", symbol, exc, data_body[:80])
-        return None
-
-
-def normalize_domestic_quote(symbol: str, data_body: str) -> Quote | None:
-    """국내 실시간 호가(H0STASP0) 파이프 문자열을 Quote로 변환한다."""
-    parts = data_body.split("^")
-    try:
-        return Quote(
-            symbol=symbol,
-            bid_price=float(parts[_D_QUOTE_BIDP1]),
-            ask_price=float(parts[_D_QUOTE_ASKP1]),
-            bid_qty=int(parts[_D_QUOTE_BIDP_RSQN1]),
-            ask_qty=int(parts[_D_QUOTE_ASKP_RSQN1]),
-            timestamp=datetime.now(UTC),
-        )
-    except (IndexError, ValueError) as exc:
-        logger.warning("국내 호가 파싱 실패 (%s): %s | body=%s", symbol, exc, data_body[:80])
-        return None
-
-
-def normalize_overseas_tick(symbol: str, data_body: str) -> Tick | None:
-    """해외 실시간 체결가(HDFSCNT0) 파이프 문자열을 Tick으로 변환한다."""
-    parts = data_body.split("^")
-    try:
-        price = float(parts[11])   # OVRS_STCK_PRPR (해외 현재가)
-        volume = int(parts[12])    # ACML_VOL
-        return Tick(
-            symbol=symbol,
-            price=price,
-            volume=volume,
-            timestamp=datetime.now(UTC),
-            market="overseas",
-        )
-    except (IndexError, ValueError) as exc:
-        logger.warning("해외 체결가 파싱 실패 (%s): %s | body=%s", symbol, exc, data_body[:80])
-        return None
+__all__ = [
+    # KIS (하위 호환)
+    "normalize_domestic_tick",
+    "normalize_domestic_quote",
+    "normalize_overseas_tick",
+    "normalize_price_to_candle",
+    # Toss
+    "normalize_toss_price",
+    "normalize_toss_holdings",
+]
 
 
 # ---------------------------------------------------------------------------
-# REST 응답 정규화
+# Toss 정규화 함수
 # ---------------------------------------------------------------------------
 
 
-def normalize_price_to_candle(symbol: str, price_output: dict, market: str = "domestic") -> Candle:
-    """REST 현재가 응답(output dict)을 Candle로 변환한다.
+def normalize_toss_price(symbol: str, result: dict) -> Tick:
+    """Toss /api/v1/prices result 항목을 Tick으로 변환한다.
 
-    국내: stck_prpr / stck_oprc / stck_hgpr / stck_lwpr / acml_vol
-    해외: last / open / high / low / tvol
+    Args:
+        symbol: 종목 코드.
+        result: Toss API result 배열의 첫 번째 항목.
+
+    Returns:
+        Tick 인스턴스.
     """
-    if market == "domestic":
-        return Candle(
-            symbol=symbol,
-            open=float(price_output.get("stck_oprc", 0)),
-            high=float(price_output.get("stck_hgpr", 0)),
-            low=float(price_output.get("stck_lwpr", 0)),
-            close=float(price_output.get("stck_prpr", 0)),
-            volume=int(price_output.get("acml_vol", 0)),
-            timestamp=datetime.now(UTC),
-            market=market,
-            interval="1d",
-        )
-    return Candle(
+    market_country: str = result.get("marketCountry", "KR")
+    market: Literal["domestic", "overseas"] = "domestic" if market_country == "KR" else "overseas"
+
+    raw_ts = result.get("timestamp")
+    if raw_ts:
+        try:
+            # Toss는 ISO 8601 문자열 또는 epoch ms를 반환할 수 있다
+            if isinstance(raw_ts, (int, float)):
+                timestamp = datetime.fromtimestamp(raw_ts / 1000, tz=UTC)
+            else:
+                timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except Exception:
+            timestamp = datetime.now(UTC)
+    else:
+        timestamp = datetime.now(UTC)
+
+    return Tick(
         symbol=symbol,
-        open=float(price_output.get("open", 0)),
-        high=float(price_output.get("high", 0)),
-        low=float(price_output.get("low", 0)),
-        close=float(price_output.get("last", 0)),
-        volume=int(price_output.get("tvol", 0)),
-        timestamp=datetime.now(UTC),
+        price=float(result.get("lastPrice", 0)),
+        volume=int(result.get("volume", 0)),
+        timestamp=timestamp,
         market=market,
-        interval="1d",
+    )
+
+
+def normalize_toss_holdings(result: dict) -> BalanceInfo:
+    """Toss /api/v1/holdings result를 BalanceInfo로 변환한다.
+
+    Args:
+        result: Toss API result 객체 (items + summary 포함).
+
+    Returns:
+        BalanceInfo 인스턴스.
+    """
+    items: list[BalanceItem] = []
+    for row in result.get("items", []):
+        qty = int(row.get("quantity", 0))
+        if qty == 0:
+            continue
+        items.append(
+            BalanceItem(
+                symbol=row.get("symbol", ""),
+                symbol_name=row.get("name", ""),
+                qty=qty,
+                avg_price=float(row.get("averagePurchasePrice", 0)),
+                current_price=float(row.get("currentPrice", 0)),
+                eval_amount=float(row.get("marketValue", 0)),
+                profit_loss=float(row.get("unrealizedGainLoss", 0)),
+                profit_loss_rate=float(row.get("unrealizedGainLossRate", 0)),
+            )
+        )
+
+    summary = result.get("summary", {})
+    return BalanceInfo(
+        items=items,
+        total_eval_amount=float(summary.get("totalMarketValue", 0)),
+        total_profit_loss=float(summary.get("totalUnrealizedGainLoss", 0)),
+        deposit=float(summary.get("cashBalance", 0)),
     )
