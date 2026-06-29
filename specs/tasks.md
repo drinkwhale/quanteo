@@ -141,7 +141,7 @@
   - `tests/integration/test_toss_roundtrip.py`: 시그널 → Risk Manager → Toss 주문 라운드트립 (MockRestClient)
   - 기존 KIS 테스트 전체 유지 (병존)
 
-- [ ] **T048** `specs/2026-06-18-quanteo-architecture.md` — Toss 어댑터 기준으로 아키텍처 문서 갱신
+- [x] **T048** `specs/2026-06-18-quanteo-architecture.md` — Toss 어댑터 기준으로 아키텍처 문서 갱신
   - KIS 전용 다이어그램·설명을 "브로커 어댑터 레이어" 추상화 기준으로 업데이트
   - Toss 어댑터 구조(REST only, 폴링 피드, Rate Limit 그룹) 반영
   - KIS 어댑터는 "기존 브로커 구현체" 섹션으로 병존 유지 명시
