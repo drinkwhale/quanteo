@@ -320,7 +320,7 @@
   - 생성 후 `InfoNotifier.send_fx_daily_report()` 호출
   - `tests/info/test_daily_report.py`: 룰 매핑 경계 케이스 + 리포트 텍스트 생성 검증
 
-- [ ] **T065** Google Calendar API 연동 (`info/calendar/google_cal.py`)
+- [x] **T065** Google Calendar API 연동 (`info/calendar/google_cal.py`)
   - `CalEvent` 데이터클래스: `summary`, `start: datetime`, `end: datetime`, `importance: Literal["CRITICAL","HIGH","MEDIUM","FX","KR"]`, `description: str`
   - `GoogleCalendarClient`: `gcsa` 라이브러리 OAuth2 인증 (`credentials.json` 경로는 `quanteo.yaml`)
   - **OAuth 토큰 만료 처리:** `add_event()` 중 401 수신 시 `gcsa` 자동 토큰 갱신 트리거. 갱신 실패 시 `logger.error` + 해당 이벤트 스킵 (매매 시스템 중단 없음)
