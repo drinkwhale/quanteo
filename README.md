@@ -1,6 +1,6 @@
 # quanteo
 
-한국투자증권(KIS) Open Trading API 기반 주식 자동매매 봇.
+Toss증권 Open API 기반 주식 자동매매 봇.
 
 국내·해외 주식을 대상으로 시그널 생성 → 리스크 검증 → 주문 실행까지 완전 자동화.  
 기본 환경은 **모의투자(`vps`)**이며, 실전(`prod`)은 명시 플래그로만 활성화된다.
@@ -16,7 +16,7 @@
 │   Market Data ──▶ Strategy Engine ──▶ Risk Manager       │
 │       ▲                                    │             │
 │       │                                    ▼             │
-│   KIS Adapter (REST/WS) ◀────────── Order Executor       │
+│   Toss Adapter (REST 폴링) ◀────────── Order Executor     │
 │       │                                                  │
 │   State Store (SQLite) + Event Bus (asyncio.Queue)       │
 │       ▲                          │ events                │
@@ -29,17 +29,18 @@
 **핵심 원칙:**
 
 - **단방향 흐름**: 데이터 → 시그널 → 리스크 검증 → 주문. 모든 주문은 반드시 Risk Manager를 통과한다.
-- **asyncio 단일 이벤트 루프**: 모든 I/O를 `asyncio.TaskGroup`으로 동시 실행 (스레드·락 없음).
-- **환경 격리**: prod/vps 분기, TR_ID·도메인 차이는 KIS Adapter 안에 캡슐화.
+- **asyncio 단일 이벤트 루프**: 모든 I/O를 `asyncio.gather()`로 동시 실행 (스레드·락 없음).
+- **BrokerAdapter Protocol**: `core/adapters/base.py` 추상화로 브로커 교체 시 상위 모듈 무수정.
+- **REST 폴링**: Toss API WebSocket 미지원 → 2초 간격 `GET /api/v1/prices` 배치 조회.
 - **실전 이중 게이트**: `--env prod`는 `--i-understand-real-money` 플래그 없이 진입 불가.
 
 ---
 
-## 구현 현황 (Phase 1~7 완료)
+## 구현 현황 (Phase 1~9 완료)
 
 | Phase     | 내용                             | Tasks     | 상태    |
 | --------- | -------------------------------- | --------- | ------- |
-| Phase 1   | 부트스트랩 & KIS 인증            | T001~T005 | ✅ 완료 |
+| Phase 1   | 부트스트랩 & 인증                | T001~T005 | ✅ 완료 |
 | Phase 2   | 시세 & 상태저장                  | T006~T010 | ✅ 완료 |
 | Phase 2.5 | Telegram 알림 모듈               | T033~T038 | ✅ 완료 |
 | Phase 3   | 전략 엔진 & 플러그인 시스템      | T011~T014 | ✅ 완료 |
@@ -47,6 +48,8 @@
 | Phase 5   | Control API (FastAPI REST/WS)    | T021~T024 | ✅ 완료 |
 | Phase 6   | TypeScript 대시보드 (React+Vite) | T025~T028 | ✅ 완료 |
 | Phase 7   | 안전 & 운영 (Rate Limit·Docker)  | T029~T032 | ✅ 완료 |
+| Phase 8   | Toss증권 어댑터 마이그레이션     | T039~T048 | ✅ 완료 |
+| Phase 9   | Toss증권 어댑터 운영 완성        | T049~T056 | ✅ 완료 |
 
 ---
 
@@ -55,22 +58,24 @@
 ```
 quanteo/
 ├── core/                        # Python 매매 코어
-│   ├── app.py                   # 진입점 — asyncio.TaskGroup 조립
+│   ├── app.py                   # 진입점 — asyncio.gather() 조립 + prod 게이트
 │   ├── config/
-│   │   └── settings.py          # 환경(prod/vps)·시장·자격증명·Telegram 설정
-│   ├── adapters/kis/
-│   │   ├── auth.py              # Access Token 발급·캐싱·재발급, WS 접속키
-│   │   ├── rest.py              # 시세/잔고/매수·매도 REST 호출
-│   │   ├── ws.py                # 실시간 시세/체결 WebSocket 구독
-│   │   ├── tr_ids.py            # TR_ID·REST/WS 도메인 매핑 (환경 × 시장)
-│   │   └── throttler.py         # Rate Limit 스로틀러 + 백오프
+│   │   └── settings.py          # 환경(prod/vps)·Toss 자격증명·Telegram 설정
+│   ├── adapters/
+│   │   ├── base.py              # BrokerAdapter·MarketPoller Protocol
+│   │   ├── models.py            # 공통 어댑터 모델 (OrderAck 등)
+│   │   ├── throttler.py         # Rate Limit 스로틀러 + 백오프
+│   │   └── toss/
+│   │       ├── auth.py          # OAuth2 Client Credentials, 토큰 캐시, 401 재발급
+│   │       ├── models.py        # 도메인 타입 (BuyingPowerInfo/TossOrder/Fill/PriceLimits 등)
+│   │       └── rest.py          # 20개 엔드포인트: 시세·잔고·주문CRUD·체결·캘린더·종목정보·환율·캔들
 │   ├── store/
 │   │   ├── schema.py            # SQLite 스키마 (positions/orders/fills/signals/events_log)
 │   │   └── db.py                # 마이그레이션·State Store·재시작 복구 조회
 │   ├── marketdata/
 │   │   ├── models.py            # Tick / Quote / Candle 표준 모델
-│   │   ├── normalizer.py        # KIS 수신 데이터 → 내부 표준 변환
-│   │   └── feed.py              # 시세 공급 루프
+│   │   ├── normalizer.py        # Toss 수신 데이터 → 내부 표준 변환
+│   │   └── feed.py              # REST 폴링 시세 공급 루프
 │   ├── events/
 │   │   ├── types.py             # 도메인 이벤트 타입 정의
 │   │   └── bus.py               # Event Bus (asyncio.Queue 기반 발행/구독)
@@ -83,7 +88,7 @@ quanteo/
 │   │   ├── models.py            # Order / Position / Rejection / HaltLevel 타입
 │   │   └── manager.py           # 한도 가드·손절·익절·킬스위치 게이트키퍼
 │   ├── execution/
-│   │   └── executor.py          # 주문 전송·멱등성(client_order_id)·체결 추적
+│   │   └── executor.py          # 주문 전송·멱등성(clientOrderId)·체결 추적
 │   ├── notifier/
 │   │   ├── base.py              # Notifier Protocol + NotifyEvent / NotifyLevel 타입
 │   │   ├── telegram.py          # TelegramNotifier (aiogram v3, Rate-limit 큐)
@@ -98,18 +103,23 @@ quanteo/
 │       └── routes/
 │           ├── status.py        # GET /status
 │           ├── positions.py     # GET /positions
-│           ├── orders.py        # GET /orders
+│           ├── orders.py        # GET /orders, POST /orders/{id}/cancel|modify
 │           ├── control.py       # POST /control/pause|resume|kill
-│           └── stream.py        # WS /stream
+│           ├── stream.py        # WS /stream
+│           ├── market.py        # GET /market-status, GET /risk-metrics
+│           └── trades.py        # GET /trades
 ├── dashboard/                   # TypeScript 대시보드 (React + Vite + Tailwind)
 │   └── src/
-│       ├── components/          # StatusBar / PositionsTable / OrdersTable / ControlPanel / StreamLog
-│       ├── hooks/               # useStatus / usePositions / useOrders / useStream
+│       ├── components/          # StatusBar / PositionsTable / OrdersTable / FillsTable / ControlPanel / StreamLog
+│       ├── hooks/               # useStatus / usePositions / useOrders / useFills / useStream
 │       └── api/                 # Control API 클라이언트 + 타입
-├── tests/                       # pytest 테스트 스위트
-├── specs/                       # 아키텍처 설계서 + Task 목록
+├── scripts/
+│   └── send_balance.py          # 잔고 조회 후 Telegram 전송 일회성 스크립트
+├── tests/                       # pytest (291 cases)
+├── specs/                       # 아키텍처 설계서 + Task 목록 + Toss OpenAPI JSON 스펙
 ├── Dockerfile
 ├── docker-compose.yml
+├── quanteo.yaml.example         # 자격증명 예시
 └── pyproject.toml
 ```
 
@@ -119,7 +129,7 @@ quanteo/
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) 패키지 매니저
-- 한국투자증권 Open Trading API 앱키/시크릿 (모의투자 계정)
+- Toss증권 Open API `client_id` / `client_secret` ([openapi.tossinvest.com](https://openapi.tossinvest.com) → 앱 등록)
 - Node.js 18+ (대시보드 개발 시)
 
 ---
@@ -141,15 +151,12 @@ cd dashboard && npm install
 저장소 **밖**에 자격증명 파일을 생성한다. (절대 커밋 금지)
 
 ```bash
-mkdir -p ~/KIS/config
-cp kis_devlp.yaml.example ~/KIS/config/kis_devlp.yaml
-# 편집기로 앱키·시크릿·계좌번호·HTS ID를 채울 것
+mkdir -p ~/quanteo/config
+cp quanteo.yaml.example ~/quanteo/config/quanteo.yaml
+# 편집기로 client_id, client_secret을 채울 것
 ```
 
-앱키·시크릿은 [한국투자증권 개발자센터](https://apiportal.koreainvestment.com) → 앱 등록에서 발급한다.  
-**실전투자(prod)와 모의투자(vps) 앱키는 별도로 발급**받아야 하며, 파일 내 `my_*`(실전)와 `paper_*`(모의) 섹션에 각각 입력한다.
-
-`QUANTEO_CONFIG_PATH` 환경 변수로 경로를 재지정할 수 있다. (기본: `~/KIS/config/kis_devlp.yaml`)
+`QUANTEO_CONFIG_PATH` 환경 변수로 경로를 재지정할 수 있다. (기본: `~/quanteo/config/quanteo.yaml`)
 
 **Telegram 알림** 사용 시 `telegram` 섹션을 채우고 `enabled: true`로 변경.  
 채널 chat_id는 `-100` 접두사가 필요하다 (예: `-100123456789`).  
@@ -196,23 +203,26 @@ docker compose up --build
 docker compose logs -f quanteo-core
 ```
 
-`KIS_CONFIG_DIR` 환경 변수로 KIS 설정 디렉토리를 지정한다. (기본: `~/KIS`)
-
 ---
 
 ## Control API
 
 기동 후 `http://localhost:8000/docs` 에서 OpenAPI 문서를 확인할 수 있다.
 
-| 메서드 | 엔드포인트        | 설명                                   |
-| ------ | ----------------- | -------------------------------------- |
-| `GET`  | `/status`         | 봇 상태 (환경·리스크 레벨·일일 주문수) |
-| `GET`  | `/positions`      | 보유 포지션 목록                       |
-| `GET`  | `/orders`         | 주문 내역                              |
-| `POST` | `/control/pause`  | 신규 시그널 처리 일시정지              |
-| `POST` | `/control/resume` | 일시정지 해제                          |
-| `POST` | `/control/kill`   | 킬스위치 — 모든 신규 주문 차단         |
-| `WS`   | `/stream`         | 시세·시그널·체결·로그 실시간 스트림    |
+| 메서드 | 엔드포인트            | 설명                                   |
+| ------ | --------------------- | -------------------------------------- |
+| `GET`  | `/status`             | 봇 상태 (환경·리스크 레벨·일일 주문수) |
+| `GET`  | `/positions`          | 보유 포지션 목록                       |
+| `GET`  | `/orders`             | 주문 내역                              |
+| `POST` | `/orders/{id}/cancel` | 주문 취소                              |
+| `POST` | `/orders/{id}/modify` | 주문 정정                              |
+| `GET`  | `/trades`             | 체결 내역 조회                         |
+| `GET`  | `/market-status`      | 국내·해외 개장 여부 + 캘린더           |
+| `GET`  | `/risk-metrics`       | 리스크 지표 (halt_level·buying_power)  |
+| `POST` | `/control/pause`      | 신규 시그널 처리 일시정지              |
+| `POST` | `/control/resume`     | 일시정지 해제                          |
+| `POST` | `/control/kill`       | 킬스위치 — 모든 신규 주문 차단         |
+| `WS`   | `/stream`             | 시세·시그널·체결·로그 실시간 스트림    |
 
 ---
 
@@ -226,7 +236,7 @@ cd dashboard && npm run dev
 cd dashboard && npm run build
 ```
 
-화면 구성: 봇 상태 표시줄 / 포지션 & 손익 테이블 / 주문 내역 / 실시간 로그 스트림 / 제어 버튼
+화면 구성: 봇 상태 표시줄 / 포지션 & 손익 테이블 / 주문 내역 + 취소 버튼 / 체결 내역 / 실시간 로그 스트림 / 제어 버튼
 
 ---
 
@@ -287,22 +297,20 @@ class MyStrategy:
 
 | 패키지                | 용도                      |
 | --------------------- | ------------------------- |
-| `httpx`               | KIS REST API 비동기 호출  |
-| `websockets`          | KIS WebSocket 실시간 시세 |
+| `httpx`               | Toss REST API 비동기 호출 |
 | `pydantic`            | 데이터 모델·검증          |
 | `pyyaml`              | 설정 파일 파싱            |
 | `fastapi` + `uvicorn` | Control API               |
 | `aiosqlite`           | 비동기 SQLite State Store |
-| `duckdb`              | 분석 쿼리용               |
 | `aiogram`             | Telegram 봇 (v3)          |
 
 ---
 
 ## 보안 주의사항
 
-- `kis_devlp.yaml`, `.env`, 앱키/시크릿/토큰 캐시 파일은 절대 커밋하지 않는다.
+- `quanteo.yaml`, `~/toss/cache/token.json`(OAuth2 토큰 캐시)은 절대 커밋하지 않는다.
 - 주문 기본값은 항상 `vps`(모의투자). 실전(`prod`)은 명시적 이중 확인 플래그로만 활성화.
-- KIS API Rate Limit을 초과하지 않도록 Throttler가 자동으로 요청을 조절한다.
+- `MARKET_DATA`(시세·잔고)·`ORDER`(주문) 그룹별 별도 스로틀러 버킷으로 Rate Limit 격리.
 
 ---
 
@@ -310,6 +318,7 @@ class MyStrategy:
 
 - [`specs/2026-06-18-quanteo-architecture.md`](specs/2026-06-18-quanteo-architecture.md) — 아키텍처 설계서 (단일 진실 공급원)
 - [`specs/tasks.md`](specs/tasks.md) — Phase·Task 단위 구현 작업 목록
+- [`specs/tossinvest/`](specs/tossinvest/) — Toss증권 Open API JSON 스펙
 
 ---
 
