@@ -274,7 +274,7 @@
     - **추가:** OpenDartReader 예외(네트워크 오류, 인증 실패) 시 빈 리스트 반환·logger.error 호출 검증
     - **추가:** 공시 없음(빈 결과) 시 Telegram 미발송 검증
 
-- [ ] **T061** 해외 뉴스 수집기 (`info/news/finnhub_collector.py`)
+- [x] **T061** 해외 뉴스 수집기 (`info/news/finnhub_collector.py`)
   - `FinnhubCollector.fetch(symbols: list[str]) -> list[NewsItem]`: `GET https://finnhub.io/api/v1/company-news` — NVDA·MU·TSM·AMD·ASML 등 티커별 수집
   - **Rate limit + 429 처리:** `asyncio.Semaphore` + 1초 인터벌로 60 req/min 준수. 그래도 429 수신 시 지수 백오프(1s→2s→4s, 최대 3회) 재시도. 3회 소진 시 해당 심볼 스킵 + `logger.warning`
   - **5xx·빈 응답 처리:** 서버 오류나 `[]` 응답은 해당 심볼 스킵, 전체 수집 완료
