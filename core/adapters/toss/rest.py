@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 _TOSS_BASE_URL = "https://openapi.tossinvest.com"
 
 
+class TossConflictError(RuntimeError):
+    """Toss API 409 Conflict — 동시 처리 중인 요청과 충돌. cancel_order에서 구조적으로 catch한다."""
+
+
 def _safe_float(value: Any, field: str) -> float:
     """숫자 문자열을 float으로 변환한다. 실패 시 RuntimeError."""
     try:
@@ -102,6 +106,9 @@ class TossRestClient:
         self._market_throttler = market_throttler or FixedIntervalThrottler(_MARKET_DATA_THROTTLER_CONFIG)
         self._order_throttler = order_throttler or FixedIntervalThrottler(_ORDER_THROTTLER_CONFIG)
         self._account_seq: str | None = None
+        # 환율 캐시: TTL 60초, asyncio.Lock으로 동시 다중 호출 방지 (인스턴스별 격리)
+        self._exchange_rate_cache: dict[str, tuple[ExchangeRate, float]] = {}
+        self._exchange_rate_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # 초기화: 계좌 시퀀스 조회
@@ -169,10 +176,10 @@ class TossRestClient:
                 raise RuntimeError("Toss API 인증 실패: 토큰 재발급 후에도 401 지속")
 
             if resp.status_code == 409:
-                # 주문 중복 (request-in-progress) — 멱등키로 재조회 권장
                 body = resp.json()
                 err_code = body.get("error", {}).get("code", "")
-                raise RuntimeError(f"Toss API 409 충돌 (code={err_code}): {body}")
+                # TossConflictError로 구별 — cancel_order에서 명시적으로 catch해 재조회 처리
+                raise TossConflictError(f"Toss API 409 충돌 (code={err_code}): {body}")
 
             resp.raise_for_status()
 
@@ -484,13 +491,11 @@ class TossRestClient:
             data = await self._request_order(
                 "POST", f"/api/v1/orders/{order_id}/cancel"
             )
-        except RuntimeError as exc:
-            if "409" in str(exc):
-                # 이미 처리 중인 취소 — 현재 주문 상태 재조회
-                logger.warning("주문 취소 409 충돌 — 주문 재조회: order_id=%s", order_id)
-                current = await self.get_order(order_id)
-                return OrderOperationResponse(order_id=current.order_id)
-            raise
+        except TossConflictError:
+            # 이미 처리 중인 취소 요청 — 현재 주문 상태를 재조회해 반환
+            logger.warning("주문 취소 409 충돌 — 주문 재조회: order_id=%s", order_id)
+            current = await self.get_order(order_id)
+            return OrderOperationResponse(order_id=current.order_id)
 
         result = data.get("result", {})
         return OrderOperationResponse(order_id=result.get("orderId", order_id))
@@ -756,10 +761,6 @@ class TossRestClient:
     # T054 — 환율 조회
     # ------------------------------------------------------------------
 
-    # 환율 캐시: TTL 60초, asyncio.Lock으로 동시 다중 호출 방지
-    _exchange_rate_cache: dict[str, tuple[ExchangeRate, float]] = {}
-    _exchange_rate_lock: asyncio.Lock | None = None
-
     async def get_exchange_rate(
         self,
         base_currency: str = "USD",
@@ -779,11 +780,7 @@ class TossRestClient:
         import time
         cache_key = f"{base_currency}/{quote_currency}"
 
-        if self._exchange_rate_lock is None:
-            # 클래스 수준 Lock 초기화 (이벤트 루프 내)
-            TossRestClient._exchange_rate_lock = asyncio.Lock()
-
-        async with self._exchange_rate_lock:  # type: ignore[union-attr]
+        async with self._exchange_rate_lock:
             cached = self._exchange_rate_cache.get(cache_key)
             if cached and (time.monotonic() - cached[1]) < 60.0:
                 return cached[0]
@@ -849,10 +846,15 @@ class TossRestClient:
 
         data = await self._request_market("GET", "/api/v1/candles", params=params)
         result = data.get("result", {})
+        if isinstance(result, dict) and "candles" not in result:
+            logger.warning("get_candles: 예상치 못한 응답 구조 (candles 키 없음): keys=%s", list(result.keys()))
         items = result.get("candles", result) if isinstance(result, dict) else result
+        if not isinstance(items, list):
+            logger.error("get_candles: items가 list가 아닙니다 (type=%s) — 빈 리스트 반환", type(items).__name__)
+            return []
 
         candles = []
-        for item in (items if isinstance(items, list) else []):
+        for item in items:
             raw_ts = item.get("timestamp", "")
             try:
                 ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
@@ -898,7 +900,7 @@ def _normalize_toss_trade(item: dict[str, Any]) -> Fill:
 def _parse_kr_market_day(raw: dict[str, Any]) -> KrMarketDay:
     """Toss KrMarketDay 원시 객체를 KrMarketDay로 변환한다."""
     integrated = raw.get("integrated") or {}
-    is_open = integrated is not None and bool(integrated)
+    is_open = bool(integrated)  # 빈 dict(휴장일)이면 False
     return KrMarketDay(
         date=raw.get("date", ""),
         is_open=is_open,

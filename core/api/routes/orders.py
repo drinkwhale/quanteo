@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -16,6 +17,7 @@ from core.api.models import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _VALID_STATUSES = {"pending", "submitted", "partial", "filled", "cancelled", "rejected"}
 
@@ -88,17 +90,23 @@ async def cancel_order(order_id: str, container: ContainerDep) -> OrderCancelRes
 
     try:
         result = await broker.cancel_order(order_id)
-    except RuntimeError as exc:
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # StateStore 상태 갱신
+    # StateStore 상태 갱신 — 브로커 취소 성공 후 DB 불일치 방지
     from datetime import UTC, datetime
     now = datetime.now(UTC).isoformat()
-    await container.store.conn.execute(
-        "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE kis_order_id = ?",
-        (now, order_id),
-    )
-    await container.store.conn.commit()
+    try:
+        await container.store.conn.execute(
+            "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE kis_order_id = ?",
+            (now, order_id),
+        )
+        await container.store.conn.commit()
+    except Exception:
+        logger.exception(
+            "cancel_order DB 갱신 실패 (order_id=%s) — 브로커 취소 성공, 로컬 상태 불일치 주의",
+            order_id,
+        )
 
     return OrderCancelResponse(success=True, order_id=result.order_id, message="주문 취소 완료")
 
@@ -131,21 +139,27 @@ async def modify_order(
             price=price,
             confirm_high_value=body.confirm_high_value,
         )
-    except RuntimeError as exc:
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     from datetime import UTC, datetime
     now = datetime.now(UTC).isoformat()
-    if body.quantity is not None:
-        await container.store.conn.execute(
-            "UPDATE orders SET qty = ?, updated_at = ? WHERE kis_order_id = ?",
-            (body.quantity, now, order_id),
+    try:
+        if body.quantity is not None:
+            await container.store.conn.execute(
+                "UPDATE orders SET qty = ?, updated_at = ? WHERE kis_order_id = ?",
+                (body.quantity, now, order_id),
+            )
+        if body.price is not None:
+            await container.store.conn.execute(
+                "UPDATE orders SET price = ?, updated_at = ? WHERE kis_order_id = ?",
+                (str(body.price), now, order_id),
+            )
+        await container.store.conn.commit()
+    except Exception:
+        logger.exception(
+            "modify_order DB 갱신 실패 (order_id=%s) — 브로커 정정 성공, 로컬 상태 불일치 주의",
+            order_id,
         )
-    if body.price is not None:
-        await container.store.conn.execute(
-            "UPDATE orders SET price = ?, updated_at = ? WHERE kis_order_id = ?",
-            (float(body.price), now, order_id),
-        )
-    await container.store.conn.commit()
 
     return OrderModifyResponse(success=True, order_id=result.order_id, message="주문 정정 완료")

@@ -7,6 +7,7 @@ Control API 응답 스키마 (Pydantic).
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -51,8 +52,8 @@ class PositionItem(BaseModel):
     market: str
     env: str
     qty: int
-    avg_price: float
-    book_value: float
+    avg_price: Decimal
+    book_value: Decimal
     opened_at: str
     updated_at: str
 
@@ -77,10 +78,10 @@ class OrderItem(BaseModel):
     symbol: str
     market: str
     env: str
-    side: str
-    order_type: str
+    side: str   # "BUY" | "SELL"
+    order_type: str  # "LIMIT" | "MARKET"
     qty: int
-    price: float
+    price: Decimal
     status: str
     created_at: str
     updated_at: str
@@ -111,7 +112,7 @@ class OrderModifyRequest(BaseModel):
 
     order_type: str  # LIMIT | MARKET
     quantity: int | None = None
-    price: float | None = None
+    price: Decimal | None = None
     confirm_high_value: bool = False
 
 
@@ -132,11 +133,11 @@ class FillItem(BaseModel):
     """체결 내역 1건."""
 
     symbol: str
-    price: float
+    price: Decimal
     volume: int
     timestamp: datetime
     currency: str
-    side: str | None = None
+    side: str | None = None  # "BUY" | "SELL"
 
 
 class FillList(BaseModel):
@@ -159,6 +160,7 @@ class MarketDayStatus(BaseModel):
     today_date: str
     open_time: str | None = None
     close_time: str | None = None
+    is_stale: bool = False  # True이면 캘린더 API 조회 실패 — 데이터 신뢰 불가
 
 
 class MarketStatus(BaseModel):
@@ -177,7 +179,7 @@ class RiskMetrics(BaseModel):
 
     halt_level: str
     daily_order_count: int
-    buying_power: float | None = None
+    buying_power: Decimal | None = None
     buying_power_currency: str | None = None
 
 

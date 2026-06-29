@@ -150,7 +150,7 @@ def test_risk_metrics_fields(client_with_broker):
     data = client_with_broker.get("/risk-metrics").json()
     assert data["halt_level"] == "none"
     assert data["daily_order_count"] == 0
-    assert data["buying_power"] == 3500000.0
+    assert float(data["buying_power"]) == 3500000.0
     assert data["buying_power_currency"] == "KRW"
 
 
@@ -175,7 +175,7 @@ def test_trades_returns_fill_list(client_with_broker):
     assert data["total"] == 1
     item = data["items"][0]
     assert item["symbol"] == "005930"
-    assert item["price"] == 72000.0
+    assert float(item["price"]) == 72000.0
     assert item["volume"] == 10
     assert item["currency"] == "KRW"
     assert item["side"] == "BUY"

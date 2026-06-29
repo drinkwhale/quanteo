@@ -206,10 +206,12 @@ async def test_cancel_order_returns_operation_response():
 
 @pytest.mark.asyncio
 async def test_cancel_order_409_falls_back_to_get_order():
-    """409 RuntimeError 시 get_order로 재조회해 orderId를 반환한다."""
-    client = _make_client({})  # 실제 HTTP 미사용
+    """409 TossConflictError 시 get_order로 재조회해 orderId를 반환한다."""
+    from core.adapters.toss.rest import TossConflictError
 
-    with patch.object(client, "_request_order", side_effect=RuntimeError("409 충돌")):
+    client = _make_client({})
+
+    with patch.object(client, "_request_order", side_effect=TossConflictError("409 충돌")):
         with patch.object(client, "get_order", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = type("O", (), {"order_id": "fallback_id"})()
             resp = await client.cancel_order("ord001")
@@ -572,3 +574,88 @@ def test_normalize_toss_candle_overseas():
     candle = normalize_toss_candle("AAPL", result, interval="1m")
     assert candle.market == "overseas"
     assert candle.interval == "1m"
+
+
+# ---------------------------------------------------------------------------
+# T050 — place_order 추가 커버리지
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_place_order_limit_buy():
+    """LIMIT 매수 주문을 Toss에 전송하고 OrderAck을 반환한다."""
+    from core.risk.models import OrderSide, OrderType
+
+    order = MagicMock()
+    order.client_order_id = "cl-001"
+    order.symbol = "005930"
+    order.qty = 10
+    order.price = Decimal("72000")
+    order.side = OrderSide.BUY
+    order.order_type = OrderType.LIMIT
+
+    body = {"result": {"orderId": "toss-order-001"}}
+    client = _make_client(body)
+    ack = await client.place_order(order)
+
+    assert ack.broker_order_id == "toss-order-001"
+    assert ack.client_order_id == "cl-001"
+    assert ack.symbol == "005930"
+    assert ack.status == "submitted"
+
+
+@pytest.mark.asyncio
+async def test_place_order_missing_order_id_raises():
+    """Toss 응답에 orderId가 없으면 RuntimeError가 발생한다."""
+    from core.risk.models import OrderSide, OrderType
+
+    order = MagicMock()
+    order.client_order_id = "cl-002"
+    order.symbol = "005930"
+    order.qty = 5
+    order.price = Decimal("0")
+    order.side = OrderSide.BUY
+    order.order_type = OrderType.MARKET
+
+    body = {"result": {}}  # orderId 없음
+    client = _make_client(body)
+    with pytest.raises(RuntimeError, match="orderId"):
+        await client.place_order(order)
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_409_fallback():
+    """409 TossConflictError 발생 시 get_order로 재조회해 OrderOperationResponse를 반환한다."""
+    from core.adapters.toss.rest import TossConflictError  # noqa: F401
+
+    conflict_resp = httpx.Response(409, json={"error": {"code": "request-in-progress"}})
+    conflict_resp.request = httpx.Request("POST", "https://openapi.tossinvest.com/")
+
+    order_body = {
+        "result": {
+            "orderId": "toss-001",
+            "status": "PENDING",
+            "symbol": "005930",
+            "side": "BUY",
+            "orderType": "LIMIT",
+            "quantity": 10,
+            "price": "72000",
+            "orderedAt": "2026-06-29T09:00:00Z",
+            "execution": {},
+        }
+    }
+    order_resp = _resp(order_body)
+
+    http = MagicMock()
+    http.request = AsyncMock(side_effect=[conflict_resp, order_resp])
+    fast = FixedIntervalThrottler(_FAST)
+    client = TossRestClient(
+        auth=_make_auth(),
+        http_client=http,
+        market_throttler=fast,
+        order_throttler=fast,
+    )
+    client._account_seq = "12345"
+
+    result = await client.cancel_order("toss-001")
+    assert result.order_id == "toss-001"

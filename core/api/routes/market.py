@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
@@ -42,8 +43,8 @@ async def get_market_status(container: ContainerDep) -> MarketStatus:
             )
         )
     except Exception:
-        logger.exception("KR 마켓 캘린더 조회 실패")
-        markets.append(MarketDayStatus(market="KR", is_open=False, today_date=""))
+        logger.exception("KR 마켓 캘린더 조회 실패 — is_stale=True로 반환")
+        markets.append(MarketDayStatus(market="KR", is_open=False, today_date="", is_stale=True))
 
     try:
         us_cal = await broker.get_market_calendar_us()
@@ -58,8 +59,8 @@ async def get_market_status(container: ContainerDep) -> MarketStatus:
             )
         )
     except Exception:
-        logger.exception("US 마켓 캘린더 조회 실패")
-        markets.append(MarketDayStatus(market="US", is_open=False, today_date=""))
+        logger.exception("US 마켓 캘린더 조회 실패 — is_stale=True로 반환")
+        markets.append(MarketDayStatus(market="US", is_open=False, today_date="", is_stale=True))
 
     return MarketStatus(markets=markets)
 
@@ -73,17 +74,17 @@ async def get_risk_metrics(container: ContainerDep) -> RiskMetrics:
     halt_level = container.risk._halt.value  # type: ignore[attr-defined]
     daily_count = container.risk._daily_order_count  # type: ignore[attr-defined]
 
-    buying_power: float | None = None
+    buying_power: Decimal | None = None
     buying_power_currency: str | None = None
 
     broker = container.broker
     if broker is not None:
         try:
             bp = await broker.get_buying_power("KRW")
-            buying_power = float(bp.cash_buying_power)
+            buying_power = bp.cash_buying_power
             buying_power_currency = bp.currency
         except Exception:
-            logger.warning("매수가능금액 조회 실패 — null로 반환")
+            logger.exception("매수가능금액 조회 실패 — null로 반환")
 
     return RiskMetrics(
         halt_level=halt_level,

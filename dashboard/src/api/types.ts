@@ -31,7 +31,7 @@ export interface OrderItem {
   symbol: string;
   market: string;
   env: string;
-  side: "buy" | "sell";
+  side: "BUY" | "SELL";
   order_type: string;
   qty: number;
   price: number;
