@@ -71,6 +71,10 @@ class MarketDataFeed:
         """Quote 수신 핸들러를 등록한다."""
         self._quote_handlers.append(handler)
 
+    async def start(self) -> None:
+        """MarketPoller Protocol 요구 메서드 — run()으로 위임한다."""
+        await self.run()
+
     async def run(self) -> None:
         """WebSocket 수신 루프를 시작한다."""
         await self._ws.run()

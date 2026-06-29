@@ -208,7 +208,11 @@ class TossAuth:
             with self._cache_path.open("w", encoding="utf-8") as f:
                 json.dump(token.to_dict(), f, indent=2)
         except Exception as exc:
-            logger.warning("Toss 토큰 캐시 저장 실패: %s", exc)
+            logger.error(
+                "Toss 토큰 캐시 저장 실패: %s. 재시작 시 새 토큰을 발급해야 합니다.",
+                exc,
+                exc_info=True,
+            )
 
     def _invalidate_cache(self) -> None:
         """캐시 파일을 삭제한다 (401 감지 시 호출)."""
@@ -244,7 +248,12 @@ class TossAuth:
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
-                logger.warning("Toss 토큰 선제적 갱신 실패: %s", exc)
+                logger.error(
+                    "Toss 토큰 선제적 갱신 실패 (토큰이 곧 만료됨): %s. "
+                    "네트워크/API 상태를 확인하세요. 다음 요청 시 재발급을 시도합니다.",
+                    exc,
+                    exc_info=True,
+                )
 
         try:
             loop = asyncio.get_running_loop()

@@ -102,7 +102,7 @@ async def test_signal_to_toss_order_roundtrip():
 @pytest.mark.asyncio
 async def test_idempotency_prevents_duplicate_toss_order():
     """동일 client_order_id로 재제출 시 Toss에 중복 주문이 가지 않아야 한다."""
-    store = StateStore()
+    store = StateStore(":memory:")
     await store.open()
 
     bus = EventBus()

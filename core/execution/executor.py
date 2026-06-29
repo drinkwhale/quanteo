@@ -53,12 +53,9 @@ class OrderAck:
         symbol: str,
         status: str,
         raw: dict[str, Any],
-        *,
-        kis_order_id: str | None = None,  # 하위 호환: KisRestClient 기존 코드용
     ) -> None:
         self.client_order_id = client_order_id
-        # kis_order_id 인자가 전달된 경우 broker_order_id 우선, 없으면 그 값 사용
-        self.broker_order_id = broker_order_id or (kis_order_id or "")
+        self.broker_order_id = broker_order_id
         self.symbol = symbol
         self.status = status
         self.raw = raw

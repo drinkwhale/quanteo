@@ -33,6 +33,22 @@ logger = logging.getLogger(__name__)
 
 _TOSS_BASE_URL = "https://openapi.tossinvest.com"
 
+
+def _safe_float(value: Any, field: str) -> float:
+    """숫자 문자열을 float으로 변환한다. 실패 시 RuntimeError."""
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Toss API 비정상 숫자 값 ({field}={value!r})") from exc
+
+
+def _safe_int(value: Any, field: str) -> int:
+    """숫자 문자열을 int로 변환한다. 실패 시 RuntimeError."""
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Toss API 비정상 정수 값 ({field}={value!r})") from exc
+
 # Rate Limit: Toss 공식 가이드 기준값 (보수적 적용)
 _MARKET_DATA_THROTTLER_CONFIG = ThrottlerConfig(calls_per_second=5.0)
 _ORDER_THROTTLER_CONFIG = ThrottlerConfig(calls_per_second=2.0)
@@ -111,25 +127,27 @@ class TossRestClient:
         *,
         headers: dict[str, str],
         params: dict | None = None,
-        json: dict | None = None,
+        json_body: dict | None = None,
     ) -> dict[str, Any]:
         """HTTP 요청을 실행하고 응답을 반환한다. 401 시 재발급 후 1회 재시도."""
         for attempt in range(2):
             if self._http_client:
                 resp = await self._http_client.request(
-                    method, url, headers=headers, params=params, json=json, timeout=10.0
+                    method, url, headers=headers, params=params, json=json_body, timeout=10.0
                 )
             else:
                 async with httpx.AsyncClient() as client:
                     resp = await client.request(
-                        method, url, headers=headers, params=params, json=json, timeout=10.0
+                        method, url, headers=headers, params=params, json=json_body, timeout=10.0
                     )
 
-            if resp.status_code == 401 and attempt == 0:
-                logger.warning("Toss API 401 수신 — 토큰 재발급 후 재시도")
-                new_token = await self._auth.refresh_on_401()
-                headers["Authorization"] = f"Bearer {new_token.access_token}"
-                continue
+            if resp.status_code == 401:
+                if attempt == 0:
+                    logger.warning("Toss API 401 수신 — 토큰 재발급 후 재시도")
+                    new_token = await self._auth.refresh_on_401()
+                    headers["Authorization"] = f"Bearer {new_token.access_token}"
+                    continue
+                raise RuntimeError("Toss API 인증 실패: 토큰 재발급 후에도 401 지속")
 
             if resp.status_code == 409:
                 # 주문 중복 (request-in-progress) — 멱등키로 재조회 권장
@@ -163,7 +181,7 @@ class TossRestClient:
         headers = await self._get_headers()
         if with_account:
             headers["X-Tossinvest-Account"] = self._get_account_seq()
-        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json=json)
+        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json)
 
     async def _request_order(
         self,
@@ -177,7 +195,7 @@ class TossRestClient:
         await self._order_throttler.acquire()
         headers = await self._get_headers()
         headers["X-Tossinvest-Account"] = self._get_account_seq()
-        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json=json)
+        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json)
 
     # ------------------------------------------------------------------
     # 현재가 조회 (BrokerAdapter.get_price)
@@ -202,11 +220,11 @@ class TossRestClient:
 
         return PriceInfo(
             symbol=symbol,
-            current_price=float(item.get("lastPrice", 0)),
-            open_price=float(item.get("openPrice", 0)),
-            high_price=float(item.get("highPrice", 0)),
-            low_price=float(item.get("lowPrice", 0)),
-            volume=int(item.get("volume", 0)),
+            current_price=_safe_float(item.get("lastPrice", 0), "lastPrice"),
+            open_price=_safe_float(item.get("openPrice", 0), "openPrice"),
+            high_price=_safe_float(item.get("highPrice", 0), "highPrice"),
+            low_price=_safe_float(item.get("lowPrice", 0), "lowPrice"),
+            volume=_safe_int(item.get("volume", 0), "volume"),
             market=market,
             raw=item,
         )
@@ -231,7 +249,7 @@ class TossRestClient:
         for row in holding_items:
             if symbol and row.get("symbol") != symbol:
                 continue
-            qty = int(row.get("quantity", 0))
+            qty = _safe_int(row.get("quantity", 0), "quantity")
             if qty == 0:
                 continue
             items.append(
@@ -239,20 +257,20 @@ class TossRestClient:
                     symbol=row.get("symbol", ""),
                     symbol_name=row.get("name", ""),
                     qty=qty,
-                    avg_price=float(row.get("averagePurchasePrice", 0)),
-                    current_price=float(row.get("currentPrice", 0)),
-                    eval_amount=float(row.get("marketValue", 0)),
-                    profit_loss=float(row.get("unrealizedGainLoss", 0)),
-                    profit_loss_rate=float(row.get("unrealizedGainLossRate", 0)),
+                    avg_price=_safe_float(row.get("averagePurchasePrice", 0), "averagePurchasePrice"),
+                    current_price=_safe_float(row.get("currentPrice", 0), "currentPrice"),
+                    eval_amount=_safe_float(row.get("marketValue", 0), "marketValue"),
+                    profit_loss=_safe_float(row.get("unrealizedGainLoss", 0), "unrealizedGainLoss"),
+                    profit_loss_rate=_safe_float(row.get("unrealizedGainLossRate", 0), "unrealizedGainLossRate"),
                 )
             )
 
         summary = result.get("summary", {})
         return BalanceInfo(
             items=items,
-            total_eval_amount=float(summary.get("totalMarketValue", 0)),
-            total_profit_loss=float(summary.get("totalUnrealizedGainLoss", 0)),
-            deposit=float(summary.get("cashBalance", 0)),
+            total_eval_amount=_safe_float(summary.get("totalMarketValue", 0), "totalMarketValue"),
+            total_profit_loss=_safe_float(summary.get("totalUnrealizedGainLoss", 0), "totalUnrealizedGainLoss"),
+            deposit=_safe_float(summary.get("cashBalance", 0), "cashBalance"),
         )
 
     # ------------------------------------------------------------------
@@ -292,7 +310,12 @@ class TossRestClient:
 
         data = await self._request_order("POST", "/api/v1/orders", json=body)
         result = data.get("result", {})
-        toss_order_id = result.get("orderId", "")
+        toss_order_id = result.get("orderId")
+        if not toss_order_id:
+            raise RuntimeError(
+                f"Toss 주문 응답에 orderId가 없습니다 (client_order_id={order.client_order_id}). "
+                f"응답: {result}"
+            )
 
         return OrderAck(
             client_order_id=order.client_order_id,

@@ -15,8 +15,12 @@ import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from core.marketdata.models import Tick
+
+if TYPE_CHECKING:
+    from core.adapters.base import BrokerAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +45,7 @@ class MarketDataFeed:
 
     def __init__(
         self,
-        rest_client: object,  # BrokerAdapter Protocol — 런타임 임포트 순환 방지용
+        rest_client: "BrokerAdapter",
         poll_interval: float = 2.0,
     ) -> None:
         self._rest = rest_client
@@ -80,7 +84,7 @@ class MarketDataFeed:
                 await self._poll_once()
             try:
                 await asyncio.wait_for(
-                    asyncio.shield(self._stop_event.wait()),
+                    self._stop_event.wait(),
                     timeout=self._poll_interval,
                 )
                 break  # stop_event 수신 시 종료
@@ -105,9 +109,11 @@ class MarketDataFeed:
         get_price() 인터페이스가 단일 종목이므로 종목별로 호출한다.
         배치 최적화는 T042 확장 시 고려한다.
         """
-        for symbol in list(self._symbols):
+        failed = 0
+        symbols = list(self._symbols)
+        for symbol in symbols:
             try:
-                price_info = await self._rest.get_price(symbol)  # type: ignore[attr-defined]
+                price_info = await self._rest.get_price(symbol)
                 tick = Tick(
                     symbol=symbol,
                     price=price_info.current_price,
@@ -118,4 +124,13 @@ class MarketDataFeed:
                 for handler in self._tick_handlers:
                     handler(tick)
             except Exception as exc:
+                failed += 1
                 logger.warning("Toss 폴링 오류 (%s): %s", symbol, exc)
+
+        if symbols and failed == len(symbols):
+            logger.error(
+                "Toss 폴링 완전 실패: %d/%d 종목 조회 불가. "
+                "네트워크 연결, API 인증, 레이트 제한을 확인하세요.",
+                failed,
+                len(symbols),
+            )
