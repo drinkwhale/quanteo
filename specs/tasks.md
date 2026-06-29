@@ -286,7 +286,7 @@
     - **추가:** 500 오류 시 해당 심볼 스킵·빈 리스트 반환 검증
     - **추가:** 빈 배열(`[]`) 응답 시 Telegram 미발송 검증
 
-- [ ] **T062** Telegram 알람 메시지 포맷 확장 (`info/telegram/info_notifier.py`)
+- [x] **T062** Telegram 알람 메시지 포맷 확장 (`info/telegram/info_notifier.py`)
   - `InfoNotifier`: 기존 `core/notifier/TelegramNotifier`를 **생성자 주입**으로 받아 래핑 (중복 구현 금지)
   - **발송 실패 처리 (무음 소실 금지):** 발송 실패 시 지수 백오프(1s→2s→4s) 3회 재시도. 3회 소진 시 `logger.error` + 실패 항목을 `asyncio.Queue` 기반 dead-letter queue에 보존(최대 100건). 스케줄러 재시도 루프(5분 간격)가 큐를 소진
   - `send_news_alert(item: NewsItem, result: FilterResult)`: 스펙 4-1절 포맷 (`🚨 [HIGH]` 헤더, 분석·대응·타임스탬프)
