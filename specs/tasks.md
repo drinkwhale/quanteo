@@ -129,7 +129,7 @@
   - `normalize_toss_holdings(result: dict) -> BalanceInfo`: `items[].quantity`, `averagePurchasePrice`, `marketValue` 매핑
   - 국내·해외 통합 처리 (`marketCountry: "KR"|"US"` + `currency: "KRW"|"USD"` 필드로 구분)
 
-- [ ] **T046** `core/app.py` — Toss 어댑터 wiring + KIS 어댑터 병존
+- [x] **T046** `core/app.py` — Toss 어댑터 wiring + KIS 어댑터 병존
   - `broker` 설정 값 기반 분기: `"toss"` 선택 시 Toss 어댑터 조립, `"kis"` 선택 시 기존 흐름 유지
   - Toss 선택 시: `TossAuth` → `accountSeq` 획득 → `TossRestClient` → `MarketDataFeed(폴링)` 조립
   - `core/adapters/kis/` 파일 전체 보존 (KIS 하위 호환 보장)

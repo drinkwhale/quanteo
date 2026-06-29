@@ -264,29 +264,85 @@ def _start_trading_tasks(
 ) -> None:
     """MarketDataFeed / StrategyEngine / OrderExecutor 태스크를 추가한다.
 
-    KIS 자격증명이 없으면 ImportError·RuntimeError를 로깅하고 스킵한다.
+    broker 설정 값에 따라 KIS 또는 Toss 어댑터를 조립한다.
+    자격증명이 없으면 ImportError·RuntimeError를 로깅하고 스킵한다.
     """
+    broker = getattr(settings, "broker", "kis")
+    if broker == "toss":
+        _start_toss_trading_tasks(tg, settings, bus, risk, store)
+    else:
+        _start_kis_trading_tasks(tg, settings, bus, risk, store)
+
+
+def _start_kis_trading_tasks(
+    tg: asyncio.TaskGroup,
+    settings: object,
+    bus: EventBus,
+    risk: RiskManager,
+    store: StateStore,
+) -> None:
+    """KIS 어댑터 조립 (기존 흐름 유지)."""
     try:
         from core.adapters.kis.auth import KisAuth
         from core.adapters.kis.rest import KisRestClient
         from core.adapters.kis.ws import KisWsClient
         from core.execution.executor import OrderExecutor
-        from core.marketdata.feed import MarketDataFeed
+        from core.marketdata.feed_kis import MarketDataFeed as KisMarketDataFeed
         from core.strategy.engine import StrategyEngine
 
         auth = KisAuth(settings)  # type: ignore[arg-type]
         ws_client = KisWsClient(auth)
         rest_client = KisRestClient(auth)
-        feed = MarketDataFeed(ws_client=ws_client, env=settings.env, market=settings.market)  # type: ignore[attr-defined]
+        feed = KisMarketDataFeed(ws_client=ws_client, env=settings.env, market=settings.market)  # type: ignore[attr-defined]
         engine = StrategyEngine(bus=bus)
         OrderExecutor(rest_client=rest_client, store=store, bus=bus)
 
         tg.create_task(feed.run(), name="market-data-feed")
         tg.create_task(engine.run(), name="strategy-engine")
 
-        logger.info("트레이딩 모듈 시작 완료")
+        logger.info("KIS 트레이딩 모듈 시작 완료")
     except Exception as exc:
-        logger.warning("트레이딩 모듈 시작 실패 (자격증명 없음?): %s", exc)
+        logger.warning("KIS 트레이딩 모듈 시작 실패: %s", exc)
+
+
+def _start_toss_trading_tasks(
+    tg: asyncio.TaskGroup,
+    settings: object,
+    bus: EventBus,
+    risk: RiskManager,
+    store: StateStore,
+) -> None:
+    """Toss 어댑터 조립 (REST 폴링 피드)."""
+    try:
+        from core.adapters.toss.auth import TossAuth
+        from core.adapters.toss.rest import TossRestClient
+        from core.execution.executor import OrderExecutor
+        from core.marketdata.feed import MarketDataFeed
+        from core.strategy.engine import StrategyEngine
+
+        toss_creds = getattr(settings, "toss_credentials", None)
+        if toss_creds is None:
+            raise ValueError("Toss 브로커 선택 시 toss_credentials 설정이 필요합니다.")
+
+        auth = TossAuth(toss_creds)
+        rest_client = TossRestClient(auth)
+
+        # accountSeq 획득은 비동기이므로 태스크로 실행
+        async def _init_and_run() -> None:
+            await rest_client.initialize()
+            feed = MarketDataFeed(rest_client=rest_client, poll_interval=2.0)
+            engine = StrategyEngine(bus=bus)
+            OrderExecutor(rest_client=rest_client, store=store, bus=bus)
+
+            logger.info("Toss 트레이딩 모듈 시작 완료 (REST 폴링 모드)")
+            async with asyncio.TaskGroup() as inner_tg:
+                inner_tg.create_task(feed.run(), name="toss-market-data-feed")
+                inner_tg.create_task(engine.run(), name="strategy-engine")
+
+        tg.create_task(_init_and_run(), name="toss-trading")
+
+    except Exception as exc:
+        logger.warning("Toss 트레이딩 모듈 시작 실패: %s", exc)
 
 
 # ---------------------------------------------------------------------------
