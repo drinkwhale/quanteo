@@ -236,7 +236,7 @@
     3. 최초 실행 시 `gcsa`가 브라우저 OAuth 동의 화면 리다이렉트 → 토큰 캐시 자동 생성
     4. 이후 실행부터 캐시 토큰 자동 사용 (만료 시 자동 갱신)
 
-- [ ] **T058** AI 중요도 필터 (`info/ai_filter/claude_filter.py`)
+- [x] **T058** AI 중요도 필터 (`info/ai_filter/claude_filter.py`)
   - `CRITICAL_KEYWORDS` 사전 필터 상수 정의 (스펙 5절 기준) — Claude 호출 전 키워드 매칭으로 LOW 사전 제거, API 비용 절감
   - `FilterResult` 데이터클래스: `score: Literal["HIGH", "MEDIUM", "LOW"]`, `reason: str`, `action: Literal["매수검토","매도검토","관망"]`
   - `ClaudeFilter.classify(title: str, body: str) -> FilterResult`: Claude Haiku(`claude-haiku-4-5-20251001`) 호출, 시스템 프롬프트는 스펙 5절 그대로 사용
