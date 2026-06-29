@@ -1,9 +1,9 @@
 # quanteo 아키텍처 설계서
 
 - **작성일:** 2026-06-18
-- **최종 갱신:** 2026-06-18 (리서치 기반 트렌드 반영)
-- **상태:** 승인됨 (브레인스토밍 → 설계 확정 → 트렌드 검토 반영)
-- **대상:** KIS Open Trading API 기반 완전 자동매매 봇
+- **최종 갱신:** 2026-06-29 (Phase 8 — Toss증권 어댑터 마이그레이션 반영)
+- **상태:** 승인됨 (브레인스토밍 → 설계 확정 → Phase 8 Toss 어댑터 추가)
+- **대상:** KIS / Toss증권 교체 가능 브로커 어댑터 기반 완전 자동매매 봇
 - **접근 방식:** 접근 B — 모듈형 Python 코어 + 얇은 제어 API + TypeScript 대시보드
 
 > 이 문서는 새 세션에서도 참조되는 **단일 진실 공급원(single source of truth)** 이다.
@@ -34,21 +34,23 @@
 ## 2. 전체 아키텍처
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  quanteo-core  (Python, 상주 프로세스)                    │
-│                                                           │
-│   ┌──────────┐   ┌───────────┐   ┌──────────┐            │
-│   │ Market   │──▶│ Strategy  │──▶│ Risk     │            │
-│   │ Data     │   │ Engine    │   │ Manager  │            │
-│   │ (feed)   │   │ (plugins) │   │ (가드)   │            │
-│   └──────────┘   └───────────┘   └────┬─────┘            │
-│        ▲                                │                 │
-│        │                                ▼                 │
-│   ┌────┴──────┐                   ┌──────────┐            │
-│   │ KIS       │◀──────────────────│ Order    │            │
-│   │ Adapter   │   주문 실행        │ Executor │            │
-│   │ (REST/WS) │                   └──────────┘            │
-│   └───────────┘                                           │
+┌─────────────────────────────────────────────────────────────┐
+│  quanteo-core  (Python, 상주 프로세스)                        │
+│                                                               │
+│   ┌──────────┐   ┌───────────┐   ┌──────────┐                │
+│   │ Market   │──▶│ Strategy  │──▶│ Risk     │                │
+│   │ Data     │   │ Engine    │   │ Manager  │                │
+│   │ (feed)   │   │ (plugins) │   │ (가드)   │                │
+│   └──────────┘   └───────────┘   └────┬─────┘                │
+│        ▲                                │                     │
+│        │                                ▼                     │
+│   ┌────┴────────────┐            ┌──────────┐                │
+│   │ BrokerAdapter   │◀───────────│ Order    │                │
+│   │ (Protocol)      │  주문 실행  │ Executor │                │
+│   ├─────────────────┤            └──────────┘                │
+│   │ KisRestClient   │  (KIS — REST/WS)                       │
+│   │ TossRestClient  │  (Toss — REST 폴링)                    │
+│   └─────────────────┘                                        │
 │        │                                                  │
 │   ┌────┴───────────────────────────────────┐             │
 │   │  State Store (SQLite + DuckDB)          │             │
@@ -98,13 +100,22 @@ async def main():
 ```
 quanteo/
 ├── core/                       # Python 매매 코어
-│   ├── adapters/kis/           # KIS Adapter: 인증·토큰캐시·REST·WS·TR_ID 매핑·환경/시장 분기
-│   │   ├── auth.py             # access token 발급·캐싱·재발급
-│   │   ├── rest.py             # REST 호출 (시세조회, 주문)
-│   │   ├── ws.py               # WebSocket 구독 (실시간 시세/체결)
-│   │   ├── throttler.py        # Rate limit 스로틀러 (토큰버킷/백오프)
-│   │   └── tr_ids.py           # 환경×시장 TR_ID·도메인 매핑 테이블
+│   ├── adapters/
+│   │   ├── base.py             # BrokerAdapter·MarketPoller Protocol 정의
+│   │   ├── kis/                # KIS 구현체 (REST + WebSocket)
+│   │   │   ├── auth.py         # access token 발급·캐싱·재발급
+│   │   │   ├── rest.py         # REST 호출 (시세조회, 주문)
+│   │   │   ├── ws.py           # WebSocket 구독 (실시간 시세/체결)
+│   │   │   ├── throttler.py    # Rate limit 스로틀러 (FixedIntervalThrottler)
+│   │   │   └── tr_ids.py       # 환경×시장 TR_ID·도메인 매핑 테이블
+│   │   └── toss/               # Toss증권 구현체 (REST 폴링)
+│   │       ├── auth.py         # OAuth2 Client Credentials (토큰 캐시 + 401 재발급)
+│   │       └── rest.py         # REST 호출 (시세·잔고·주문, Rate Limit 그룹 분리)
 │   ├── marketdata/             # 시세/체결 수신 → 내부 표준 형태로 정규화·공급
+│   │   ├── feed.py             # MarketDataFeed (REST 폴링, Toss용)
+│   │   ├── feed_kis.py         # MarketDataFeed (KIS WebSocket, 원본 보존)
+│   │   ├── normalizer.py       # KIS 정규화 재수출 + Toss 정규화 함수
+│   │   └── normalizer_kis.py   # KIS 전용 정규화 함수 (원본 보존)
 │   ├── strategy/               # 전략 엔진 (지표 계산, 시그널 생성)
 │   │   ├── base.py             # Strategy Protocol 정의
 │   │   ├── engine.py           # 플러그인 로드·시그널 루프
@@ -120,26 +131,30 @@ quanteo/
 │   │   └── templates.py        # 이벤트별 메시지 템플릿
 │   ├── api/                    # Control API: FastAPI REST + WebSocket
 │   ├── config/                 # 설정 로딩 (환경/시장/전략 파라미터)
-│   └── app.py                  # 코어 부팅·이벤트 루프 조립
+│   └── app.py                  # 코어 부팅·이벤트 루프 조립 (브로커별 분기)
 ├── dashboard/                  # TypeScript 웹 대시보드
-├── specs/                      # 설계서·작업목록 (이 폴더)
+├── specs/
+│   ├── tossinvest/             # Toss증권 Open API JSON 스펙 모음
+│   └── ...                     # 설계서·작업목록
 ├── tests/                      # pytest 테스트
-├── pyproject.toml              # (부트스트랩 시 생성)
+├── pyproject.toml
 └── CLAUDE.md
 ```
 
-| 모듈                | 책임                                                                                                               | 의존                     |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------ |
-| **KIS Adapter**     | 인증·토큰 캐싱, REST 호출, WebSocket 구독, 환경(prod/vps)·시장(국내/해외)별 TR_ID·도메인 분기, Rate limit 스로틀링 | KIS API                  |
-| **Market Data**     | 시세/체결을 내부 표준 형태로 정규화해 공급                                                                         | KIS Adapter              |
-| **Strategy Engine** | 플러그인 로드, 지표 계산, 매수/매도 **시그널** 생성                                                                | Market Data              |
-| **Risk Manager**    | 시그널 → 주문 전환 전 안전 가드 적용 (단계적 킬스위치, 변동성 기반 포지션 사이징)                                  | State Store              |
-| **Order Executor**  | 검증된 주문 전송, 체결 추적, 멱등성 보장                                                                           | KIS Adapter, State Store |
-| **State Store**     | 포지션·주문·체결 영속화 (SQLite OLTP) + 전략 성과·손익 분석 (DuckDB OLAP)                                          | —                        |
-| **Event Bus**       | asyncio.Queue 기반 모듈 간 느슨한 결합                                                                             | —                        |
-| **Notifier**        | Event Bus 구독 → 이벤트별 Telegram 알림 전송. Rate limit 큐 내장. 테스트 시 MockNotifier로 교체.                   | Event Bus                |
-| **Control API**     | 대시보드용 조회/명령 REST + 실시간 WebSocket (snapshot-then-delta 패턴)                                            | State Store, Event Bus   |
-| **Dashboard**       | 시각화 + 일시정지/킬스위치 제어                                                                                    | Control API              |
+| 모듈                | 책임                                                                                                                   | 의존                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| **BrokerAdapter**   | 브로커 불가지론 인터페이스 (`get_price`, `get_balance`, `place_order`) — `core/adapters/base.py` Protocol 정의         | —                                 |
+| **KIS 구현체**      | BrokerAdapter 구현: REST 호출, WebSocket 구독, 환경(prod/vps)·시장(국내/해외)별 TR_ID·도메인 분기, Rate limit 스로틀링 | KIS API                           |
+| **Toss 구현체**     | BrokerAdapter 구현: OAuth2 인증, REST-only (폴링 기반), accountSeq 초기화, Rate Limit 그룹(MARKET\_DATA/ORDER) 분리    | Toss증권 Open API                 |
+| **Market Data**     | 시세/체결을 내부 표준 형태로 정규화해 공급. KIS: WebSocket feed. Toss: REST 폴링 feed.                                 | BrokerAdapter 구현체              |
+| **Strategy Engine** | 플러그인 로드, 지표 계산, 매수/매도 **시그널** 생성                                                                    | Market Data                       |
+| **Risk Manager**    | 시그널 → 주문 전환 전 안전 가드 적용 (단계적 킬스위치, 변동성 기반 포지션 사이징)                                      | State Store                       |
+| **Order Executor**  | 검증된 주문 전송, 체결 추적, 멱등성 보장                                                                               | BrokerAdapter 구현체, State Store |
+| **State Store**     | 포지션·주문·체결 영속화 (SQLite OLTP) + 전략 성과·손익 분석 (DuckDB OLAP)                                              | —                                 |
+| **Event Bus**       | asyncio.Queue 기반 모듈 간 느슨한 결합                                                                                 | —                                 |
+| **Notifier**        | Event Bus 구독 → 이벤트별 Telegram 알림 전송. Rate limit 큐 내장. 테스트 시 MockNotifier로 교체.                       | Event Bus                         |
+| **Control API**     | 대시보드용 조회/명령 REST + 실시간 WebSocket (snapshot-then-delta 패턴)                                                | State Store, Event Bus            |
+| **Dashboard**       | 시각화 + 일시정지/킬스위치 제어                                                                                        | Control API                       |
 
 ---
 
@@ -147,21 +162,61 @@ quanteo/
 
 > 시그니처는 의도를 보이기 위한 의사코드. 구현 단계에서 타입을 확정한다.
 
-### 4.1 KIS Adapter
+### 4.1 브로커 어댑터 레이어 (BrokerAdapter Protocol)
+
+`core/adapters/base.py`에 정의된 `typing.Protocol`로 브로커를 교체해도 상위 모듈(Strategy, Risk, Executor)은 변경 없음.
 
 ```python
-class KisAdapter:
-    def __init__(self, env: Env, market: Market, creds: Credentials): ...
-    async def auth(self) -> AccessToken: ...              # 토큰 발급/캐시/재발급
-    async def get_price(self, symbol: str) -> Quote: ...
-    async def place_order(self, order: Order) -> OrderAck: ...  # 환경별 TR_ID 자동 선택
-    async def subscribe(self, symbol: str, on_tick: Callable) -> None: ...  # WS
-    # throttler.py: 초당 호출 횟수 제한, 초과 시 큐잉/지수 백오프
+@runtime_checkable
+class BrokerAdapter(Protocol):
+    async def get_price(self, symbol: str) -> PriceInfo: ...
+    async def get_balance(self, symbol: str | None = None) -> BalanceInfo: ...
+    async def place_order(self, order: Order) -> OrderAck: ...
+
+@runtime_checkable
+class MarketPoller(Protocol):
+    def subscribe(self, symbol: str) -> None: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+```
+
+- `OrderAck.broker_order_id`: 브로커 불가지론 주문 ID 필드. KIS 하위호환용 `kis_order_id` property 유지.
+- 브로커 선택은 `Settings.broker: Literal["kis", "toss"]`로 결정. `app.py`에서 분기.
+
+#### 4.1.1 KIS 구현체 (`core/adapters/kis/`)
+
+```python
+class KisRestClient:  # BrokerAdapter 구현
+    async def get_price(self, symbol: str) -> PriceInfo: ...   # TR_ID 자동 선택
+    async def get_balance(self, symbol: str | None) -> BalanceInfo: ...
+    async def place_order(self, order: Order) -> OrderAck: ...  # 환경별 TR_ID
 ```
 
 - `Env` = `prod | vps`, `Market` = `domestic | overseas`
 - TR_ID·도메인 매핑 테이블을 `tr_ids.py`에 분리 보유. 상위 모듈은 이를 알 필요 없음.
+- WebSocket feed는 `feed_kis.py`에 별도 보존 (KIS 전용).
 - **KIS Python 커뮤니티 래퍼(kisopenapi 등)는 v0.19.0 이후 개발 중단(Go 마이그레이션 진행 중).** 공식 `open-trading-api` 샘플을 직접 참조해 raw API 기반으로 구현.
+
+#### 4.1.2 Toss증권 구현체 (`core/adapters/toss/`)
+
+```python
+class TossAuth:
+    async def get_access_token(self) -> OAuth2Token: ...  # 캐시 → 파일 → 신규 발급
+    async def refresh_on_401(self) -> OAuth2Token: ...    # 캐시 삭제 + 재발급
+    # 만료 60초 전 proactive refresh 백그라운드 태스크 스케줄링
+
+class TossRestClient:  # BrokerAdapter 구현
+    async def initialize(self) -> None: ...               # GET /api/v1/accounts → accountSeq
+    async def get_price(self, symbol: str) -> PriceInfo: ...
+    async def get_balance(self, symbol: str | None) -> BalanceInfo: ...
+    async def place_order(self, order: Order) -> OrderAck: ...
+```
+
+- **REST only** — WebSocket 없음. 시세는 `MarketDataFeed`(REST 폴링)로 대체.
+- **Rate Limit 그룹 분리:** `MARKET_DATA` throttler(5 req/s)와 `ORDER` throttler(2 req/s)를 별도 `FixedIntervalThrottler` 인스턴스로 관리 → 시세 조회가 주문 쿼터를 소모하지 않음.
+- **401 재발급:** 요청 실패 시 `auth.refresh_on_401()` 호출 후 1회 재시도. 409(중복 주문)는 `RuntimeError`.
+- **토큰 캐시:** `~/toss/cache/token.json` (저장소 밖, 커밋 금지).
+- **Toss API JSON 스펙:** `specs/tossinvest/` 폴더 (`open-api.json`, `auth.json`, `account.json`, `order.json` 등).
 
 ### 4.2 Strategy (플러그인 인터페이스)
 
@@ -307,14 +362,16 @@ telegram:
 
 ## 6. 데이터 흐름 (정상 매수 경로)
 
-1. KIS Adapter(WS) → tick 수신 → Market Data가 정규화 → Event Bus 발행
+> **KIS:** WS feed → tick 수신. **Toss:** REST 폴링 feed → tick 수신. 이후 흐름은 동일.
+
+1. BrokerAdapter(feed) → tick 수신 → Market Data가 정규화 → Event Bus 발행
 2. Strategy Engine가 tick 수신 → 지표 갱신 → `BUY` Signal 생성
 3. Risk Manager `evaluate(signal)`:
    - `halt_level()` ≥ PAUSE? → Rejection
    - 한도 초과? → Rejection
    - 변동성 기반 수량 조정 (`volatility_scale`)
    - 통과 → Order 생성 (수량·가격 확정)
-4. Order Executor → KIS Adapter `place_order` (환경별 TR_ID) → OrderAck
+4. Order Executor → BrokerAdapter `place_order` → OrderAck (`broker_order_id`)
 5. 체결 수신 → State Store 갱신(position/fill) → Event Bus:
    - Control API(WS) → Dashboard 반영
    - **Notifier → Telegram 체결 알림** (`✅ 체결 005930 × 10 @ 75,350`)
@@ -361,16 +418,17 @@ telegram:
 
 ## 10. 구현 로드맵 (요약 — 상세는 `specs/tasks.md`)
 
-| Phase              | 목표                                                |
-| ------------------ | --------------------------------------------------- |
-| **P1 부트스트랩**  | 프로젝트 스캐폴드, 설정/환경 로딩, KIS Adapter 인증 |
-| **P2 시세**        | Market Data 수신·정규화, State Store                |
-| **P2.5 알림**      | Notifier 모듈 (Telegram + MockNotifier)             |
-| **P3 전략**        | Strategy 플러그인 인터페이스 + 첫 지표 전략         |
-| **P4 리스크+주문** | Risk Manager 가드 + Order Executor (vps 주문)       |
-| **P5 제어 API**    | Control API REST/WS                                 |
-| **P6 대시보드**    | TypeScript 대시보드                                 |
-| **P7 안전·운영**   | 킬스위치·복구·rate limit·prod 게이트                |
+| Phase              | 목표                                                                            |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **P1 부트스트랩**  | 프로젝트 스캐폴드, 설정/환경 로딩, KIS Adapter 인증                             |
+| **P2 시세**        | Market Data 수신·정규화, State Store                                            |
+| **P2.5 알림**      | Notifier 모듈 (Telegram + MockNotifier)                                         |
+| **P3 전략**        | Strategy 플러그인 인터페이스 + 첫 지표 전략                                     |
+| **P4 리스크+주문** | Risk Manager 가드 + Order Executor (vps 주문)                                   |
+| **P5 제어 API**    | Control API REST/WS                                                             |
+| **P6 대시보드**    | TypeScript 대시보드                                                             |
+| **P7 안전·운영**   | 킬스위치·복구·rate limit·prod 게이트                                            |
+| **P8 Toss 어댑터** | BrokerAdapter Protocol 추상화 + Toss증권 REST 구현체 + REST 폴링 MarketDataFeed |
 
 ---
 

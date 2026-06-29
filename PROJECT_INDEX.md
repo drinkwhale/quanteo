@@ -1,6 +1,6 @@
 # Project Index: quanteo
 
-Generated: 2026-06-24 (Phase 7 완료)
+Generated: 2026-06-29 (Phase 8 완료)
 
 ## 🔗 참고 저장소
 
@@ -15,20 +15,21 @@ Generated: 2026-06-24 (Phase 7 완료)
 
 ## 📋 Status
 
-**Phase 1~7 전체 완료** — 모든 구현 Task 완료.
+**Phase 1~8 전체 완료** — T001~T048 모든 구현 Task 완료.
 
-| Phase    | Tasks     | 상태    | 내용                                               |
-| -------- | --------- | ------- | -------------------------------------------------- |
-| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, KIS 인증        |
-| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus    |
-| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)            |
-| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness       |
-| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)           |
-| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring             |
-| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)          |
-| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker |
+| Phase    | Tasks     | 상태    | 내용                                                                            |
+| -------- | --------- | ------- | ------------------------------------------------------------------------------- |
+| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, KIS 인증                                     |
+| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus                                 |
+| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)                                         |
+| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness                                    |
+| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)                                        |
+| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring                                          |
+| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                       |
+| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                              |
+| **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트 |
 
-**테스트:** 288 passed (Python) · TypeScript tsc clean (2026-06-24 기준)
+**테스트:** 288+ passed (Python) · TypeScript tsc clean (2026-06-29 기준)
 
 ---
 
@@ -37,12 +38,17 @@ Generated: 2026-06-24 (Phase 7 완료)
 ```
 quanteo/
 ├── core/
-│   ├── adapters/kis/         # KIS REST/WS Adapter + 인증 + TR_ID 매핑
-│   │   ├── auth.py           # access token 발급·캐싱·재발급 + WebSocket 접속키
-│   │   ├── rest.py           # 현재가·잔고 조회, 매수/매도 주문 REST (throttler 통합)
-│   │   ├── throttler.py      # TokenBucketThrottler + 지수 백오프 재시도 (T029)
-│   │   ├── ws.py             # 실시간 시세/체결 WebSocket 구독
-│   │   └── tr_ids.py         # 환경(prod/vps)×시장(domestic/overseas) TR_ID 매핑
+│   ├── adapters/
+│   │   ├── base.py           # BrokerAdapter·MarketPoller Protocol (typing.Protocol)
+│   │   ├── kis/              # KIS 구현체 (REST + WebSocket)
+│   │   │   ├── auth.py       # access token 발급·캐싱·재발급 + WebSocket 접속키
+│   │   │   ├── rest.py       # 현재가·잔고 조회, 매수/매도 주문 REST (throttler 통합)
+│   │   │   ├── throttler.py  # FixedIntervalThrottler + 지수 백오프 재시도 (T029)
+│   │   │   ├── ws.py         # 실시간 시세/체결 WebSocket 구독
+│   │   │   └── tr_ids.py     # 환경(prod/vps)×시장(domestic/overseas) TR_ID 매핑
+│   │   └── toss/             # Toss증권 구현체 (REST only)
+│   │       ├── auth.py       # OAuth2 Client Credentials, 토큰 캐시, 401 재발급
+│   │       └── rest.py       # 현재가·잔고·주문 REST, Rate Limit 그룹 분리
 │   ├── api/                  # Control API (FastAPI)
 │   │   ├── app.py            # create_app() 팩토리
 │   │   ├── deps.py           # AppContainer 의존성 주입
@@ -59,9 +65,11 @@ quanteo/
 │   │   └── types.py          # Event, EventType 정의
 │   ├── execution/executor.py # OrderExecutor (주문전송·체결추적·멱등성)
 │   ├── marketdata/
-│   │   ├── feed.py           # MarketDataFeed (Tick/Quote/Candle 공급)
+│   │   ├── feed.py           # MarketDataFeed (REST 폴링, Toss용)
+│   │   ├── feed_kis.py       # MarketDataFeed (KIS WebSocket, 원본 보존)
 │   │   ├── models.py         # Tick, Quote, Candle 내부 표준 타입
-│   │   └── normalizer.py     # KIS 원시 데이터 → 내부 표준 정규화
+│   │   ├── normalizer.py     # KIS 정규화 재수출 + Toss 정규화 함수
+│   │   └── normalizer_kis.py # KIS 전용 정규화 함수 (원본 보존)
 │   ├── notifier/
 │   │   ├── base.py           # Notifier Protocol, NotifyEvent, NotifyLevel
 │   │   ├── telegram.py       # TelegramNotifier (aiogram v3, asyncio.Queue Rate limit)
@@ -105,16 +113,18 @@ quanteo/
 ├── Dockerfile                # 멀티스테이지 빌드 (builder/runtime, 비루트 유저, T032)
 ├── .dockerignore             # 자격증명·테스트·대시보드 제외
 ├── docker-compose.yml        # vps 기본 실행, KIS 볼륨 마운트, healthcheck
-├── tests/                    # pytest (275 passed)
+├── tests/                    # pytest (288+ cases)
 │   ├── adapters/kis/         # auth·rest·tr_ids·ws·throttler 단위 테스트
+│   ├── adapters/toss/        # TossAuth (8) + TossRestClient (9) 단위 테스트
 │   ├── api/                  # Control API 엔드포인트 테스트
 │   ├── config/, events/, execution/, marketdata/
+│   ├── marketdata/test_feed_polling.py  # REST 폴링 MarketDataFeed 테스트 (5)
 │   ├── notifier/             # Telegram·Mock·template·wiring 테스트
 │   ├── risk/                 # RiskManager 한도·손절·킬스위치 테스트
 │   ├── store/                # StateStore CRUD + 재시작 복구 테스트
 │   ├── test_prod_gate.py     # prod 이중 확인 게이트 안전 테스트
 │   ├── strategy/             # Engine·Harness·MA Cross 플러그인 테스트
-│   ├── integration/          # signal→risk→order 라운드트립 테스트
+│   ├── integration/          # signal→risk→order 라운드트립 + Toss 라운드트립 테스트
 │   └── conftest.py           # 공통 fixture (AppContainer mock, DB)
 ├── specs/
 │   ├── tasks.md              # Phase·Task 체크박스 (구현 진척 관리)
@@ -201,10 +211,10 @@ npm run build  # 프로덕션 빌드 (~154KB gzipped 49KB)
 
 ## 🔒 보안 원칙
 
-- `kis_devlp.yaml` (앱키·시크릿·계좌번호) — 저장소 밖, 절대 커밋 금지
+- `kis_devlp.yaml` (KIS 앱키·시크릿·계좌번호), `~/toss/cache/token.json` (Toss OAuth2 토큰) — 저장소 밖, 절대 커밋 금지.
 - 기본 환경 `vps` (모의투자). `prod` 실전은 `--i-understand-real-money` 이중 확인 필수.
 - 모든 주문 경로는 RiskManager 통과 필수.
-- Rate Limit: `TokenBucketThrottler` (15회/초) + 지수 백오프 재시도.
+- Rate Limit: KIS `FixedIntervalThrottler`, Toss MARKET\_DATA(5/s)·ORDER(2/s) 그룹 분리.
 - 재시작 복구: `StateStore.get_open_positions()` / `get_pending_orders()` 로 직전 상태 로드.
 
 ---
@@ -213,6 +223,8 @@ npm run build  # 프로덕션 빌드 (~154KB gzipped 49KB)
 
 - **asyncio 단일 이벤트 루프**: 스레드 없이 `asyncio.gather()`로 모든 I/O 병렬화
 - **단방향 흐름**: MarketData → Strategy → RiskManager → OrderExecutor
+- **BrokerAdapter Protocol**: `core/adapters/base.py` — KIS/Toss 교체해도 상위 모듈 변경 없음
+- **브로커 선택**: `Settings.broker: Literal["kis", "toss"]` → `app.py`에서 분기 실행
 - **플러그인 교체형 전략**: `strategy/plugins/`에 파일 추가 + 설정으로 활성화
 - **Research-to-Live Parity**: Backtest·Live 동일 이벤트 모델 → 전략 코드 변경 없이 전환
 - **단계적 킬스위치**: NONE → REDUCE → PAUSE → KILL 4단계

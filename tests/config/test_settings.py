@@ -9,6 +9,7 @@ from core.config.settings import (
     Env,
     KisCredentials,
     Market,
+    TossCredentials,
     load_settings,
 )
 
@@ -187,3 +188,55 @@ class TestKisCredentials:
                 account_code="X1",  # 숫자 아님
                 hts_id="user",
             )
+
+
+class TestLoadSettingsToss:
+    """Toss 브로커 설정 로딩 테스트."""
+
+    TOSS_CONFIG = {
+        "toss": {
+            "client_id": "test-client-id",
+            "client_secret": "test-client-secret",
+        },
+        "telegram": {
+            "bot_token": "0:AAAAA",
+            "chat_id": "-100",
+            "level": "INFO",
+            "enabled": False,
+        },
+    }
+
+    def test_loads_toss_credentials(self, tmp_path: Path) -> None:
+        """broker='toss' 시 TossCredentials가 올바르게 로드된다."""
+        config_path = tmp_path / "config.yaml"
+        with config_path.open("w") as f:
+            import yaml
+            yaml.dump(self.TOSS_CONFIG, f)
+
+        settings = load_settings(config_path=config_path, broker="toss")
+
+        assert settings.broker == "toss"
+        assert settings.toss_credentials is not None
+        assert settings.toss_credentials.client_id == "test-client-id"
+        assert settings.credentials is None  # KIS 자격증명 없음
+
+    def test_toss_missing_section_raises(self, tmp_path: Path) -> None:
+        """설정 파일에 toss 섹션이 없으면 ValueError를 발생시킨다."""
+        config_path = tmp_path / "config.yaml"
+        with config_path.open("w") as f:
+            import yaml
+            yaml.dump({"telegram": {}}, f)
+
+        with pytest.raises(ValueError, match="toss"):
+            load_settings(config_path=config_path, broker="toss")
+
+    def test_toss_secret_is_secret_str(self, tmp_path: Path) -> None:
+        """TossCredentials.client_secret은 SecretStr으로 마스킹된다."""
+        config_path = tmp_path / "config.yaml"
+        with config_path.open("w") as f:
+            import yaml
+            yaml.dump(self.TOSS_CONFIG, f)
+
+        settings = load_settings(config_path=config_path, broker="toss")
+        secret_repr = repr(settings.toss_credentials.client_secret)
+        assert "test-client-secret" not in secret_repr  # SecretStr 마스킹 확인

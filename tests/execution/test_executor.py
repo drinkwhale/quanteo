@@ -40,7 +40,7 @@ def _order(symbol: str = "005930", qty: int = 5) -> Order:
 def _make_ack(order: Order) -> OrderAck:
     return OrderAck(
         client_order_id=order.client_order_id,
-        kis_order_id="KIS-0001",
+        broker_order_id="KIS-0001",
         symbol=order.symbol,
         status="submitted",
         raw={"rt_cd": "0"},

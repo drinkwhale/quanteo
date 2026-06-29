@@ -20,6 +20,7 @@ from core.adapters.kis.tr_ids import get_rest_domain, get_tr_ids
 from core.config.settings import Env, Market
 
 if TYPE_CHECKING:
+    from core.adapters.base import BrokerAdapter  # noqa: F401 — KisRestClient satisfies this Protocol
     from core.execution.executor import OrderAck
     from core.risk.models import Order
 
@@ -395,7 +396,7 @@ class KisRestClient:
 
         return OrderAck(
             client_order_id=order.client_order_id,
-            kis_order_id=kis_order_id,
+            broker_order_id=kis_order_id,
             symbol=order.symbol,
             status="submitted",
             raw=out,
@@ -428,7 +429,7 @@ class KisRestClient:
         out = data.get("output", {})
         return OrderAck(
             client_order_id=order.client_order_id,
-            kis_order_id=out.get("ODNO", ""),
+            broker_order_id=out.get("ODNO", ""),
             symbol=order.symbol,
             status="submitted",
             raw=out,

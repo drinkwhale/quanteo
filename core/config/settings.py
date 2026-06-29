@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, SecretStr, field_validator
@@ -65,6 +65,18 @@ class KisCredentials(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Toss 자격증명 모델
+# ---------------------------------------------------------------------------
+
+
+class TossCredentials(BaseModel):
+    """Toss증권 OAuth2 자격증명."""
+
+    client_id: str
+    client_secret: SecretStr
+
+
+# ---------------------------------------------------------------------------
 # Telegram 설정
 # ---------------------------------------------------------------------------
 
@@ -88,7 +100,9 @@ class Settings(BaseModel):
 
     env: Env = Env.VPS
     market: Market = Market.DOMESTIC
-    credentials: KisCredentials
+    broker: Literal["kis", "toss"] = "kis"
+    credentials: KisCredentials | None = None        # KIS 사용 시 필수
+    toss_credentials: TossCredentials | None = None  # Toss 사용 시 필수
     telegram: TelegramConfig = TelegramConfig()
 
     @property
@@ -97,7 +111,9 @@ class Settings(BaseModel):
 
     @property
     def account_full(self) -> str:
-        """CANO+ACNT_PRDT_CD 합산 문자열."""
+        """CANO+ACNT_PRDT_CD 합산 문자열 (KIS 전용)."""
+        if self.credentials is None:
+            raise RuntimeError("account_full은 KIS 브로커에서만 사용 가능합니다.")
         return self.credentials.account_no + self.credentials.account_code
 
 
@@ -180,6 +196,7 @@ def load_settings(
     env: Env = Env.VPS,
     market: Market = Market.DOMESTIC,
     config_path: Path | None = None,
+    broker: Literal["kis", "toss"] = "kis",
 ) -> Settings:
     """kis_devlp.yaml을 읽어 Settings를 반환한다.
 
@@ -208,8 +225,6 @@ def load_settings(
     with path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f)
 
-    credentials = _extract_credentials(raw, env, path)
-
     telegram_raw = raw.get("telegram", {})
     telegram = TelegramConfig(
         bot_token=telegram_raw.get("bot_token", ""),
@@ -218,9 +233,32 @@ def load_settings(
         enabled=telegram_raw.get("enabled", False),
     )
 
+    if broker == "toss":
+        toss_raw = raw.get("toss", {})
+        if not toss_raw:
+            raise ValueError(
+                f"설정 파일에서 'toss' 섹션을 찾을 수 없습니다: {path}\n"
+                "kis_devlp.yaml.example의 toss: 섹션을 참고하세요."
+            )
+        toss_credentials = TossCredentials(
+            client_id=toss_raw["client_id"],
+            client_secret=toss_raw["client_secret"],
+        )
+        return Settings(
+            env=env,
+            market=market,
+            broker="toss",
+            credentials=None,
+            toss_credentials=toss_credentials,
+            telegram=telegram,
+        )
+
+    # KIS 브로커 (기본)
+    credentials = _extract_credentials(raw, env, path)
     return Settings(
         env=env,
         market=market,
+        broker="kis",
         credentials=credentials,
         telegram=telegram,
     )

@@ -36,34 +36,39 @@ class _RestClient(Protocol):
 
 
 class OrderAck:
-    """KIS API 주문 응답.
+    """브로커 주문 응답.
 
     Args:
         client_order_id: 클라이언트 주문 ID (멱등키).
-        kis_order_id: KIS가 발급한 주문 번호 (ODNO).
+        broker_order_id: 브로커가 발급한 주문 번호 (KIS: ODNO, Toss: orderId).
         symbol: 종목 코드.
         status: 주문 상태 ('submitted' | 'rejected').
-        raw: KIS API 원시 응답.
+        raw: 브로커 API 원시 응답.
     """
 
     def __init__(
         self,
         client_order_id: str,
-        kis_order_id: str,
+        broker_order_id: str,
         symbol: str,
         status: str,
         raw: dict[str, Any],
     ) -> None:
         self.client_order_id = client_order_id
-        self.kis_order_id = kis_order_id
+        self.broker_order_id = broker_order_id
         self.symbol = symbol
         self.status = status
         self.raw = raw
 
+    @property
+    def kis_order_id(self) -> str:
+        """하위 호환 alias — broker_order_id를 반환한다."""
+        return self.broker_order_id
+
     def __repr__(self) -> str:
         return (
             f"OrderAck(client_order_id={self.client_order_id!r}, "
-            f"kis_order_id={self.kis_order_id!r}, status={self.status!r})"
+            f"broker_order_id={self.broker_order_id!r}, status={self.status!r})"
         )
 
 
@@ -115,7 +120,7 @@ class OrderExecutor:
             logger.info("중복 주문 무시 (client_id=%s, status=%s)", order.client_order_id, existing["status"])
             return OrderAck(
                 client_order_id=order.client_order_id,
-                kis_order_id=existing["kis_order_id"] or "",
+                broker_order_id=existing["kis_order_id"] or "",
                 symbol=order.symbol,
                 status=existing["status"],
                 raw={},
@@ -161,7 +166,7 @@ class OrderExecutor:
             raise
 
         # DB 상태 업데이트 (submitted)
-        await self._update_status(order.client_order_id, "submitted", kis_order_id=ack.kis_order_id)
+        await self._update_status(order.client_order_id, "submitted", kis_order_id=ack.broker_order_id)
 
         # Event Bus 발행
         self._bus.publish_nowait(
@@ -169,7 +174,7 @@ class OrderExecutor:
                 type=EventType.ORDER_SUBMITTED,
                 payload={
                     "client_order_id": order.client_order_id,
-                    "kis_order_id": ack.kis_order_id,
+                    "broker_order_id": ack.broker_order_id,
                     "symbol": order.symbol,
                     "side": order.side.value,
                     "qty": order.qty,
@@ -180,12 +185,12 @@ class OrderExecutor:
         )
 
         logger.info(
-            "주문 제출: %s %s %d주 (client=%s kis=%s)",
+            "주문 제출: %s %s %d주 (client=%s broker=%s)",
             order.symbol,
             order.side.value,
             order.qty,
             order.client_order_id,
-            ack.kis_order_id,
+            ack.broker_order_id,
         )
         return ack
 
