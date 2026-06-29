@@ -95,7 +95,7 @@
   - `kis_devlp.yaml.example`에 `toss:` 섹션 예시 추가 (`client_id`, `client_secret`)
   - 설정 로딩 시 `broker` 값 기반으로 KIS 또는 Toss 자격증명 선택
 
-- [ ] **T041** `core/adapters/toss/auth.py` — Toss OAuth2 인증
+- [x] **T041** `core/adapters/toss/auth.py` — Toss OAuth2 인증
   - `POST /oauth2/token` (`application/x-www-form-urlencoded`, `grant_type=client_credentials`)
   - 토큰 캐시: `~/toss/cache/token.json` (기존 KIS 캐시 패턴 재사용, 경로만 분리)
   - 클라이언트당 유효 토큰 1개 원칙: 재발급 시 이전 토큰 즉시 무효화 → 캐시 갱신
