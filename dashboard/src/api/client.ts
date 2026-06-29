@@ -1,4 +1,13 @@
-import type { ApiResponse, BotStatus, OrderList, PositionList } from "./types";
+import type {
+  ApiResponse,
+  BotStatus,
+  FillList,
+  MarketStatus,
+  OrderCancelResponse,
+  OrderList,
+  OrderModifyResponse,
+  PositionList,
+} from "./types";
 
 const BASE = "/api";
 
@@ -25,6 +34,27 @@ export const api = {
   pause: () => request<ApiResponse>("/control/pause", { method: "POST" }),
   resume: () => request<ApiResponse>("/control/resume", { method: "POST" }),
   kill: () => request<ApiResponse>("/control/kill", { method: "POST" }),
+
+  // T056 — 체결·마켓·주문관리
+  getFills: (count = 100) => request<FillList>(`/trades?count=${count}`),
+  getMarketStatus: () => request<MarketStatus>("/market-status"),
+  cancelOrder: (orderId: string) =>
+    request<OrderCancelResponse>(`/orders/${orderId}/cancel`, {
+      method: "POST",
+    }),
+  modifyOrder: (
+    orderId: string,
+    body: {
+      order_type: string;
+      quantity?: number;
+      price?: number;
+      confirm_high_value?: boolean;
+    },
+  ) =>
+    request<OrderModifyResponse>(`/orders/${orderId}/modify`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
 
 // WebSocket URL: vite proxy /stream → ws://localhost:8000/stream

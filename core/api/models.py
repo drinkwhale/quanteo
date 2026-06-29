@@ -7,6 +7,7 @@ Control API 응답 스키마 (Pydantic).
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -51,8 +52,8 @@ class PositionItem(BaseModel):
     market: str
     env: str
     qty: int
-    avg_price: float
-    book_value: float
+    avg_price: Decimal
+    book_value: Decimal
     opened_at: str
     updated_at: str
 
@@ -77,10 +78,10 @@ class OrderItem(BaseModel):
     symbol: str
     market: str
     env: str
-    side: str
-    order_type: str
+    side: str   # "BUY" | "SELL"
+    order_type: str  # "LIMIT" | "MARKET"
     qty: int
-    price: float
+    price: Decimal
     status: str
     created_at: str
     updated_at: str
@@ -91,6 +92,95 @@ class OrderList(BaseModel):
 
     total: int
     items: list[OrderItem]
+
+
+# ---------------------------------------------------------------------------
+# /orders 취소·정정 요청
+# ---------------------------------------------------------------------------
+
+
+class OrderCancelResponse(BaseModel):
+    """주문 취소 응답."""
+
+    success: bool
+    order_id: str
+    message: str = ""
+
+
+class OrderModifyRequest(BaseModel):
+    """주문 정정 요청 바디."""
+
+    order_type: str  # LIMIT | MARKET
+    quantity: int | None = None
+    price: Decimal | None = None
+    confirm_high_value: bool = False
+
+
+class OrderModifyResponse(BaseModel):
+    """주문 정정 응답."""
+
+    success: bool
+    order_id: str
+    message: str = ""
+
+
+# ---------------------------------------------------------------------------
+# /trades
+# ---------------------------------------------------------------------------
+
+
+class FillItem(BaseModel):
+    """체결 내역 1건."""
+
+    symbol: str
+    price: Decimal
+    volume: int
+    timestamp: datetime
+    currency: str
+    side: str | None = None  # "BUY" | "SELL"
+
+
+class FillList(BaseModel):
+    """체결 내역 목록 응답."""
+
+    total: int
+    items: list[FillItem]
+
+
+# ---------------------------------------------------------------------------
+# /market-status
+# ---------------------------------------------------------------------------
+
+
+class MarketDayStatus(BaseModel):
+    """단일 시장 당일 개장 상태."""
+
+    market: str  # KR | US
+    is_open: bool
+    today_date: str
+    open_time: str | None = None
+    close_time: str | None = None
+    is_stale: bool = False  # True이면 캘린더 API 조회 실패 — 데이터 신뢰 불가
+
+
+class MarketStatus(BaseModel):
+    """국내·해외 마켓 개장 상태 응답."""
+
+    markets: list[MarketDayStatus]
+
+
+# ---------------------------------------------------------------------------
+# /risk-metrics
+# ---------------------------------------------------------------------------
+
+
+class RiskMetrics(BaseModel):
+    """Risk Manager 현재 지표 스냅샷."""
+
+    halt_level: str
+    daily_order_count: int
+    buying_power: Decimal | None = None
+    buying_power_currency: str | None = None
 
 
 # ---------------------------------------------------------------------------

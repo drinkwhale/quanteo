@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from core.api.deps import AppContainer
-from core.api.routes import control, orders, positions, status, stream
+from core.api.routes import control, market, orders, positions, status, stream, trades
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ def create_app(container: AppContainer) -> FastAPI:
     app.include_router(status.router, tags=["모니터링"])
     app.include_router(positions.router, tags=["모니터링"])
     app.include_router(orders.router, tags=["모니터링"])
+    app.include_router(trades.router, tags=["모니터링"])
+    app.include_router(market.router, tags=["마켓"])
     app.include_router(control.router, prefix="/control", tags=["제어"])
     app.include_router(stream.router, tags=["스트림"])
 

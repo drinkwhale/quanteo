@@ -66,5 +66,5 @@ def test_positions_with_data(client_with_position):
     item = data["items"][0]
     assert item["symbol"] == "005930"
     assert item["qty"] == 10
-    assert item["avg_price"] == 75000.0
-    assert item["book_value"] == 750000.0
+    assert float(item["avg_price"]) == 75000.0
+    assert float(item["book_value"]) == 750000.0

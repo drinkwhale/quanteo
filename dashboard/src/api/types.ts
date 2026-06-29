@@ -31,7 +31,7 @@ export interface OrderItem {
   symbol: string;
   market: string;
   env: string;
-  side: "buy" | "sell";
+  side: "BUY" | "SELL";
   order_type: string;
   qty: number;
   price: number;
@@ -55,4 +55,45 @@ export interface StreamMessage {
   payload: unknown;
   timestamp: string;
   source: string;
+}
+
+// T056 — 체결 내역
+export interface FillItem {
+  symbol: string;
+  price: number;
+  volume: number;
+  timestamp: string;
+  currency: string;
+  side: "BUY" | "SELL" | null;
+}
+
+export interface FillList {
+  total: number;
+  items: FillItem[];
+}
+
+// T056 — 마켓 상태
+export interface MarketDayStatus {
+  market: string;
+  is_open: boolean;
+  today_date: string;
+  open_time: string | null;
+  close_time: string | null;
+}
+
+export interface MarketStatus {
+  markets: MarketDayStatus[];
+}
+
+// T056 — 주문 취소·정정 응답
+export interface OrderCancelResponse {
+  success: boolean;
+  order_id: string;
+  message: string;
+}
+
+export interface OrderModifyResponse {
+  success: boolean;
+  order_id: string;
+  message: string;
 }

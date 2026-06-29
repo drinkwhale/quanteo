@@ -13,16 +13,35 @@ Rate Limit 그룹 분리:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
 from core.adapters.kis.rest import BalanceInfo, BalanceItem, PriceInfo
 from core.adapters.kis.throttler import FixedIntervalThrottler, ThrottlerConfig
 from core.adapters.toss.auth import TossAuth
+from core.adapters.toss.models import (
+    BuyingPowerInfo,
+    Commission,
+    ExchangeRate,
+    Fill,
+    KrMarketCalendar,
+    KrMarketDay,
+    OrderExecution,
+    OrderOperationResponse,
+    PriceLimits,
+    StockInfo,
+    StockWarning,
+    TossCandle,
+    TossOrder,
+    UsMarketCalendar,
+    UsMarketDay,
+)
 from core.config.settings import Market
 
 if TYPE_CHECKING:
@@ -32,6 +51,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TOSS_BASE_URL = "https://openapi.tossinvest.com"
+
+
+class TossConflictError(RuntimeError):
+    """Toss API 409 Conflict — 동시 처리 중인 요청과 충돌. cancel_order에서 구조적으로 catch한다."""
 
 
 def _safe_float(value: Any, field: str) -> float:
@@ -83,6 +106,9 @@ class TossRestClient:
         self._market_throttler = market_throttler or FixedIntervalThrottler(_MARKET_DATA_THROTTLER_CONFIG)
         self._order_throttler = order_throttler or FixedIntervalThrottler(_ORDER_THROTTLER_CONFIG)
         self._account_seq: str | None = None
+        # 환율 캐시: TTL 60초, asyncio.Lock으로 동시 다중 호출 방지 (인스턴스별 격리)
+        self._exchange_rate_cache: dict[str, tuple[ExchangeRate, float]] = {}
+        self._exchange_rate_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # 초기화: 계좌 시퀀스 조회
@@ -150,10 +176,10 @@ class TossRestClient:
                 raise RuntimeError("Toss API 인증 실패: 토큰 재발급 후에도 401 지속")
 
             if resp.status_code == 409:
-                # 주문 중복 (request-in-progress) — 멱등키로 재조회 권장
                 body = resp.json()
                 err_code = body.get("error", {}).get("code", "")
-                raise RuntimeError(f"Toss API 409 충돌 (code={err_code}): {body}")
+                # TossConflictError로 구별 — cancel_order에서 명시적으로 catch해 재조회 처리
+                raise TossConflictError(f"Toss API 409 충돌 (code={err_code}): {body}")
 
             resp.raise_for_status()
 
@@ -324,3 +350,572 @@ class TossRestClient:
             status="submitted",
             raw=result,
         )
+
+    # ------------------------------------------------------------------
+    # T049 — 매수가능금액 · 판매가능수량 · 수수료
+    # ------------------------------------------------------------------
+
+    async def get_buying_power(self, currency: str = "KRW") -> BuyingPowerInfo:
+        """매수가능금액을 조회한다.
+
+        GET /api/v1/buying-power?currency={currency}
+
+        Args:
+            currency: 통화 코드 (기본 KRW).
+
+        Returns:
+            BuyingPowerInfo — 현금 기반 매수 가능 금액.
+        """
+        data = await self._request_market(
+            "GET", "/api/v1/buying-power",
+            params={"currency": currency},
+            with_account=True,
+        )
+        result = data.get("result", {})
+        return BuyingPowerInfo(
+            currency=result.get("currency", currency),
+            cash_buying_power=Decimal(str(result.get("cashBuyingPower", "0"))),
+        )
+
+    async def get_sellable_quantity(self, symbol: str) -> int:
+        """판매가능수량을 조회한다.
+
+        GET /api/v1/sellable-quantity?symbol={symbol}
+
+        Args:
+            symbol: 종목 심볼.
+
+        Returns:
+            판매가능 수량 (정수).
+        """
+        data = await self._request_market(
+            "GET", "/api/v1/sellable-quantity",
+            params={"symbol": symbol},
+            with_account=True,
+        )
+        result = data.get("result", {})
+        raw = result.get("sellableQuantity", "0")
+        return int(Decimal(str(raw)))
+
+    async def get_commissions(self) -> list[Commission]:
+        """수수료 정책 목록을 조회한다.
+
+        GET /api/v1/commissions
+
+        Returns:
+            Commission 리스트.
+        """
+        data = await self._request_market("GET", "/api/v1/commissions", with_account=True)
+        items = data.get("result", [])
+        return [
+            Commission(
+                market_country=item.get("marketCountry", ""),
+                commission_rate=Decimal(str(item.get("commissionRate", "0"))),
+                start_date=item.get("startDate"),
+                end_date=item.get("endDate"),
+            )
+            for item in items
+        ]
+
+    # ------------------------------------------------------------------
+    # T050 — 주문 관리 (목록·단건·취소·정정)
+    # ------------------------------------------------------------------
+
+    async def list_orders(
+        self,
+        status: Literal["OPEN", "CLOSED"],
+        symbol: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> tuple[list[TossOrder], str | None]:
+        """주문 목록을 조회한다.
+
+        GET /api/v1/orders
+
+        Args:
+            status: 주문 상태 필터 (OPEN 또는 CLOSED). 필수.
+            symbol: 특정 종목 필터. None이면 전체.
+            cursor: 페이지네이션 커서.
+            limit: 최대 반환 건수 (기본 100).
+
+        Returns:
+            (주문 목록, 다음 페이지 커서) 튜플.
+            다음 페이지가 없으면 커서가 None.
+        """
+        params: dict[str, Any] = {"status": status, "limit": limit}
+        if symbol:
+            params["symbol"] = symbol
+        if cursor:
+            params["cursor"] = cursor
+
+        data = await self._request_market("GET", "/api/v1/orders", params=params, with_account=True)
+        result = data.get("result", {})
+        items_raw = result.get("orders", [])
+        has_next = result.get("hasNext", False)
+        next_cursor: str | None = result.get("nextCursor") if has_next else None
+
+        orders = [self._parse_toss_order(item) for item in items_raw]
+        return orders, next_cursor
+
+    async def get_order(self, order_id: str) -> TossOrder:
+        """주문 단건을 조회한다.
+
+        GET /api/v1/orders/{orderId}
+
+        Args:
+            order_id: Toss 주문 식별자.
+
+        Returns:
+            TossOrder 인스턴스.
+        """
+        data = await self._request_market(
+            "GET", f"/api/v1/orders/{order_id}", with_account=True
+        )
+        result = data.get("result", {})
+        return self._parse_toss_order(result)
+
+    async def cancel_order(self, order_id: str) -> OrderOperationResponse:
+        """주문을 취소한다.
+
+        POST /api/v1/orders/{orderId}/cancel
+
+        409 충돌(request-in-progress) 발생 시 주문을 재조회해 현재 상태를 확인한다.
+
+        Args:
+            order_id: 취소할 Toss 주문 식별자.
+
+        Returns:
+            OrderOperationResponse — 취소 후 새로 발급된 주문 ID.
+        """
+        try:
+            data = await self._request_order(
+                "POST", f"/api/v1/orders/{order_id}/cancel"
+            )
+        except TossConflictError:
+            # 이미 처리 중인 취소 요청 — 현재 주문 상태를 재조회해 반환
+            logger.warning("주문 취소 409 충돌 — 주문 재조회: order_id=%s", order_id)
+            current = await self.get_order(order_id)
+            return OrderOperationResponse(order_id=current.order_id)
+
+        result = data.get("result", {})
+        return OrderOperationResponse(order_id=result.get("orderId", order_id))
+
+    async def modify_order(
+        self,
+        order_id: str,
+        order_type: str,
+        quantity: int | None = None,
+        price: Decimal | None = None,
+        confirm_high_value: bool = False,
+    ) -> OrderOperationResponse:
+        """주문을 정정한다.
+
+        POST /api/v1/orders/{orderId}/modify
+
+        Args:
+            order_id: 정정할 Toss 주문 식별자.
+            order_type: 정정 주문 유형 (LIMIT, MARKET). 필수.
+            quantity: 정정 수량. None이면 원주문 수량 유지.
+            price: 정정 가격. None이면 원주문 가격 유지.
+            confirm_high_value: 고액 주문 확인 플래그.
+
+        Returns:
+            OrderOperationResponse — 정정 후 새로 발급된 주문 ID.
+        """
+        body: dict[str, Any] = {"orderType": order_type}
+        if quantity is not None:
+            body["quantity"] = quantity
+        if price is not None:
+            body["price"] = str(price)
+        if confirm_high_value:
+            body["confirmHighValueOrder"] = True
+
+        data = await self._request_order(
+            "POST", f"/api/v1/orders/{order_id}/modify", json=body
+        )
+        result = data.get("result", {})
+        return OrderOperationResponse(order_id=result.get("orderId", order_id))
+
+    def _parse_toss_order(self, item: dict[str, Any]) -> TossOrder:
+        """Toss API 주문 객체를 TossOrder로 변환한다."""
+        execution_raw = item.get("execution", {})
+        execution = OrderExecution(
+            filled_quantity=_safe_int(execution_raw.get("filledQuantity", 0), "filledQuantity"),
+            avg_fill_price=(
+                Decimal(str(execution_raw["averageFilledPrice"]))
+                if execution_raw.get("averageFilledPrice") is not None
+                else None
+            ),
+            fees=(
+                Decimal(str(execution_raw["fees"]))
+                if execution_raw.get("fees") is not None
+                else None
+            ),
+        )
+        raw_ts = item.get("orderedAt", "")
+        try:
+            ordered_at = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except Exception:
+            ordered_at = datetime.now(UTC)
+
+        raw_price = item.get("price")
+        price = Decimal(str(raw_price)) if raw_price is not None else None
+
+        return TossOrder(
+            order_id=item.get("orderId", ""),
+            client_order_id=item.get("clientOrderId"),
+            symbol=item.get("symbol", ""),
+            side=item.get("side", "BUY"),
+            order_type=item.get("orderType", "LIMIT"),
+            status=item.get("status", "PENDING"),
+            quantity=_safe_int(item.get("quantity", 0), "quantity"),
+            price=price,
+            currency=item.get("currency", "KRW"),
+            ordered_at=ordered_at,
+            execution=execution,
+        )
+
+    # ------------------------------------------------------------------
+    # T051 — 체결 내역
+    # ------------------------------------------------------------------
+
+    async def get_trades(self, count: int = 100) -> list[Fill]:
+        """체결 내역을 조회한다.
+
+        GET /api/v1/trades
+
+        Args:
+            count: 최대 반환 건수.
+
+        Returns:
+            Fill 리스트 (최신 체결 순).
+        """
+        data = await self._request_market(
+            "GET", "/api/v1/trades",
+            params={"count": count},
+            with_account=True,
+        )
+        results = data.get("result", [])
+        return [_normalize_toss_trade(item) for item in results]
+
+    # ------------------------------------------------------------------
+    # T052 — 마켓 정보 & 캘린더
+    # ------------------------------------------------------------------
+
+    async def get_price_limits(self, symbol: str) -> PriceLimits:
+        """상하한가를 조회한다.
+
+        GET /api/v1/price-limits?symbol={symbol}
+
+        Args:
+            symbol: 종목 심볼.
+
+        Returns:
+            PriceLimits 인스턴스.
+        """
+        data = await self._request_market(
+            "GET", "/api/v1/price-limits", params={"symbol": symbol}
+        )
+        result = data.get("result", {})
+        raw_ts = result.get("timestamp", "")
+        try:
+            timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except Exception:
+            timestamp = datetime.now(UTC)
+
+        return PriceLimits(
+            symbol=symbol,
+            upper_limit_price=(
+                Decimal(str(result["upperLimitPrice"]))
+                if result.get("upperLimitPrice") is not None
+                else None
+            ),
+            lower_limit_price=(
+                Decimal(str(result["lowerLimitPrice"]))
+                if result.get("lowerLimitPrice") is not None
+                else None
+            ),
+            timestamp=timestamp,
+            currency=result.get("currency", "KRW"),
+        )
+
+    async def get_market_calendar_kr(self, date: str | None = None) -> KrMarketCalendar:
+        """국내 마켓 캘린더를 조회한다.
+
+        GET /api/v1/market-calendar/KR
+
+        Args:
+            date: 기준일 (YYYY-MM-DD). None이면 오늘 기준.
+
+        Returns:
+            KrMarketCalendar 인스턴스.
+        """
+        params: dict[str, Any] = {}
+        if date:
+            params["date"] = date
+        data = await self._request_market("GET", "/api/v1/market-calendar/KR", params=params or None)
+        result = data.get("result", {})
+        return KrMarketCalendar(
+            today=_parse_kr_market_day(result.get("today", {})),
+            previous_business_day=_parse_kr_market_day(result.get("previousBusinessDay", {})),
+            next_business_day=_parse_kr_market_day(result.get("nextBusinessDay", {})),
+        )
+
+    async def get_market_calendar_us(self, date: str | None = None) -> UsMarketCalendar:
+        """미국 마켓 캘린더를 조회한다.
+
+        GET /api/v1/market-calendar/US
+
+        Args:
+            date: 기준일 (YYYY-MM-DD). None이면 오늘 기준.
+
+        Returns:
+            UsMarketCalendar 인스턴스.
+        """
+        params: dict[str, Any] = {}
+        if date:
+            params["date"] = date
+        data = await self._request_market("GET", "/api/v1/market-calendar/US", params=params or None)
+        result = data.get("result", {})
+        return UsMarketCalendar(
+            today=_parse_us_market_day(result.get("today", {})),
+            previous_business_day=_parse_us_market_day(result.get("previousBusinessDay", {})),
+            next_business_day=_parse_us_market_day(result.get("nextBusinessDay", {})),
+        )
+
+    async def is_market_open(self, market: Literal["KR", "US"]) -> bool:
+        """현재 시각 기준 시장 개장 여부를 반환한다.
+
+        캘린더 API를 호출해 오늘 영업일 여부를 판단한다.
+
+        Args:
+            market: 시장 구분 (KR 또는 US).
+
+        Returns:
+            True이면 개장 중.
+        """
+        if market == "KR":
+            cal = await self.get_market_calendar_kr()
+            return cal.today.is_open
+        else:
+            cal = await self.get_market_calendar_us()
+            return cal.today.is_open
+
+    # ------------------------------------------------------------------
+    # T053 — 종목 정보 & 유의사항
+    # ------------------------------------------------------------------
+
+    async def get_stocks(self, symbols: list[str]) -> list[StockInfo]:
+        """종목 기본 정보를 조회한다.
+
+        GET /api/v1/stocks?symbols=A,B,C
+
+        Args:
+            symbols: 종목 심볼 리스트.
+
+        Returns:
+            StockInfo 리스트.
+        """
+        data = await self._request_market(
+            "GET", "/api/v1/stocks",
+            params={"symbols": ",".join(symbols)},
+        )
+        results = data.get("result", [])
+        return [
+            StockInfo(
+                symbol=item.get("symbol", ""),
+                name=item.get("name", ""),
+                english_name=item.get("englishName", ""),
+                market=item.get("market", ""),
+                status=item.get("status", "NORMAL"),
+                currency=item.get("currency", "KRW"),
+                isin_code=item.get("isinCode", ""),
+                is_common_share=bool(item.get("isCommonShare", True)),
+            )
+            for item in results
+        ]
+
+    async def get_stock_warnings(self, symbol: str) -> list[StockWarning]:
+        """종목 유의사항을 조회한다.
+
+        GET /api/v1/stocks/{symbol}/warnings
+
+        Args:
+            symbol: 종목 심볼.
+
+        Returns:
+            StockWarning 리스트. 유의사항 없으면 빈 리스트.
+        """
+        data = await self._request_market("GET", f"/api/v1/stocks/{symbol}/warnings")
+        results = data.get("result", [])
+        return [
+            StockWarning(
+                warning_type=item.get("warningType", ""),
+                start_date=item.get("startDate"),
+                end_date=item.get("endDate"),
+            )
+            for item in results
+        ]
+
+    # ------------------------------------------------------------------
+    # T054 — 환율 조회
+    # ------------------------------------------------------------------
+
+    async def get_exchange_rate(
+        self,
+        base_currency: str = "USD",
+        quote_currency: str = "KRW",
+    ) -> ExchangeRate:
+        """환율을 조회한다. 60초 TTL 인메모리 캐시를 사용한다.
+
+        GET /api/v1/exchange-rate
+
+        Args:
+            base_currency: 기준 통화 (기본 USD).
+            quote_currency: 표시 통화 (기본 KRW).
+
+        Returns:
+            ExchangeRate 인스턴스.
+        """
+        import time
+        cache_key = f"{base_currency}/{quote_currency}"
+
+        async with self._exchange_rate_lock:
+            cached = self._exchange_rate_cache.get(cache_key)
+            if cached and (time.monotonic() - cached[1]) < 60.0:
+                return cached[0]
+
+            data = await self._request_market(
+                "GET", "/api/v1/exchange-rate",
+                params={"baseCurrency": base_currency, "quoteCurrency": quote_currency},
+            )
+            result = data.get("result", {})
+
+            def _parse_dt(val: Any) -> datetime:
+                try:
+                    return datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                except Exception:
+                    return datetime.now(UTC)
+
+            rate = ExchangeRate(
+                base_currency=result.get("baseCurrency", base_currency),
+                quote_currency=result.get("quoteCurrency", quote_currency),
+                rate=Decimal(str(result.get("rate", "0"))),
+                mid_rate=Decimal(str(result.get("midRate", "0"))),
+                rate_change_type=result.get("rateChangeType", ""),
+                valid_from=_parse_dt(result.get("validFrom", "")),
+                valid_until=_parse_dt(result.get("validUntil", "")),
+            )
+            self._exchange_rate_cache[cache_key] = (rate, time.monotonic())
+            return rate
+
+    # ------------------------------------------------------------------
+    # T055 — 과거 캔들 데이터
+    # ------------------------------------------------------------------
+
+    async def get_candles(
+        self,
+        symbol: str,
+        interval: Literal["1m", "1d"],
+        count: int = 100,
+        before: str | None = None,
+        adjusted: bool = True,
+    ) -> list[TossCandle]:
+        """과거 캔들 데이터를 조회한다.
+
+        GET /api/v1/candles
+
+        Args:
+            symbol: 종목 심볼.
+            interval: 봉 단위 ("1m" 또는 "1d").
+            count: 최대 반환 건수 (기본 100).
+            before: 이 시각 이전 데이터만 반환 (ISO 8601).
+            adjusted: 수정주가 적용 여부 (기본 True).
+
+        Returns:
+            TossCandle 리스트 (오래된 순 → 최신 순).
+        """
+        params: dict[str, Any] = {
+            "symbol": symbol,
+            "interval": interval,
+            "count": count,
+            "adjusted": str(adjusted).lower(),
+        }
+        if before:
+            params["before"] = before
+
+        data = await self._request_market("GET", "/api/v1/candles", params=params)
+        result = data.get("result", {})
+        if isinstance(result, dict) and "candles" not in result:
+            logger.warning("get_candles: 예상치 못한 응답 구조 (candles 키 없음): keys=%s", list(result.keys()))
+        items = result.get("candles", result) if isinstance(result, dict) else result
+        if not isinstance(items, list):
+            logger.error("get_candles: items가 list가 아닙니다 (type=%s) — 빈 리스트 반환", type(items).__name__)
+            return []
+
+        candles = []
+        for item in items:
+            raw_ts = item.get("timestamp", "")
+            try:
+                ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+            except Exception:
+                ts = datetime.now(UTC)
+            candles.append(
+                TossCandle(
+                    timestamp=ts,
+                    open_price=Decimal(str(item.get("openPrice", "0"))),
+                    high_price=Decimal(str(item.get("highPrice", "0"))),
+                    low_price=Decimal(str(item.get("lowPrice", "0"))),
+                    close_price=Decimal(str(item.get("closePrice", "0"))),
+                    volume=_safe_int(item.get("volume", 0), "volume"),
+                    currency=item.get("currency", "KRW"),
+                )
+            )
+        return candles
+
+
+# ---------------------------------------------------------------------------
+# 모듈 수준 헬퍼 함수 (T051·T052)
+# ---------------------------------------------------------------------------
+
+
+def _normalize_toss_trade(item: dict[str, Any]) -> Fill:
+    """Toss /api/v1/trades result 항목을 Fill로 변환한다."""
+    raw_ts = item.get("timestamp", "")
+    try:
+        timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+    except Exception:
+        timestamp = datetime.now(UTC)
+
+    return Fill(
+        symbol=item.get("symbol", ""),
+        price=Decimal(str(item.get("price", "0"))),
+        volume=int(Decimal(str(item.get("volume", "0")))),
+        timestamp=timestamp,
+        currency=item.get("currency", "KRW"),
+        side=item.get("side"),
+    )
+
+
+def _parse_kr_market_day(raw: dict[str, Any]) -> KrMarketDay:
+    """Toss KrMarketDay 원시 객체를 KrMarketDay로 변환한다."""
+    integrated = raw.get("integrated") or {}
+    is_open = bool(integrated)  # 빈 dict(휴장일)이면 False
+    return KrMarketDay(
+        date=raw.get("date", ""),
+        is_open=is_open,
+        open_time=integrated.get("open") if integrated else None,
+        close_time=integrated.get("close") if integrated else None,
+    )
+
+
+def _parse_us_market_day(raw: dict[str, Any]) -> UsMarketDay:
+    """Toss UsMarketDay 원시 객체를 UsMarketDay로 변환한다."""
+    regular = raw.get("regular") or {}
+    is_open = bool(regular)
+    return UsMarketDay(
+        date=raw.get("date", ""),
+        is_open=is_open,
+        regular_open=regular.get("open") if regular else None,
+        regular_close=regular.get("close") if regular else None,
+    )
