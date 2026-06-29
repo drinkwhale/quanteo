@@ -299,7 +299,7 @@
     - **추가:** Telegram 발송 1~3회 실패 후 재시도 성공 검증
     - **추가:** 3회 모두 실패 시 dead-letter queue 적재 + logger.error 호출 검증
 
-- [ ] **T063** 환율 수집 & 급변 감지 (`info/fx/rate_monitor.py`)
+- [x] **T063** 환율 수집 & 급변 감지 (`info/fx/rate_monitor.py`)
   - `FxSnapshot` 데이터클래스: `usdkrw`, `dxy`, `jpykrw`, `cnykrw`, `eurusd` — 각 현재가·전일종가·일중변동률
   - `FxRateMonitor.snapshot() -> FxSnapshot`: `yfinance` 티커 배치 조회 (`USDKRW=X`, `DX-Y.NYB`, `JPYKRW=X`, `CNYKRW=X`, `EURUSD=X`)
   - **기준가 초기화 (타이밍 버그 수정):**
