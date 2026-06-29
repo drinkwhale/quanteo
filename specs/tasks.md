@@ -226,54 +226,92 @@
 > **단계 우선순위:** 즉시 가치(T057~~T062) → 환율 자동화(T063~~T064) → 캘린더 연동(T065~~T066) → 풀 통합(T067~~T068).
 
 - [ ] **T057** `info/` 스캐폴드 & 의존성 추가
-  - `pyproject.toml`에 추가: `feedparser`, `beautifulsoup4`, `OpenDartReader`, `yfinance`, `pandas`, `gcsa`, `google-auth-oauthlib`, `icalendar`, `apscheduler`
+  - `pyproject.toml`에 추가: `feedparser`, `beautifulsoup4`, `OpenDartReader`, `yfinance`, `pandas`, `gcsa`, `google-auth-oauthlib`, `icalendar`, `apscheduler` (**`schedule` 라이브러리는 추가하지 않는다** — apscheduler 단독 사용, cron 표현식 지원 필요)
   - `info/` 디렉토리 스캐폴드: `news/`, `fx/`, `calendar/`, `ai_filter/`, `telegram/` 서브패키지 생성 (`__init__.py` 포함)
   - `quanteo.yaml.example`에 `info:` 섹션 추가 — `dart.api_key`, `finnhub.api_key`, `google_calendar.credentials_path`, `anthropic.api_key`, `telegram.chat_id`
   - `core/config/settings.py`에 `InfoSettings(BaseModel)` 추가: 각 API 키·경로·알람 임계값(`fx_alert_threshold`) 로딩
+  - **Google Calendar OAuth 최초 설정 절차** (`docs/setup/GOOGLE_CALENDAR_SETUP.md` 문서화):
+    1. GCP 프로젝트 생성 → Calendar API 활성화
+    2. OAuth2 클라이언트 자격증명 다운로드 → `~/.quanteo/google/credentials.json`
+    3. 최초 실행 시 `gcsa`가 브라우저 OAuth 동의 화면 리다이렉트 → 토큰 캐시 자동 생성
+    4. 이후 실행부터 캐시 토큰 자동 사용 (만료 시 자동 갱신)
 
 - [ ] **T058** AI 중요도 필터 (`info/ai_filter/claude_filter.py`)
   - `CRITICAL_KEYWORDS` 사전 필터 상수 정의 (스펙 5절 기준) — Claude 호출 전 키워드 매칭으로 LOW 사전 제거, API 비용 절감
   - `FilterResult` 데이터클래스: `score: Literal["HIGH", "MEDIUM", "LOW"]`, `reason: str`, `action: Literal["매수검토","매도검토","관망"]`
   - `ClaudeFilter.classify(title: str, body: str) -> FilterResult`: Claude Haiku(`claude-haiku-4-5-20251001`) 호출, 시스템 프롬프트는 스펙 5절 그대로 사용
-  - API 호출 실패 시 키워드 매칭 수 기반 폴백 (CRITICAL_KEYWORDS 2개↑ → MEDIUM, 미만 → LOW)
-  - `tests/info/test_claude_filter.py`: 키워드 사전 필터 경계 케이스 + Haiku JSON 응답 파싱 검증 (httpx mock)
+  - **폴백 2단 정책 (무음 폐기 금지):**
+    - 1단: Claude API 실패 → CRITICAL_KEYWORDS 매칭 수 기반 (2개↑ → MEDIUM, 미만 → LOW)
+    - 2단: 키워드 매칭도 실패(예외 발생, 빈 키워드 리스트) → 운영자 긴급 알람 발송 후 LOW 반환. 뉴스를 조용히 버리지 않는다.
+    - 두 단계 모두 `logger.error` 기록 + `FilterResult.reason`에 `[DEGRADED MODE]` 접두사
+  - `tests/info/test_claude_filter.py`:
+    - 키워드 사전 필터 경계 케이스 + Haiku JSON 응답 파싱 검증 (httpx mock)
+    - **추가:** Claude API DOWN(`httpx.ConnectError`) 시 1단 폴백 동작 검증
+    - **추가:** Haiku 응답 JSON 누락 필드(`score` 없음, 빈 문자열) 시 예외 처리 검증
+    - **추가:** CRITICAL_KEYWORDS 빈 리스트일 때 2단 폴백 → 운영자 알람 발송 검증
 
 - [ ] **T059** 국내 뉴스 RSS 수집기 (`info/news/rss_collector.py`)
   - `NewsItem` 데이터클래스: `title`, `url`, `source`, `published_kst: datetime`, `raw_body: str`
   - `RssCollector.fetch() -> list[NewsItem]`: 한국경제·매일경제·이데일리 RSS `feedparser` 비동기 병렬 수집 (`asyncio.gather`)
   - UTC→KST 변환 (`pytz.timezone("Asia/Seoul")`)
-  - 중복 제거: URL 기반 `seen_urls: set` 인메모리 캐시, TTL 24시간 (재시작 시 초기화)
+  - **중복 제거: SQLite 영속 dedup** (`~/.quanteo/info_dedup.db`, `seen_urls` 테이블, TTL 24시간). 인메모리 set 사용 금지 — 재시작 후 중복 알람 방지
+  - **부분 실패 처리:** 개별 피드 타임아웃(10초) 시 해당 피드만 스킵, 수집된 결과는 정상 반환. 전체 피드 실패 시 `logger.error` 후 빈 리스트 반환 (예외 전파 없음)
   - 수집 후 `ClaudeFilter.classify()` 호출 → HIGH만 `InfoNotifier.send_news_alert()` 발송
-  - `tests/info/test_rss_collector.py`: feedparser mock으로 중복 제거·KST 변환·HIGH 필터 연동 검증
+  - > **네이버금융 BeautifulSoup 스크래핑** (스펙 2-1절): Phase 10 범위 외. 크롤링 구조 변경 리스크를 고려해 Phase 11에서 구현 결정 예정.
+  - `tests/info/test_rss_collector.py`:
+    - feedparser mock으로 중복 제거·KST 변환·HIGH 필터 연동 검증
+    - **추가:** 모든 RSS 피드 타임아웃 시 빈 리스트 반환·예외 미전파 검증
+    - **추가:** 일부 피드 실패 + 일부 성공 시 성공 결과만 반환 검증
+    - **추가:** SQLite dedup — 재시작 후 동일 URL 재수신 시 발송 차단 검증
 
 - [ ] **T060** DART 공시 수집기 (`info/news/dart_collector.py`)
   - `DartCollector.fetch(corp_code: str = "00164779") -> list[NewsItem]`: `OpenDartReader` 기반 SK하이닉스 최신 공시 조회
   - 필터 대상: 유상증자·전환사채·주요사항보고서 (`report_tp` 코드 기반)
   - 공시 수신 시 중요도 강제 HIGH → `InfoNotifier.send_news_alert()` 즉시 발송 (Claude 필터 생략)
-  - `tests/info/test_dart_collector.py`: OpenDartReader mock으로 공시 유형 필터링·HIGH 강제 로직 검증
+  - **API 장애 처리:** OpenDartReader 예외 발생 시 `logger.error` 기록 후 빈 리스트 반환 (매매 시스템 중단 방지)
+  - `tests/info/test_dart_collector.py`:
+    - OpenDartReader mock으로 공시 유형 필터링·HIGH 강제 로직 검증
+    - **추가:** OpenDartReader 예외(네트워크 오류, 인증 실패) 시 빈 리스트 반환·logger.error 호출 검증
+    - **추가:** 공시 없음(빈 결과) 시 Telegram 미발송 검증
 
 - [ ] **T061** 해외 뉴스 수집기 (`info/news/finnhub_collector.py`)
   - `FinnhubCollector.fetch(symbols: list[str]) -> list[NewsItem]`: `GET https://finnhub.io/api/v1/company-news` — NVDA·MU·TSM·AMD·ASML 등 티커별 수집
-  - Rate limit 준수: 60 req/min — `asyncio.Semaphore` + 1초 인터벌
+  - **Rate limit + 429 처리:** `asyncio.Semaphore` + 1초 인터벌로 60 req/min 준수. 그래도 429 수신 시 지수 백오프(1s→2s→4s, 최대 3회) 재시도. 3회 소진 시 해당 심볼 스킵 + `logger.warning`
+  - **5xx·빈 응답 처리:** 서버 오류나 `[]` 응답은 해당 심볼 스킵, 전체 수집 완료
   - `YahooRssCollector.fetch() -> list[NewsItem]`: Yahoo Finance RSS `feedparser` 수집 (무료, 글로벌 시황)
   - 두 소스 모두 `ClaudeFilter.classify()` 통과 후 HIGH만 Telegram 발송
-  - `tests/info/test_finnhub_collector.py`: httpx mock으로 응답 파싱·Rate limit Semaphore 동작 검증
+  - `tests/info/test_finnhub_collector.py`:
+    - httpx mock으로 응답 파싱·Rate limit Semaphore 동작 검증
+    - **추가:** 429 응답 → 지수 백오프 3회 재시도 후 스킵 검증
+    - **추가:** 500 오류 시 해당 심볼 스킵·빈 리스트 반환 검증
+    - **추가:** 빈 배열(`[]`) 응답 시 Telegram 미발송 검증
 
 - [ ] **T062** Telegram 알람 메시지 포맷 확장 (`info/telegram/info_notifier.py`)
   - `InfoNotifier`: 기존 `core/notifier/TelegramNotifier`를 **생성자 주입**으로 받아 래핑 (중복 구현 금지)
+  - **발송 실패 처리 (무음 소실 금지):** 발송 실패 시 지수 백오프(1s→2s→4s) 3회 재시도. 3회 소진 시 `logger.error` + 실패 항목을 `asyncio.Queue` 기반 dead-letter queue에 보존(최대 100건). 스케줄러 재시도 루프(5분 간격)가 큐를 소진
   - `send_news_alert(item: NewsItem, result: FilterResult)`: 스펙 4-1절 포맷 (`🚨 [HIGH]` 헤더, 분석·대응·타임스탬프)
   - `send_earnings_alert(event: EarningsEvent)`: 스펙 4-2절 포맷 (1시간 전 사전 알람, 컨센서스 EPS·매출 포함)
   - `send_fx_alert(snapshot: FxSnapshot)`: 스펙 4-3절 포맷 (`💱` 환율 급변, SK하이닉스 영향 한줄)
   - `send_fx_daily_report(report: FxDailyReport)`: 스펙 4-4절 포맷 (USD·DXY·JPY·CNY 4종 종가 리포트)
   - `send_morning_brief(events: list)`: 08:00 장전 당일 일정 브리핑
-  - `tests/info/test_info_notifier.py`: 각 포맷 함수 출력 문자열 스냅샷 검증 (MockTelegramNotifier)
+  - `tests/info/test_info_notifier.py`:
+    - 각 포맷 함수 출력 문자열 스냅샷 검증 (MockTelegramNotifier)
+    - **추가:** Telegram 발송 1~3회 실패 후 재시도 성공 검증
+    - **추가:** 3회 모두 실패 시 dead-letter queue 적재 + logger.error 호출 검증
 
 - [ ] **T063** 환율 수집 & 급변 감지 (`info/fx/rate_monitor.py`)
   - `FxSnapshot` 데이터클래스: `usdkrw`, `dxy`, `jpykrw`, `cnykrw`, `eurusd` — 각 현재가·전일종가·일중변동률
   - `FxRateMonitor.snapshot() -> FxSnapshot`: `yfinance` 티커 배치 조회 (`USDKRW=X`, `DX-Y.NYB`, `JPYKRW=X`, `CNYKRW=X`, `EURUSD=X`)
-  - 기준가 캐시: 09:00 KST 첫 스냅샷을 `base_snapshot`으로 저장 → 이후 변동률은 기준가 대비 계산
+  - **기준가 초기화 (타이밍 버그 수정):**
+    - 09:00 KST 이후 기동 시: `yfinance .history(period="1d", interval="1m")`로 당일 09:00 시가를 역산해 `base_snapshot` 설정
+    - 09:00 이전 기동 시: 최초 `snapshot()` 결과를 잠정 base로 사용, `base_is_provisional = True` 플래그 설정
+    - yfinance None/NaN 반환 시 `logger.warning` + 해당 환율 변동률 계산 생략 (알람 오발 방지)
   - 급변 감지 임계값 (스펙 2-5절): USD/KRW ±1%↑ → 🔴 즉시 / ±0.5~1% → 🟡 일반 / DXY ±0.5% / JPY/KRW ±1.5% / CNY/KRW ±1% / EUR/USD ±0.7%
-  - `tests/info/test_rate_monitor.py`: yfinance mock으로 임계값 경계 케이스(±0.999%, ±1.001%) 검증
+  - `tests/info/test_rate_monitor.py`:
+    - yfinance mock으로 임계값 경계 케이스(±0.999%, ±1.001%) 검증
+    - **추가:** 09:00 이후 기동 시 `.history()` 호출로 시가 역산 검증
+    - **추가:** yfinance None/NaN 반환 시 해당 쌍 알람 미발송 + logger.warning 검증
+    - **추가:** 장 마감 시간대 stale 데이터 반환 시 알람 미발송 검증
 
 - [ ] **T064** 환율 일일 마감 리포트 (`info/fx/daily_report.py`)
   - `FxDailyReport` 데이터클래스: 4종 환율 종가·일중변동률·종합 평가 텍스트
@@ -285,35 +323,51 @@
 - [ ] **T065** Google Calendar API 연동 (`info/calendar/google_cal.py`)
   - `CalEvent` 데이터클래스: `summary`, `start: datetime`, `end: datetime`, `importance: Literal["CRITICAL","HIGH","MEDIUM","FX","KR"]`, `description: str`
   - `GoogleCalendarClient`: `gcsa` 라이브러리 OAuth2 인증 (`credentials.json` 경로는 `quanteo.yaml`)
+  - **OAuth 토큰 만료 처리:** `add_event()` 중 401 수신 시 `gcsa` 자동 토큰 갱신 트리거. 갱신 실패 시 `logger.error` + 해당 이벤트 스킵 (매매 시스템 중단 없음)
   - `add_event(event: CalEvent)`: 색상 코딩 자동 적용 — CRITICAL→11(Tomato), HIGH→6(Tangerine), MEDIUM→5(Banana), FX→7(Peacock), KR→2(Sage)
   - 알람 설정 자동화: FOMC·NVDA·MU → 2중(120분+30분 전), CPI·NFP·TSM → 60분 전, 기타 → 30분 전
   - 중복 방지: 동일 `summary`+`start` 이벤트 검색 후 존재 시 스킵
-  - `tests/info/test_google_cal.py`: gcsa mock으로 색상·알람·중복 방지 로직 검증
+  - **API 할당량 초과(429) 처리:** 지수 백오프 3회 재시도, 소진 시 `logger.error` + `bulk_add` 중단 없이 다음 이벤트 진행
+  - `tests/info/test_google_cal.py`:
+    - gcsa mock으로 색상·알람·중복 방지 로직 검증
+    - **추가:** `add_event()` 중 401 발생 시 토큰 갱신 트리거 + 재시도 검증
+    - **추가:** 429 할당량 초과 시 백오프 후 다음 이벤트 계속 처리 검증
 
 - [ ] **T066** 실적발표 & 경제지표 캘린더 데이터 (`info/calendar/earnings_data.py`, `macro_events.py`)
-  - `EARNINGS_SCHEDULE: list[CalEvent]`: 스펙 2-4절 2026 하반기 실적 하드코딩 (ASML·TSM·AMD·NVDA·AVGO·MU + AMAT·LRCX·KLAC·MRVL·META·MSFT·GOOGL·AMZN)
-  - `MACRO_SCHEDULE`: 미국(FOMC·CPI·NFP·PCE·PPI·GDP·ISM)·한국(기준금리·수출입)·중국(PMI) 반복 스케줄 룰 정의
+  - **`EarningsEvent` 타입 정의** (`CalEvent` 서브클래스, T062 `send_earnings_alert` 연동):
+    - `ticker: str`, `consensus_eps: str | None`, `consensus_sales: str | None`, `timing: Literal["장전","장중","장후"]`, `sk_impact: Literal["🔴 최고","🔴 높음","🟡 중간"]`
+  - `EARNINGS_SCHEDULE: list[EarningsEvent]`: 스펙 2-4절 2026 하반기 실적 하드코딩 (ASML·TSM·AMD·NVDA·AVGO·MU + AMAT·LRCX·KLAC·MRVL·META·MSFT·GOOGL·AMZN), 컨센서스 값 포함
+  - `MACRO_SCHEDULE`: 미국(FOMC·CPI·NFP·PCE·PPI·GDP·ISM)·한국(기준금리·수출입)·중국(PMI) 반복 스케줄 룰 정의. **범위: 2026년 하반기(2026-07~12)만.** 2027년 이후는 Phase 11에서 자동 갱신 연동 검토
   - `next_events(days: int = 7) -> list[CalEvent]`: 오늘 기준 N일 내 이벤트 필터링
+  - `today_us_earnings() -> list[EarningsEvent]`: 오늘 미국 장후(22:30~익일 08:00 KST) 발표 예정 종목 필터링 — T067 15:30 잡에서 호출
   - `GoogleCalendarClient.bulk_add(events)`: 매월 1일 00:00 다음 달 전체 일정 일괄 저장
-  - `tests/info/test_calendar_data.py`: 날짜 필터링·중요도 매핑·bulk_add 중복 방지 검증
+  - `tests/info/test_calendar_data.py`:
+    - 날짜 필터링·중요도 매핑·bulk_add 중복 방지 검증
+    - **추가:** `today_us_earnings()` — 오늘 날짜 기준 장후 실적만 필터 검증 (경계: 22:29 vs 22:30 KST)
 
 - [ ] **T067** APScheduler 스케줄러 통합 (`info/scheduler.py`, `info/main.py`)
+  - **⚠️ 타임존 필수:** `AsyncIOScheduler(timezone="Asia/Seoul")` + 각 `CronTrigger(timezone="Asia/Seoul")`. 미설정 시 UTC 기준으로 모든 잡이 KST보다 9시간 늦게 실행됨
   - `InfoScheduler`: `AsyncIOScheduler` 기반 — 아래 크론 잡 전체 등록 (스펙 7절 기준):
-    - `cron(hour=8, minute=0)` KST — 장전 뉴스 수집 + 당일 일정 브리핑
-    - `interval(minutes=5)` 09:00~15:30 — 국내 RSS 폴링 + HIGH 알람
-    - `interval(minutes=30)` 09:00~15:30 — USD/KRW 환율 체크 + 급변 알람
-    - `cron(hour=15, minute=30)` — 미국 당일 장후 실적 예정 Telegram 안내
-    - `cron(hour=16, minute=0)` — 환율 일일 마감 리포트
-    - `interval(minutes=10)` 22:00~06:00 — 미국 뉴스 폴링 (Finnhub·Yahoo)
-    - `cron(day=1, hour=0, minute=0)` — 다음 달 캘린더 자동 저장
+    - `CronTrigger(hour=8, minute=0)` KST — 장전 뉴스 수집 + 당일 일정 브리핑
+    - `IntervalTrigger(minutes=5)` 09:00~15:30 — 국내 RSS 폴링 + HIGH 알람
+    - `IntervalTrigger(minutes=30)` 09:00~15:30 — USD/KRW 환율 체크 + 급변 알람
+    - `CronTrigger(hour=15, minute=30)` — `today_us_earnings()` 호출 → 오늘 미국 장후 실적 예정 종목만 필터링 후 Telegram 발송 (전체 스케줄 아닌 당일 건만)
+    - `CronTrigger(hour=16, minute=0)` — 환율 일일 마감 리포트
+    - `IntervalTrigger(minutes=10)` 22:00~06:00 — 미국 뉴스 폴링 (Finnhub·Yahoo)
+    - `CronTrigger(day=1, hour=0, minute=0)` — 다음 달 캘린더 자동 저장
+  - **잡 예외 처리:** `misfire_grace_time=60`, `coalesce=True` 설정. 잡 내부 예외는 `try/except`로 잡아 `logger.error` 후 다음 실행 정상 유지 (스케줄러 중단 방지)
   - `InfoSystem`: 모든 컴포넌트 wiring + `start()` / `stop()` 라이프사이클 (의존성 주입 패턴)
   - `core/app.py` 통합: `info.enabled: true` 플래그 시 `InfoSystem.start()`를 `asyncio.gather`에 추가
-  - `tests/info/test_scheduler.py`: APScheduler mock으로 잡 등록 수·크론 표현식 검증
+  - `tests/info/test_scheduler.py`:
+    - APScheduler mock으로 잡 등록 수·크론 표현식·타임존(`Asia/Seoul`) 검증
+    - **추가:** 잡 내부 예외 발생 시 스케줄러 계속 실행 검증 (다음 interval 정상 트리거)
+    - **추가:** `today_us_earnings()` 빈 결과 시 15:30 잡이 Telegram 미발송 검증
 
 - [ ] **T068** 통합 테스트 & 문서 갱신
   - `tests/info/test_integration_news.py`: RSS 수집 → AI 필터 → Telegram 전송 엔드투엔드 (MockTelegramNotifier 사용)
   - `tests/info/test_integration_fx.py`: FxRateMonitor 급변 감지 → Telegram 알람 라운드트립
   - `tests/info/test_integration_calendar.py`: 실적발표 데이터 → Google Calendar 저장 → 중복 방지 라운드트립
+  - **추가:** `tests/info/test_integration_degraded.py`: Claude API + Telegram 동시 장애 시 시스템 계속 동작 검증 (dead-letter queue 적재, 스케줄러 지속)
   - `specs/2026-06-18-quanteo-architecture.md` 갱신: Phase 10 정보 수집·알람 서브시스템 섹션 추가
   - `quanteo.yaml.example` 최종 정비: `info:` 전체 섹션 완성
   - `CLAUDE.md` 구현 상태표에 Phase 10 행 추가
