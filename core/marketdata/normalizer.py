@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from core.adapters.kis.rest import BalanceInfo, BalanceItem
+from core.adapters.toss.models import Fill, TossCandle
 from core.marketdata.models import Candle, Tick
 
 # KIS 정규화 함수 re-export (기존 테스트·코드 무수정 유지)
@@ -36,6 +37,8 @@ __all__ = [
     # Toss
     "normalize_toss_price",
     "normalize_toss_holdings",
+    "normalize_toss_trade",
+    "normalize_toss_candle",
 ]
 
 
@@ -76,6 +79,79 @@ def normalize_toss_price(symbol: str, result: dict) -> Tick:
         volume=int(result.get("volume", 0)),
         timestamp=timestamp,
         market=market,
+    )
+
+
+def normalize_toss_trade(symbol: str, result: dict) -> Fill:
+    """Toss /api/v1/trades result 항목을 Fill로 변환한다.
+
+    Args:
+        symbol: 체결 종목 심볼 (trades API가 symbol 필드를 반환하지 않을 때 대체).
+        result: Toss API result 배열의 단일 항목.
+
+    Returns:
+        Fill 인스턴스.
+    """
+    from decimal import Decimal
+
+    raw_ts = result.get("timestamp")
+    if raw_ts:
+        try:
+            if isinstance(raw_ts, (int, float)):
+                timestamp = datetime.fromtimestamp(raw_ts / 1000, tz=UTC)
+            else:
+                timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except Exception:
+            timestamp = datetime.now(UTC)
+    else:
+        timestamp = datetime.now(UTC)
+
+    return Fill(
+        symbol=result.get("symbol", symbol),
+        price=Decimal(str(result.get("price", "0"))),
+        volume=int(Decimal(str(result.get("volume", "0")))),
+        timestamp=timestamp,
+        currency=result.get("currency", "KRW"),
+        side=result.get("side"),
+    )
+
+
+def normalize_toss_candle(symbol: str, result: dict, interval: str = "1d") -> Candle:
+    """Toss /api/v1/candles result 항목을 Candle로 변환한다.
+
+    Args:
+        symbol: 종목 심볼.
+        result: Toss API Candle 객체.
+        interval: 봉 단위 문자열 ("1m", "1d").
+
+    Returns:
+        Candle 인스턴스 (core.marketdata.models.Candle).
+    """
+    raw_ts = result.get("timestamp")
+    if raw_ts:
+        try:
+            if isinstance(raw_ts, (int, float)):
+                timestamp = datetime.fromtimestamp(raw_ts / 1000, tz=UTC)
+            else:
+                timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+        except Exception:
+            timestamp = datetime.now(UTC)
+    else:
+        timestamp = datetime.now(UTC)
+
+    currency = result.get("currency", "KRW")
+    market: Literal["domestic", "overseas"] = "domestic" if currency == "KRW" else "overseas"
+
+    return Candle(
+        symbol=symbol,
+        open=float(result.get("openPrice", 0)),
+        high=float(result.get("highPrice", 0)),
+        low=float(result.get("lowPrice", 0)),
+        close=float(result.get("closePrice", 0)),
+        volume=int(float(result.get("volume", 0))),
+        timestamp=timestamp,
+        market=market,
+        interval=interval,
     )
 
 
