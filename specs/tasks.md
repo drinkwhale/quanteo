@@ -103,7 +103,7 @@
   - **선제적 갱신 옵션:** `OAuth2TokenResponse.expires_in`(초) 기반으로 만료 60초 전에 백그라운드 재발급 — `401` 감지 방식과 함께 선택 구현 가능
   - `get_account_seq()` 는 `auth.py`에 두지 않음 — `TossRestClient.__init__` 또는 팩토리에서 처리 (단일 책임 원칙)
 
-- [ ] **T042** `core/adapters/toss/rest.py` — 시세 & 잔고 조회
+- [x] **T042** `core/adapters/toss/rest.py` — 시세 & 잔고 조회
   - `__init__` 에서 `GET /api/v1/accounts` 호출 → 첫 번째 `accountSeq` 획득 후 인스턴스 변수 저장
   - `get_price(symbol: str) -> PriceInfo`: `GET /api/v1/prices?symbols={symbol}` → `result[0].lastPrice`
   - `get_balance(symbol: str | None = None) -> BalanceInfo`: `GET /api/v1/holdings` (`X-Tossinvest-Account: {accountSeq}` 헤더) — `symbol` 파라미터로 특정 종목만 필터 가능 (전체 잔고는 생략)
@@ -111,7 +111,7 @@
   - 에러 처리: `{"error": {"code": ..., "message": ...}}` → `RuntimeError` 변환
   - **Rate Limit 그룹별 스로틀러 분리:** `MARKET_DATA` 그룹(시세·잔고)과 `ORDER` 그룹(주문)은 별도 `FixedIntervalThrottler` 인스턴스 사용. 주문 전송이 시세 폴링 버킷을 소모하지 않도록 격리.
 
-- [ ] **T043** `core/adapters/toss/rest.py` — 주문 생성
+- [x] **T043** `core/adapters/toss/rest.py` — 주문 생성
   - `place_order(order: Order) -> OrderAck`: `POST /api/v1/orders`
   - 요청 바디: `{clientOrderId, symbol, side, orderType, quantity, price}` (TR_ID·시장 분기 불필요)
   - `clientOrderId` 네이티브 지원 → 멱등성 Toss 서버 보장 (`409 request-in-progress` 처리)
