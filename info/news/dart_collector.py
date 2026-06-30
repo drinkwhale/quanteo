@@ -7,6 +7,7 @@ OpenDartReader를 사용해 SK하이닉스(기본) 최신 공시를 조회한다
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -43,9 +44,7 @@ class DartCollector:
 
     async def fetch(self, corp_code: str = SK_HYNIX_CORP_CODE) -> list[NewsItem]:
         """최신 공시를 조회하고 중요 유형은 HIGH 강제로 알람 발송한다."""
-        import asyncio
-
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             items = await loop.run_in_executor(None, self._fetch_sync, corp_code)
         except Exception as exc:

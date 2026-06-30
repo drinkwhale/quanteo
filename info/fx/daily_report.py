@@ -44,7 +44,7 @@ class FxDailyReporter:
 
     async def generate(self) -> FxDailyReport:
         """오후 4시 yfinance 조회 후 리포트를 생성한다."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         report = await loop.run_in_executor(None, self._generate_sync)
 
         if self._notifier:
@@ -89,7 +89,8 @@ class FxDailyReporter:
                 else:
                     closes[key] = float(series.iloc[-1])
                     opens[key] = float(series.iloc[0])
-            except Exception:
+            except Exception as exc:
+                logger.warning("yfinance 일일 ticker 파싱 실패 %s: %s", ticker, exc)
                 closes[key] = 0.0
                 opens[key] = 0.0
 

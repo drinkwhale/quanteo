@@ -130,7 +130,7 @@ def _parse_entry(entry: feedparser.FeedParserDict, source: str) -> NewsItem | No
 async def _fetch_one_feed(source: str, rss_url: str) -> list[NewsItem]:
     """단일 RSS 피드를 10초 타임아웃으로 수집한다."""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         feed = await asyncio.wait_for(
             loop.run_in_executor(None, feedparser.parse, rss_url),
             timeout=FEED_TIMEOUT,
