@@ -444,3 +444,79 @@ telegram:
 | **AAT** (Python+C++)             | 모듈형 이벤트 드리븐 프레임워크, asyncio.gather 패턴                      |
 
 > 직접 의존성으로 추가하지 않고 **패턴 참조**만. quanteo는 KIS API 특화 구현을 직접 유지.
+
+---
+
+## 12. Phase 10 — 정보 수집·알람 서브시스템
+
+> 구현 완료: T057~T068 (2026-06-30)
+
+SK하이닉스 매매 판단에 필요한 뉴스·환율·실적·경제지표를 자동 수집하고 Telegram으로 알람을 발송하는 독립 서브시스템.
+
+### 12.1 서브시스템 구조
+
+```
+info/
+├── ai_filter/       ClaudeFilter  — Haiku AI 중요도 분류 (HIGH/MEDIUM/LOW)
+├── news/            RssCollector, DartCollector, FinnhubCollector
+├── fx/              FxRateMonitor, FxDailyReporter, rate_rule
+├── calendar/        GoogleCalendarClient, earnings_data, macro_events
+├── telegram/        InfoNotifier — 5개 포맷 함수 + DLQ
+├── scheduler.py     InfoScheduler — AsyncIOScheduler 7개 잡
+└── main.py          InfoSystem — 전체 컴포넌트 DI 조립
+```
+
+### 12.2 핵심 설계 결정
+
+| 결정 | 내용 |
+|------|------|
+| **2단 필터** | 1단: CRITICAL_KEYWORDS 사전 필터 (API 비용 절감) → 2단: Haiku 분류 |
+| **SQLite dedup** | `~/.quanteo/info_dedup.db`, TTL 24h — 재시작 후 중복 알람 방지 |
+| **asyncio+executor** | 동기 라이브러리(feedparser, yfinance, OpenDartReader)를 비동기로 래핑 |
+| **DLQ 패턴** | asyncio.Queue(max 100), 3회 실패 시 적재, 5분 간격 재시도 |
+| **KST 타임존 필수** | `AsyncIOScheduler(timezone="Asia/Seoul")` — 미설정 시 9시간 오차 |
+| **0.0 가드** | yfinance 조회 실패 시 0.0 반환 → 급변 알람 오발 방지 |
+
+### 12.3 스케줄러 잡 목록
+
+| 잡 ID | 트리거 | 역할 |
+|-------|--------|------|
+| `morning_brief` | 08:00 KST | 장전 뉴스 + 당일 일정 브리핑 |
+| `domestic_rss` | 5분 간격 (장중) | 국내 RSS 폴링 + HIGH 알람 |
+| `fx_check` | 30분 간격 (장중) | USD/KRW 급변 알람 |
+| `us_earnings_alert` | 15:30 KST | 오늘 미국 장후 실적 Telegram |
+| `fx_daily_report` | 16:00 KST | 환율 일일 마감 리포트 |
+| `us_news` | 10분 간격 (야간) | Finnhub·Yahoo 뉴스 폴링 |
+| `monthly_calendar` | 매월 1일 00:00 | 다음 달 Google Calendar 저장 |
+
+### 12.4 활성화 방법
+
+```yaml
+# quanteo.yaml
+info:
+  enabled: true
+  anthropic:
+    api_key: "sk-ant-..."
+  dart:
+    api_key: "..."
+  finnhub:
+    api_key: "..."
+  google_calendar:
+    credentials_path: "~/.quanteo/google/credentials.json"
+  fx_alert_threshold: 1.0
+```
+
+```bash
+uv run quanteo --with-info
+```
+
+### 12.5 외부 의존성
+
+| 패키지 | 용도 |
+|--------|------|
+| `feedparser` | RSS 파싱 |
+| `opendartreader` | DART 공시 수집 |
+| `yfinance` | 환율 데이터 (USD/KRW, DXY 등) |
+| `anthropic` | Claude Haiku AI 필터 |
+| `gcsa` | Google Calendar API |
+| `apscheduler` | 크론·인터벌 스케줄러 |

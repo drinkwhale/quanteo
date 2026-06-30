@@ -363,7 +363,7 @@
     - **추가:** 잡 내부 예외 발생 시 스케줄러 계속 실행 검증 (다음 interval 정상 트리거)
     - **추가:** `today_us_earnings()` 빈 결과 시 15:30 잡이 Telegram 미발송 검증
 
-- [ ] **T068** 통합 테스트 & 문서 갱신
+- [x] **T068** 통합 테스트 & 문서 갱신
   - `tests/info/test_integration_news.py`: RSS 수집 → AI 필터 → Telegram 전송 엔드투엔드 (MockTelegramNotifier 사용)
   - `tests/info/test_integration_fx.py`: FxRateMonitor 급변 감지 → Telegram 알람 라운드트립
   - `tests/info/test_integration_calendar.py`: 실적발표 데이터 → Google Calendar 저장 → 중복 방지 라운드트립
