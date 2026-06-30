@@ -416,7 +416,7 @@
   - **TTL 캐시:** 월봉 1시간, 주봉 30분, 일봉 5분, 60분봉 1분 — 폴링 루프의 API 과호출 방지
   - `tests/strategy/test_multi_timeframe.py`: mock `get_candles()`로 4개 타임프레임 조회·지표 계산·캐시 TTL 검증; 1개 TF 실패 시 나머지 정상 반환 확인
 
-- [ ] **T072** 타임프레임 계층 방향 판단 (`core/strategy/timeframe_judge.py`)
+- [x] **T072** 타임프레임 계층 방향 판단 (`core/strategy/timeframe_judge.py`)
   - `MarketDirection(enum)`: `BULLISH`, `BEARISH`, `NEUTRAL`
   - `TimeframeJudge.assess(mtf: MultiTimeframeData) -> dict[str, MarketDirection]` — 4개 타임프레임별 방향 반환
     - **데이터 미비 처리:** `TimeframeState.candles`가 비어 있거나 리샘플 캔들 수 < period(20)이면 해당 TF → `NEUTRAL` + `logger.warning(f"{timeframe} 데이터 부족 — NEUTRAL 처리")`. 결과는 반환하되 경고 기록.
