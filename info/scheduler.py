@@ -112,6 +112,19 @@ class InfoScheduler:
         )
 
     # ──────────────────────────────────────────────────────────────────────────
+    # 내부 헬퍼
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _escalate(self, job_name: str, exc: Exception) -> None:
+        """잡 오류를 Telegram으로 베스트에포트 에스컬레이션한다."""
+        try:
+            await self._system.notifier._send_text(
+                f"⚠️ [InfoScheduler] {job_name} 잡 오류: {exc}"
+            )
+        except Exception:
+            pass  # 에스컬레이션 자체 실패는 무시
+
+    # ──────────────────────────────────────────────────────────────────────────
     # 잡 구현
     # ──────────────────────────────────────────────────────────────────────────
 
@@ -130,6 +143,7 @@ class InfoScheduler:
             await sys.notifier.send_morning_brief(today_events)
         except Exception as exc:
             logger.error("morning_brief 잡 오류: %s", exc, exc_info=True)
+            await self._escalate("morning_brief", exc)
 
     async def _job_domestic_rss(self) -> None:
         """② 5분 간격 (09:00~15:30): 국내 RSS 폴링 + HIGH 알람."""
@@ -174,6 +188,7 @@ class InfoScheduler:
             await self._system.notifier.send_fx_daily_report(report)
         except Exception as exc:
             logger.error("fx_daily_report 잡 오류: %s", exc, exc_info=True)
+            await self._escalate("fx_daily_report", exc)
 
     async def _job_us_news(self) -> None:
         """⑥ 10분 간격 (22:00~06:00): 미국 뉴스 폴링 (Finnhub·Yahoo)."""

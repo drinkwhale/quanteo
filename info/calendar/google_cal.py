@@ -81,7 +81,7 @@ class GoogleCalendarClient:
 
     async def add_event(self, event: CalEvent) -> None:
         """이벤트를 Calendar에 추가한다. 중복이면 스킵."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._add_event_sync, event)
 
     def _add_event_sync(self, event: CalEvent) -> None:

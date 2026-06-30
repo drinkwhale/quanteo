@@ -77,7 +77,7 @@ class FxRateMonitor:
 
     async def snapshot(self) -> FxSnapshot:
         """현재 환율 스냅샷을 조회한다."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         snap = await loop.run_in_executor(None, self._fetch_sync)
 
         # 기준가 초기화

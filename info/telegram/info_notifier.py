@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 KST = pytz.timezone("Asia/Seoul")
 _MAX_RETRIES = 3
 _DLQ_MAX = 100
+_INITIAL_RETRY_DELAY = 1.0  # 지수 백오프 초기 지연 (초)
 
 
 @dataclass
@@ -53,7 +54,7 @@ class InfoNotifier:
         """지수 백오프 재시도 후 실패 시 DLQ에 보관."""
         from core.notifier.base import NotifyEvent, NotifyLevel
 
-        delay = 1.0
+        delay = _INITIAL_RETRY_DELAY
         for attempt in range(_MAX_RETRIES):
             try:
                 await self._tg.send(
@@ -74,6 +75,11 @@ class InfoNotifier:
                     logger.error("Telegram 발송 3회 소진 — DLQ 적재: %s", exc)
                     if not self._dlq.full():
                         await self._dlq.put(_DlqItem(text=text))
+                    else:
+                        logger.critical(
+                            "DLQ 포화(%d/%d) — 알람 영구 유실: %.100s",
+                            self._dlq.qsize(), _DLQ_MAX, text,
+                        )
 
     async def retry_dlq(self) -> None:
         """DLQ를 소진한다 (스케줄러 5분 간격 호출)."""

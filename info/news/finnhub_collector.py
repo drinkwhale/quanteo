@@ -67,7 +67,7 @@ class FinnhubCollector:
         return items
 
     async def _fetch_symbol(self, symbol: str) -> list[NewsItem]:
-        """단일 심볼 뉴스 수집 (지수 백오프 재시도)."""
+        """단일 심볼 뉴스 수집 (지수 백오프 재시도 — 429·타임아웃·일반 오류 모두 재시도)."""
         today = datetime.now(tz=pytz.UTC)
         week_ago = today - timedelta(days=7)
         params = {
@@ -79,41 +79,56 @@ class FinnhubCollector:
 
         delay = 1.0
         for attempt in range(_MAX_RETRIES):
-            async with self._sem:
-                try:
+            try:
+                async with self._sem:
                     async with httpx.AsyncClient(timeout=15.0) as client:
                         resp = await client.get(FINNHUB_BASE, params=params)
 
-                    if resp.status_code == 429:
-                        if attempt < _MAX_RETRIES - 1:
-                            logger.warning(
-                                "Finnhub 429 — %s 심볼, %.0fs 후 재시도 (%d/%d)",
-                                symbol, delay, attempt + 1, _MAX_RETRIES,
-                            )
-                            await asyncio.sleep(delay)
-                            delay *= 2
-                            continue
-                        else:
-                            logger.warning("Finnhub 429 재시도 소진 — %s 스킵", symbol)
-                            return []
-
-                    if resp.status_code >= 500:
-                        logger.warning("Finnhub 5xx — %s 스킵", symbol)
-                        return []
-
-                    resp.raise_for_status()
-                    data = resp.json()
-
-                    if not data:  # 빈 배열
-                        return []
-
-                    return [self._parse_item(entry, symbol) for entry in data if entry]
-
-                except httpx.TimeoutException:
-                    logger.warning("Finnhub 타임아웃 — %s", symbol)
+                if resp.status_code == 429:
+                    if attempt < _MAX_RETRIES - 1:
+                        logger.warning(
+                            "Finnhub 429 — %s 심볼, %.0fs 후 재시도 (%d/%d)",
+                            symbol, delay, attempt + 1, _MAX_RETRIES,
+                        )
+                        await asyncio.sleep(delay)
+                        delay *= 2
+                        continue
+                    logger.warning("Finnhub 429 재시도 소진 — %s 스킵", symbol)
                     return []
-                except Exception as exc:
-                    logger.error("Finnhub 수집 실패 — %s: %s", symbol, exc)
+
+                if resp.status_code >= 500:
+                    logger.warning("Finnhub 5xx — %s 스킵", symbol)
+                    return []
+
+                resp.raise_for_status()
+                data = resp.json()
+
+                if not data:  # 빈 배열
+                    return []
+
+                return [self._parse_item(entry, symbol) for entry in data if entry]
+
+            except httpx.TimeoutException:
+                if attempt < _MAX_RETRIES - 1:
+                    logger.warning(
+                        "Finnhub 타임아웃 — %s, %.0fs 후 재시도 (%d/%d)",
+                        symbol, delay, attempt + 1, _MAX_RETRIES,
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.warning("Finnhub 타임아웃 재시도 소진 — %s 스킵", symbol)
+                    return []
+            except Exception as exc:
+                if attempt < _MAX_RETRIES - 1:
+                    logger.warning(
+                        "Finnhub 수집 실패 — %s: %s, %.0fs 후 재시도 (%d/%d)",
+                        symbol, exc, delay, attempt + 1, _MAX_RETRIES,
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error("Finnhub 수집 실패 재시도 소진 — %s: %s", symbol, exc)
                     return []
 
         return []
@@ -142,7 +157,7 @@ class YahooRssCollector:
         self._notifier = info_notifier
 
     async def fetch(self) -> list[NewsItem]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         items: list[NewsItem] = []
 
         for source, url in YAHOO_RSS_SOURCES.items():
