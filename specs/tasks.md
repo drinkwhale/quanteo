@@ -382,7 +382,7 @@
 > **신규 디렉토리:** `core/strategy/indicators/` — 지표 계산 순수 함수 모음. `core/strategy/multi_timeframe.py` — 타임프레임 동기화 엔진.
 > **기존 재사용:** `core/adapters/toss/rest.py` `get_candles()` (T055), `core/strategy/engine.py` (T012).
 
-- [ ] **T069** CCI 지표 계산 모듈 (`core/strategy/indicators/cci.py`)
+- [x] **T069** CCI 지표 계산 모듈 (`core/strategy/indicators/cci.py`)
   - 계산 공식 (스펙 1.1절): `TP = (high + low + close) / 3` → `SMA(20)` → `MD(20)` → `CCI = (TP - SMA) / (0.015 * MD)`
   - `calculate_cci(candles: list[Candle], period: int = 20) -> list[float]`
     - **반환 계약:** 반환 길이 = `len(candles) - (period - 1)`. `len(candles) < period`이면 `[]` 반환 (예외 미발생).
