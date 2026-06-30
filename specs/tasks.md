@@ -385,37 +385,47 @@
 - [ ] **T069** CCI 지표 계산 모듈 (`core/strategy/indicators/cci.py`)
   - 계산 공식 (스펙 1.1절): `TP = (high + low + close) / 3` → `SMA(20)` → `MD(20)` → `CCI = (TP - SMA) / (0.015 * MD)`
   - `calculate_cci(candles: list[Candle], period: int = 20) -> list[float]`
+    - **반환 계약:** 반환 길이 = `len(candles) - (period - 1)`. `len(candles) < period`이면 `[]` 반환 (예외 미발생).
+    - **⚠️ MD=0 가드 필수:** `MD < 1e-9`이면 `0.0`을 해당 봉에 기록 + `logger.warning("CCI: MD≈0, 중립값 대체")`. `inf`/`nan` 전파 금지.
   - `calculate_cci_signal(cci_values: list[float], signal_period: int = 20) -> list[float]`
-  - `detect_golden_cross(cci: list[float], signal: list[float]) -> bool` — 상향 돌파 감지
-  - `detect_dead_cross(cci: list[float], signal: list[float]) -> bool` — 하향 돌파 감지
+  - `detect_golden_cross(cci: list[float], signal: list[float]) -> bool`
+    - **검사 기준: 최신 봉만.** `cci[-2] <= signal[-2] and cci[-1] > signal[-1]`. 길이 불일치(`len(cci) != len(signal)`) 또는 길이 < 2이면 `False` 반환 + `logger.error`.
+  - `detect_dead_cross(cci: list[float], signal: list[float]) -> bool` — 동일 계약 적용
   - `get_cci_zone(cci_value: float) -> Literal["과매수강", "과매수", "중립", "과매도", "과매도강"]` — ±100/±200 기준
-  - `tests/strategy/test_cci.py`: 공식 수식 검증, 골든/데드크로스 경계 케이스, 데이터 부족(period-1개) 처리
+  - `tests/strategy/test_cci.py`: 공식 수식 검증, 골든/데드크로스 경계 케이스, 데이터 부족(period-1개) 처리, **`test_cci_flat_price` (20봉 동일 가격 → MD=0 → 전체 `0.0` 반환 검증)**
 
 - [ ] **T070** 이동평균선 & 거래량 지표 모듈 (`core/strategy/indicators/ma.py`)
-  - `calculate_sma(values: list[float], period: int) -> list[float]` — 범용 SMA (MA5·MA20·거래량MA20 공용)
-  - `classify_candle(open_price: float, close_price: float, threshold: float = 0.001) -> Literal["양봉", "음봉", "십자형"]`
-  - `is_large_candle(candle: Candle, body_ratio: float = 0.6) -> bool` — 장대양봉/장대음봉 판별 (몸통 비율 기준)
+  - `calculate_sma(values: list[float], period: int) -> list[float]` — 범용 SMA. 반환 길이 = `len(values) - (period - 1)`.
+  - `CandleClass(StrEnum)`: `BULLISH = "bullish"`, `BEARISH = "bearish"`, `DOJI = "doji"` — 한국어 Literal 대신 StrEnum 사용 (grep·API 경계 안전)
+  - `PricePosition(StrEnum)`: `ABOVE = "above"`, `BETWEEN = "between"`, `BELOW = "below"`
+  - `classify_candle(open_price: float, close_price: float, threshold: float = 0.001) -> CandleClass`
+  - `is_large_candle(candle: Candle, body_ratio: float = 0.6) -> bool` — 장대양봉/장대음봉 판별 (몸통 비율 = `|close-open| / (high-low)`). `high == low`이면 `False` 반환 (제로 분모 방지).
   - `is_alignment_bullish(ma5: float, ma20: float) -> bool` — 정배열 판단 (5일선 > 20일선)
-  - `price_position(price: float, ma5: float, ma20: float) -> Literal["위", "사이", "아래"]` — 스펙 3절 포지션 분류
-  - `tests/strategy/test_ma.py`: 분류 경계 케이스 (십자형 threshold, 장대 ratio)
+  - `price_position(price: float, ma5: float, ma20: float) -> PricePosition` — 스펙 3절 포지션 분류
+  - `tests/strategy/test_ma.py`: 분류 경계 케이스 (십자형 threshold, 장대 ratio, `high==low` 제로 분모)
 
 - [ ] **T071** 멀티 타임프레임 데이터 동기화 (`core/strategy/multi_timeframe.py`)
-  - `TimeframeState` 데이터클래스: `candles: list[Candle]`, `cci: list[float]`, `cci_signal: list[float]`, `ma5: list[float]`, `ma20: list[float]`, `volume_ma20: list[float]`, `last_updated: datetime`
-  - `MultiTimeframeLoader`: T055 `TossRestClient.get_candles()` 활용, 4개 타임프레임 병렬 조회 (`asyncio.gather`)
-    - 월봉: `interval="1mo"`, 주봉: `interval="1w"`, 일봉: `interval="1d"`, 60분봉: `interval="60m"`
-    - **Toss API 제약:** 현재 `["1m", "1d"]` 두 가지만 확정 (T055). 주봉·월봉·60분봉은 일봉 리샘플링(`pandas resample`) 또는 API 업데이트 시 전환 — 설계 시 추상화 레이어 유지
-  - `MultiTimeframeData`: 4개 `TimeframeState` 보관, `lookup_upper(date) -> dict` — 일봉 시점 기준 상위 타임프레임 CCI 상태 반환
+  - `TimeframeState` 데이터클래스: `candles: list[Candle]`, `cci: list[float]`, `cci_signal: list[float]`, `ma5: list[float]`, `ma20: list[float]`, `volume_ma20: list[float]`, `last_updated: datetime`, `is_resampled: bool = False`
+    - `__post_init__`: `len(cci) == len(cci_signal)` 검증 → `ValueError` (배열 정렬 보장)
+  - **앱 시작 시 초기화:** 일봉 최근 500일치 fetch → `pandas resample`로 주봉·월봉 생성. 60분봉은 1분봉 60개 집계. 리샘플된 상태는 `is_resampled=True` 표시. Toss API가 네이티브 주봉/월봉을 지원하는 시점에 전환.
+  - `MultiTimeframeLoader`: T055 `TossRestClient.get_candles()` 활용, 4개 타임프레임 병렬 조회
+    - `asyncio.gather(*tasks, return_exceptions=True)` 사용 — 개별 타임프레임 실패 시 예외 전파 없이 해당 TF는 직전 캐시 유지 + `logger.warning` 기록
+    - 월봉: `interval="1d"` + resample, 주봉: `interval="1d"` + resample, 일봉: `interval="1d"`, 60분봉: `interval="1m"` + 60개 집계
+    - **Toss API 제약:** 현재 `["1m", "1d"]` 두 가지만 확정 (T055). 주봉·월봉·60분봉은 일봉/분봉 리샘플링(APPROXIMATION). 네이티브 지원 시 추상화 레이어만 교체.
+  - `MultiTimeframeData`: 4개 `TimeframeState` 보관, `lookup_upper(date) -> UpperTimeframeState` — 일봉 시점 기준 상위 타임프레임 CCI 상태 반환 (`TypedDict`: `monthly`, `weekly`, `sixty_min` 키)
   - **TTL 캐시:** 월봉 1시간, 주봉 30분, 일봉 5분, 60분봉 1분 — 폴링 루프의 API 과호출 방지
-  - `tests/strategy/test_multi_timeframe.py`: mock `get_candles()`로 4개 타임프레임 조회·지표 계산·캐시 TTL 검증
+  - `tests/strategy/test_multi_timeframe.py`: mock `get_candles()`로 4개 타임프레임 조회·지표 계산·캐시 TTL 검증; 1개 TF 실패 시 나머지 정상 반환 확인
 
 - [ ] **T072** 타임프레임 계층 방향 판단 (`core/strategy/timeframe_judge.py`)
   - `MarketDirection(enum)`: `BULLISH`, `BEARISH`, `NEUTRAL`
   - `TimeframeJudge.assess(mtf: MultiTimeframeData) -> dict[str, MarketDirection]` — 4개 타임프레임별 방향 반환
+    - **데이터 미비 처리:** `TimeframeState.candles`가 비어 있거나 리샘플 캔들 수 < period(20)이면 해당 TF → `NEUTRAL` + `logger.warning(f"{timeframe} 데이터 부족 — NEUTRAL 처리")`. 결과는 반환하되 경고 기록.
   - **스펙 8.1절 1~2단계 구현:**
     - 월봉: `cci[-1] > cci_signal[-1] AND cci[-1] > 0` → BULLISH (매매 허용), 그 외 → BEARISH (관망)
     - 주봉: `cci[-1] > cci_signal[-1]` → BULLISH, 그 외 → BEARISH
-  - `is_trade_allowed(direction: dict) -> bool` — 월봉 BULLISH일 때만 True
-  - `tests/strategy/test_timeframe_judge.py`: 월봉 BEARISH 시 거래 금지, 경계값(cci == 0) 처리
+  - `is_trade_allowed(direction: dict[str, MarketDirection]) -> bool` — 월봉 BULLISH일 때만 True
+    - 월봉 데이터가 아예 없어 방향을 결정할 수 없는 경우: `logger.error("월봉 데이터 없음 — 거래 불가")` + `False` 반환 (raise 대신 fail-safe)
+  - `tests/strategy/test_timeframe_judge.py`: 월봉 BEARISH 시 거래 금지, 경계값(`cci == 0`), 데이터 미비 시 NEUTRAL 처리
 
 ---
 
@@ -428,38 +438,43 @@
 > **보조 모듈:** `core/strategy/plugins/bbc_buy.py`, `bbc_sell.py`, `intraday_signal.py`.
 
 - [ ] **T073** 박병창 매수 3원칙 구현 (`core/strategy/plugins/bbc_buy.py`)
-  - `BbcBuySignal` 데이터클래스: `principle: Literal[1, 2, 3]`, `entry_time: Literal["오전", "오후"]`, `volume_ok: bool`, `reason: str`
-  - **매수 제1원칙** (5일선 위): `price > ma5`. 타이밍: 오전(current_time < 10:00, 시가 이하 하락 후 거래량 증가하며 재돌파) / 오후(current_time >= 14:00, 거래량 증가하며 재상승). 제외: 10시 이후 하락 전환 시.
+  - `EntryTime(StrEnum)`: `MORNING = "morning"`, `AFTERNOON = "afternoon"`
+  - `BbcBuySignal` 데이터클래스: `principle: Literal[1, 2, 3]`, `entry_time: EntryTime`, `volume_ok: bool`, `reason: str`
+  - **`peak_volume` 정의:** 직전 상승 국면(최근 20봉 내 최고 거래량). `if len(candles) < 20: logger.warning(...); peak_volume = max(c.volume for c in candles)`
+  - **매수 제1원칙** (5일선 위): `price > ma5`. 타이밍: 오전(`current_time < time(10, 0, 0)` 정각 기준, 시가 이하 하락 후 거래량 증가하며 재돌파) / 오후(`current_time >= time(14, 0, 0)`, 거래량 증가하며 재상승). 제외: 10시 이후 하락 전환 시.
   - **매수 제2원칙** (눌림목): `ma5 < price < ma20`. 조건 동시 충족: 조정 구간 거래량 `< peak_volume * 0.4`, 하락폭 50% 이내, 재상승일 거래량 급증(`> volume_ma20 * 1.5`)+양봉. 금지: 거래량 증가 음봉.
   - **매수 제3원칙** (급락 저점): `price < ma20`. 조건: 거래량 최저 후 급증(`volume > volume_ma20 * 2.0`), 양봉 또는 십자형. 금지: 거래량 증가 하락.
-  - `tests/strategy/test_bbc_buy.py`: 3원칙 각 조건 경계 케이스, 금지 조건 차단 검증
+  - `tests/strategy/test_bbc_buy.py`: 3원칙 각 조건 경계 케이스, 금지 조건 차단 검증, `peak_volume` 20봉 미만 fallback
 
 - [ ] **T074** 박병창 매도 2원칙 구현 (`core/strategy/plugins/bbc_sell.py`)
-  - `BbcSellSignal` 데이터클래스: `principle: Literal[1, 2]`, `sell_ratio: float`, `is_full_exit: bool`, `reason: str`
-  - **매도 제1원칙** (5일선 위): 거래량급증+음봉 → `sell_ratio=0.4`, 거래량폭증+십자형 → `sell_ratio=0.3`, `price < ma5 AND ma5 < ma20` → `is_full_exit=True`
-  - **매도 제2원칙** (5~20일선 사이): 거래량증가+음봉 → `sell_ratio=0.5`. 특별규칙: 20일선 직상 거래량급증+장대음봉 → `is_full_exit=True`
-  - `detect_45_degree_decline(candles: list[Candle], window: int = 12) -> bool` — 장중 완만 지속 하락 감지 (선형회귀 기울기 + 거래량 분산)
-  - `tests/strategy/test_bbc_sell.py`: 1/2원칙 sell_ratio 정확도, 전량 매도 트리거, 45도 하락 경계 케이스
+  - `SellAction(StrEnum)`: `FULL_EXIT = "full_exit"`, `PARTIAL_30PCT = "partial_30pct"`, `PARTIAL_40PCT = "partial_40pct"`, `PARTIAL_50PCT = "partial_50pct"` — `sell_ratio: float + is_full_exit: bool` 콤보 대신 단일 StrEnum으로 교체 (invalid 조합 불가)
+  - `BbcSellSignal` 데이터클래스: `principle: Literal[1, 2]`, `action: SellAction`, `reason: str`
+  - **매도 제1원칙** (5일선 위): 거래량급증+음봉 → `PARTIAL_40PCT`, 거래량폭증+십자형 → `PARTIAL_30PCT`, `price < ma5 AND ma5 < ma20` → `FULL_EXIT`
+  - **매도 제2원칙** (5~20일선 사이): 거래량증가+음봉 → `PARTIAL_50PCT`. 특별규칙: 20일선 직상 거래량급증+장대음봉 → `FULL_EXIT`
+  - `detect_45_degree_decline(candles: list[Candle], window: int = 12) -> bool` — 장중 완만 지속 하락 감지 (선형회귀 기울기 + 거래량 분산). `len(candles) < window`이면 `False + logger.warning` (조기 판단 방지)
+  - `tests/strategy/test_bbc_sell.py`: 1/2원칙 `SellAction` 매핑 정확도, 전량 매도 트리거, 45도 하락 경계 케이스, 캔들 부족 시 `False` 반환
 
 - [ ] **T075** 장중 시그널 4유형 감지 (`core/strategy/plugins/intraday_signal.py`)
-  - `IntradaySignalType(enum)`: `TYPE_1`, `TYPE_2`, `TYPE_3`, `TYPE_4`, `TYPE_45DEG`, `NONE`
+  - `IntradaySignalType(StrEnum)`: `TYPE_1 = "type_1"`, `TYPE_2 = "type_2"`, `TYPE_3 = "type_3"`, `TYPE_4 = "type_4"`, `NONE = "none"` — `TYPE_45DEG` 제거 (매도 방향성 패턴으로 별도 분리)
+  - `SellPattern(StrEnum)`: `NORMAL = "normal"`, `FORTY_FIVE_DEGREE = "forty_five_degree"` — T074 `detect_45_degree_decline()` 결과를 담는 독립 분류
   - **입력:** 60분봉 캔들 리스트(당일), `open_price: float`, `current_time: time`
-  - **①번 유형** (강세 매수): 오전 하락→상승 전환, 장중 박스권, 장 후반 거래량+양봉
-  - **②번 유형** (매도/주의): ①번과 동일 오전 흐름 후, 14시 이후 시가 하향 이탈, 위꼬리 음봉
-  - **③번 유형** (오후 반등): 오전 내내 하락, 14:00~14:30 이후 거래량급증+반등, 시가 위 마감
-  - **④번 유형** (강한 매도): 패턴A(오전급등→즉시하락, 위꼬리장대음봉) / 패턴B(오전부터 지속하락, 장대음봉)
-  - **⚠️ Look-ahead bias 방지:** 당일 마감 전에는 유형 확정 불가 — `is_confirmed: bool` 필드로 장 마감 후 확정 여부 명시
-  - `tests/strategy/test_intraday_signal.py`: 유형별 60분봉 시나리오, 미확정 상태 처리 검증
+  - **①번 유형** (강세 매수): 오전(`< 10:00`) 하락→상승 전환 후 장중 박스권 유지, 장 후반(`≥ 14:00`) 거래량 증가 + 양봉
+  - **②번 유형** (매도/주의): ①번과 동일 오전 흐름 후, `≥ 14:00` 시가 하향 이탈, 위꼬리 음봉 형성
+  - **③번 유형** (오후 반등): 오전 내내 하락 지속, `14:00~14:30` 이후 거래량급증 + 반등 + 시가 위 마감
+  - **④번 유형** (강한 매도): 패턴A(오전 급등 → 즉시 하락, 위꼬리 장대음봉) / 패턴B(오전부터 지속 하락, 장대음봉)
+  - **⚠️ Look-ahead bias 방지:** `UnconfirmedSignal(type, partial_candles)` / `ConfirmedSignal(type, candles)` 두 타입으로 분리 — `is_confirmed: bool` bool flag 대신 타입 시스템으로 강제. 장 마감(`≥ 15:30`) 전에는 `UnconfirmedSignal`만 반환.
+  - `tests/strategy/test_intraday_signal.py`: 유형별 60분봉 시나리오(확정/미확정 분기), `UnconfirmedSignal` 사용처에서 `ConfirmedSignal` 전달 시 타입 오류 확인
 
 - [ ] **T076** 신뢰도 스코어링 & CCI+BBC 통합 전략 플러그인 (`core/strategy/plugins/cci_bbc_strategy.py`)
   - `ReliabilityScore` 데이터클래스: `score: int`, `breakdown: dict[str, int]`, `action: Literal["적극매수", "소극매수", "관망", "매도검토"]`
-  - **스코어링 (스펙 8.3절):** 월봉GC+1, 주봉GC+1, 일봉GC+2, 60분봉GC+1, 거래량1.5배+1, ①③유형+1, 정배열+1, 일봉DC-2, 45도하락-1, ④유형-2 → 합산 → 7이상 적극매수 / 4~~6 소극매수 / 0~~3 관망 / 음수 매도검토
+  - **스코어링 (스펙 8.3절, 8점 만점 — 양성 항목 합계 최대 8점):** 월봉GC+1, 주봉GC+1, 일봉GC+2, 60분봉GC+1, 거래량1.5배+1, ①③유형+1, 정배열+1, 일봉DC-2, 45도하락-1, ④유형-2 → 합산 → 7이상 적극매수 / 4~~6 소극매수 / 0~~3 관망 / 음수 매도검토
   - **4단계 매수 의사결정 트리 (스펙 8.1절):**
     - 1단계 월봉 CCI → 2단계 주봉 CCI → 3단계 일봉+BBC 원칙 분기 → 4단계 60분봉+장중유형+거래량 확인
   - **매도 의사결정 트리 (스펙 8.2절):** 즉시전량 OR 조건, 분할매도 조건, 보유유지 조건
-  - `calculate_position_size(score: int, available_capital: float) -> float` — 점수 기반 매수 비율 (적극: 30%, 소극: 10%)
-  - `Strategy(Protocol)` 준수: `generate_signal(candles, current_price) -> Signal | None`
-  - `tests/strategy/test_cci_bbc_strategy.py`: 4단계 의사결정 전체 시나리오, 스코어링 합산, 분할매수 수량
+  - `calculate_position_size(score: int, available_capital: float) -> float` — 반환: `0.0~1.0` 비율 (`score < 0`이면 `return 0.0` 가드, 음수 스코어의 양수 비율 반환 방지). 적극: 0.30, 소극: 0.10, 관망: 0.0.
+  - **`Strategy(Protocol)` 준수:** `on_tick(tick: Tick, ctx: MarketContext) -> Signal | None` — T011 Protocol 시그니처와 일치. `generate_signal(candles, current_price)` 내부 helper는 private으로 유지.
+  - **BbcBuySignal → Signal 변환 브릿지:** `_to_signal(bbc: BbcBuySignal, tick: Tick, position_ratio: float) -> Signal` — 내부 전용. `Signal(symbol=tick.symbol, side="BUY", price=tick.price, quantity_ratio=position_ratio, reason=bbc.reason)`
+  - `tests/strategy/test_cci_bbc_strategy.py`: 4단계 의사결정 전체 시나리오, 스코어링 합산(양성 합계 최대 8점 검증), 분할매수 수량, `score < 0` → `position_size = 0.0`
   - `tests/integration/test_cci_bbc_roundtrip.py`: 시그널 → Risk Manager → Toss 주문 라운드트립 (MockRestClient + 스펙 11절 SK하이닉스 스냅샷)
 
 ---
@@ -474,11 +489,12 @@
 
 - [ ] **T077** 백테스트 엔진 기반 (`core/backtest/engine.py`)
   - `BacktestEngine`: `strategy: Strategy`, `data_source: BacktestDataSource`, `commission_rate: float = 0.015 / 100`, `tax_rate: float = 0.18 / 100`, `slippage_bps: float = 2.0`
+  - **수수료 정책:** 매수 수수료 0.015%, 매도 수수료 0.015% + 증권거래세 0.18% = 매도 총 0.195%. 각각 해당 거래 측에만 부과 (매도세는 매도 시에만).
   - 일봉 기준 시뮬레이션 루프 — 각 일봉 시점마다 상위 타임프레임(월/주) 상태 룩업 (`MultiTimeframeData.lookup_upper()`)
   - **미래참조 방지:** 신호 발생 다음 봉 시가(`next_open`)에 체결. 당일 장 마감 후 신호 확정.
   - 분할 매수/매도 포지션 비율 관리 (0~100% 비율 단위 시뮬레이션, 전량 단위 금지)
-  - `BacktestResult`: `trades: list[Trade]`, `equity_curve: list[float]`, `metrics: PerformanceMetrics`
-  - `tests/backtest/test_engine.py`: 미래참조 방지 검증, 수수료·세금 계산 정확도, 포지션 비율 관리
+  - `BacktestResult`: `trades: list[Trade]`, `equity_curve: list[float]`, `metrics: PerformanceMetrics`, `unfilled_signals: list[Signal]` — 마지막 봉에서 시그널이 발생했으나 다음 봉이 없어 미체결된 시그널 목록
+  - `tests/backtest/test_engine.py`: 미래참조 방지 검증, 매수·매도 수수료 분리 계산 정확도, 포지션 비율 관리, 마지막 봉 미체결 시그널 `unfilled_signals` 포함 확인
 
 - [ ] **T078** 성과 지표 계산 (`core/backtest/metrics.py`)
   - `PerformanceMetrics`: `win_rate: float`, `profit_loss_ratio: float`, `mdd: float`, `sharpe_ratio: float`, `total_trades: int`, `annualized_return: float`
@@ -487,10 +503,10 @@
   - `tests/backtest/test_metrics.py`: MDD·샤프지수 수식 검증, 거래 0건 엣지 케이스
 
 - [ ] **T079** Toss 캔들 데이터 소스 & 캐싱 (`core/backtest/toss_data_source.py`)
-  - `BacktestDataSource(Protocol)`: `get_candles(symbol, interval, start, end) -> list[Candle]`
-  - `TossBacktestDataSource`: T055 `get_candles()` 호출 + SQLite 캐싱 (`~/.quanteo/backtest_cache.db`, TTL 24시간)
+  - `BacktestDataSource(Protocol)`: `get_candles(symbol: str, interval: str, count: int = 100, before: str | None = None, adjusted: bool = True) -> list[Candle]` — T055 `TossRestClient.get_candles()` 시그니처와 정렬 (start/end 날짜 파라미터 아님)
+  - `TossBacktestDataSource`: T055 `get_candles()` 직접 위임 + SQLite 캐싱 (`~/.quanteo/backtest_cache.db`, TTL 24시간). 날짜 범위가 필요한 경우 `before` 파라미터를 이동하며 여러 번 호출하는 어댑터 메서드 `fetch_range(symbol, interval, start_date, end_date)` 제공 (캐시는 pre-backtest 역사 데이터 전용 — 라이브 시세 캐시와 분리).
   - `CSVBacktestDataSource`: 로컬 CSV 파일 소스 (오프라인 테스트·반복 최적화용)
-  - `tests/backtest/test_data_source.py`: 캐시 히트/미스, API 장애 시 캐시 폴백
+  - `tests/backtest/test_data_source.py`: 캐시 히트/미스, API 장애 시 캐시 폴백, `fetch_range` → 여러 번 `get_candles()` 호출 조합 검증
 
 - [ ] **T080** Walk-Forward 검증 (`core/backtest/walk_forward.py`)
   - `WalkForwardValidator`: `in_sample_months: int = 12`, `out_sample_months: int = 3`
@@ -503,8 +519,9 @@
   - `detect_head_shoulders(candles: list[Candle]) -> HeadShouldersResult | None`
   - `HeadShouldersResult`: `pattern_type: Literal["하락전환", "상승전환"]`, `right_shoulder_idx: int`, `neckline: float`, `volume_confirms: bool`
   - 하락 전환 조건: 오른쪽 어깨 거래량 감소 + 직전 하락폭 50% 미달 양봉 → 전량 매도 신호
+  - **Override 규칙:** 헤드앤숄더(하락전환) 감지 시 — 신뢰도 스코어 무관하게 즉시 전량 매도 override. `CcibbcStrategy.on_tick()`에서 `detect_head_shoulders()` 결과를 스코어링보다 먼저 체크.
   - 상승 전환(역헤드앤숄더): 거래량 급증 + 장대양봉으로 왼쪽 고점 돌파 → 추세 상승 신호
-  - `tests/strategy/test_head_shoulders.py`: 패턴 감지 경계 케이스, 거래량 조건 충족/불충족
+  - `tests/strategy/test_head_shoulders.py`: 패턴 감지 경계 케이스, 거래량 조건 충족/불충족, override 시 스코어 무시 검증
 
 - [ ] **T082** 백테스트 Control API 엔드포인트 (`core/api/backtest.py`)
   - `POST /backtest/run` — 요청: `{symbol, start_date, end_date, strategy_params}` → `run_id` 반환 (비동기 실행)
@@ -515,10 +532,12 @@
 
 - [ ] **T083** 대시보드 전략 모니터링 UI (`dashboard/src/pages/Strategy.tsx`)
   - **CCI 현황 패널:** 4개 타임프레임 CCI 값·시그널·골든/데드크로스 상태 (스펙 11절 스냅샷 형태)
-  - **신뢰도 스코어 게이지:** 0~~9점 + 항목별 breakdown (7이상 녹색·4~~6 노랑·음수 빨강)
+  - **신뢰도 스코어 게이지:** 0~~8점 + 항목별 breakdown (7이상 녹색·4~~6 노랑·음수 빨강)
   - **실시간 시그널 알람:** `/stream` WS 구독 → 매수/매도 시그널 발생 시 토스트 알람
   - **포지션 현황:** 분할 매수/매도 비율 진행 바 (1차 30% → 2차 50% 등)
   - **백테스트 실행 UI:** 기간·종목 입력 → 결과(승률·MDD·샤프) 카드 표시
+  - **킬스위치 버튼:** 클릭 시 `POST /control/kill` 호출 확인 다이얼로그 포함
+  - `tests/dashboard/Strategy.test.tsx`: CCI 패널 렌더링, WS 시그널 수신 → 토스트 표시, 킬스위치 버튼 클릭 → API 호출 확인
 
 ---
 
