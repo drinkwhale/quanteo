@@ -404,7 +404,7 @@
   - `price_position(price: float, ma5: float, ma20: float) -> PricePosition` — 스펙 3절 포지션 분류
   - `tests/strategy/test_ma.py`: 분류 경계 케이스 (십자형 threshold, 장대 ratio, `high==low` 제로 분모)
 
-- [ ] **T071** 멀티 타임프레임 데이터 동기화 (`core/strategy/multi_timeframe.py`)
+- [x] **T071** 멀티 타임프레임 데이터 동기화 (`core/strategy/multi_timeframe.py`)
   - `TimeframeState` 데이터클래스: `candles: list[Candle]`, `cci: list[float]`, `cci_signal: list[float]`, `ma5: list[float]`, `ma20: list[float]`, `volume_ma20: list[float]`, `last_updated: datetime`, `is_resampled: bool = False`
     - `__post_init__`: `len(cci) == len(cci_signal)` 검증 → `ValueError` (배열 정렬 보장)
   - **앱 시작 시 초기화:** 일봉 최근 500일치 fetch → `pandas resample`로 주봉·월봉 생성. 60분봉은 1분봉 60개 집계. 리샘플된 상태는 `is_resampled=True` 표시. Toss API가 네이티브 주봉/월봉을 지원하는 시점에 전환.
