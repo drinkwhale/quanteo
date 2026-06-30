@@ -12,7 +12,7 @@ T071 테스트:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,13 +21,11 @@ from core.strategy.multi_timeframe import (
     MultiTimeframeData,
     MultiTimeframeLoader,
     TimeframeState,
-    UpperTimeframeState,
     _aggregate_minute_candles_to_hourly,
     _resample_candles_to_monthly,
     _resample_candles_to_weekly,
     _toss_candle_to_candle,
 )
-
 
 # ============================================================================
 # Fixtures
@@ -409,15 +407,12 @@ async def test_load_with_ttl_cache(mock_rest_client):
 
     # 첫 번째 로드
     result1 = await loader.load("TEST")
-    call_count_1 = mock_rest_client.get_candles.call_count
 
     # 두 번째 로드 (TTL 내에서 캐시 재사용)
     result2 = await loader.load("TEST")
-    call_count_2 = mock_rest_client.get_candles.call_count
 
-    # 캐시가 적용되어 API 호출이 줄어야 함
+    # 캐시가 적용되어 결과는 동일해야 함
     # (daily는 5분 TTL, 즉시 두 번째 로드에서는 캐시 재사용)
-    # 단, weekly/monthly/60min은 daily 캐시에 의존하므로 실제 호출 수 감소 확인
     assert result1.daily is not None
     assert result2.daily is not None
 
@@ -463,6 +458,122 @@ async def test_load_with_partial_failure(mock_rest_client):
     result = await loader.load("TEST")
     assert result is not None
     assert result.daily is not None
+
+
+@pytest.mark.asyncio
+async def test_load_with_cache_preservation(mock_rest_client):
+    """T071: 개별 타임프레임 실패 시 이전 캐시 유지.
+
+    시나리오:
+    1. 첫 번째 로드: 모든 타임프레임 성공, 캐시 채워짐
+    2. 두 번째 로드: 60분봉 실패, 이전 캐시 사용 (TTL 만료되었어도 유지)
+
+    Note: weekly/monthly는 daily에서 파생되므로 별도 API 실패 불가.
+    60분봉은 1분봉 API로부터 독립적이므로 실패 가능.
+    """
+
+    call_count = {"60min": 0}
+
+    async def mock_get_candles_smart(symbol, interval, count=100, before=None, adjusted=True):
+        """첫 번째는 성공, 두 번째부터는 60분봉 실패."""
+        if interval == "1d":
+            candles = []
+            for i in range(50):
+                tc = MagicMock()
+                tc.timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i)
+                tc.open_price = 100.0 + i * 0.5
+                tc.high_price = 101.0 + i * 0.5
+                tc.low_price = 99.0 + i * 0.5
+                tc.close_price = 100.5 + i * 0.5
+                tc.volume = 1000 + i * 10
+                tc.currency = "KRW"
+                candles.append(tc)
+            return candles
+        elif interval == "1m":
+            call_count["60min"] += 1
+            if call_count["60min"] == 1:
+                # 첫 번째: 성공
+                candles = []
+                for i in range(120):
+                    tc = MagicMock()
+                    tc.timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=i)
+                    tc.open_price = 100.0 + i * 0.01
+                    tc.high_price = 100.1 + i * 0.01
+                    tc.low_price = 99.9 + i * 0.01
+                    tc.close_price = 100.05 + i * 0.01
+                    tc.volume = 100 + i
+                    tc.currency = "KRW"
+                    candles.append(tc)
+                return candles
+            else:
+                # 두 번째 이상: 실패
+                raise RuntimeError("1m API failed")
+        else:
+            raise RuntimeError(f"unexpected interval: {interval}")
+
+    mock_rest_client.get_candles.side_effect = mock_get_candles_smart
+
+    loader = MultiTimeframeLoader(mock_rest_client)
+
+    # 첫 번째 로드: 모든 타임프레임 성공
+    result1 = await loader.load("TEST")
+    assert result1 is not None
+    assert result1.daily is not None
+    assert result1.sixty_min.candles  # Not empty
+    assert len(result1.sixty_min.candles) > 0
+
+    # 캐시 확인
+    assert loader._cache["TEST"]["60min"] is not None
+    cached_60min_from_first_load = loader._cache["TEST"]["60min"].state
+
+    # 두 번째 로드: 60분봉 실패, 이전 캐시 사용
+    result2 = await loader.load("TEST")
+    assert result2 is not None
+    assert result2.daily is not None
+    # 60분봉은 이전 캐시 사용 (TTL 무시하고 재사용)
+    assert result2.sixty_min is cached_60min_from_first_load
+
+
+@pytest.mark.asyncio
+async def test_load_no_previous_cache_creates_empty_state(mock_rest_client):
+    """T071: 이전 캐시 없고 타임프레임 실패 → empty TimeframeState 생성."""
+
+    async def mock_get_candles_fail_60min(symbol, interval, count=100, before=None, adjusted=True):
+        """60분봉 실패 (1분봉 API 실패)."""
+        if interval == "1d":
+            candles = []
+            for i in range(50):
+                tc = MagicMock()
+                tc.timestamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=i)
+                tc.open_price = 100.0 + i * 0.5
+                tc.high_price = 101.0 + i * 0.5
+                tc.low_price = 99.0 + i * 0.5
+                tc.close_price = 100.5 + i * 0.5
+                tc.volume = 1000 + i * 10
+                tc.currency = "KRW"
+                candles.append(tc)
+            return candles
+        elif interval == "1m":
+            # 60분봉 계산용 1분봉 API 실패
+            raise RuntimeError("1m API failed")
+        else:
+            raise RuntimeError(f"unexpected interval: {interval}")
+
+    mock_rest_client.get_candles.side_effect = mock_get_candles_fail_60min
+
+    loader = MultiTimeframeLoader(mock_rest_client)
+    result = await loader.load("TEST")
+
+    # 일봉 성공
+    assert result.daily is not None
+    assert len(result.daily.candles) > 0
+
+    # 60분봉 실패 → empty state 생성 (previous cache 없음)
+    assert result.sixty_min is not None
+    assert result.sixty_min.candles == []
+    assert result.sixty_min.cci == []
+    assert result.sixty_min.cci_signal == []
+    assert result.sixty_min.is_resampled is True
 
 
 # ============================================================================

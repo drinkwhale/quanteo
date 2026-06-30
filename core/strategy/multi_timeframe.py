@@ -288,34 +288,98 @@ class MultiTimeframeLoader:
         # 병렬 실행 (예외는 저장, 전파 안 함)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 결과 매핑
+        # 결과 매핑 및 예외 처리
+        # 개별 타임프레임 실패 시 이전 캐시 사용 (TTL 만료되었어도 유지)
         daily_state = results[0] if not isinstance(results[0], Exception) else None
         weekly_state = results[1] if not isinstance(results[1], Exception) else None
         monthly_state = results[2] if not isinstance(results[2], Exception) else None
         sixty_min_state = results[3] if not isinstance(results[3], Exception) else None
 
-        # 예외 로깅
+        # 타임프레임별 예외 처리 및 캐시 보존
+        tf_names = ["daily", "weekly", "monthly", "60min"]
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                tf_name = ["daily", "weekly", "monthly", "60min"][i]
-                logger.warning(
-                    "타임프레임 조회 실패 (symbol=%s, tf=%s): %s",
-                    symbol,
-                    tf_name,
-                    result,
-                )
+                tf_name = tf_names[i]
+                # 이전 캐시 확인 (TTL 만료 여부 무관)
+                prev_cache = self._cache.get(symbol, {}).get(tf_name)
 
-        # 최소 일봉은 필수
+                if prev_cache is not None:
+                    # 이전 캐시 사용 (stale cache)
+                    if tf_name == "daily":
+                        daily_state = prev_cache.state
+                    elif tf_name == "weekly":
+                        weekly_state = prev_cache.state
+                    elif tf_name == "monthly":
+                        monthly_state = prev_cache.state
+                    elif tf_name == "60min":
+                        sixty_min_state = prev_cache.state
+
+                    logger.warning(
+                        "T071: %s 타임프레임 로드 실패, 이전 캐시 유지 (symbol=%s, error=%s)",
+                        tf_name,
+                        symbol,
+                        result,
+                    )
+                else:
+                    # 이전 캐시 없음
+                    logger.warning(
+                        "T071: %s 타임프레임 로드 실패, 이전 캐시 없음 (symbol=%s, error=%s)",
+                        tf_name,
+                        symbol,
+                        result,
+                    )
+
+        # 최소 일봉은 필수 (critical)
         if daily_state is None:
             raise RuntimeError(f"일봉 조회 실패 (symbol={symbol})")
 
-        # 주봉/월봉이 None이면 일봉 데이터로 생성 (다시 시도)
+        # 주봉/월봉/60분봉이 None이면 빈 TimeframeState 생성
+        # (이전 캐시도 없는 경우, non-critical)
         if weekly_state is None:
-            weekly_state = await self._load_timeframe(symbol, "weekly", now, skip_cache=True)
+            logger.warning(
+                "T071: 주봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
+                symbol,
+            )
+            weekly_state = TimeframeState(
+                candles=[],
+                cci=[],
+                cci_signal=[],
+                ma5=[],
+                ma20=[],
+                volume_ma20=[],
+                last_updated=now,
+                is_resampled=True,
+            )
         if monthly_state is None:
-            monthly_state = await self._load_timeframe(symbol, "monthly", now, skip_cache=True)
+            logger.warning(
+                "T071: 월봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
+                symbol,
+            )
+            monthly_state = TimeframeState(
+                candles=[],
+                cci=[],
+                cci_signal=[],
+                ma5=[],
+                ma20=[],
+                volume_ma20=[],
+                last_updated=now,
+                is_resampled=True,
+            )
         if sixty_min_state is None:
-            sixty_min_state = await self._load_timeframe(symbol, "60min", now, skip_cache=True)
+            logger.warning(
+                "T071: 60분봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
+                symbol,
+            )
+            sixty_min_state = TimeframeState(
+                candles=[],
+                cci=[],
+                cci_signal=[],
+                ma5=[],
+                ma20=[],
+                volume_ma20=[],
+                last_updated=now,
+                is_resampled=True,
+            )
 
         return MultiTimeframeData(
             symbol=symbol,
