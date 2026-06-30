@@ -19,3 +19,32 @@ telegram:
   chat_id: "-100123456789"   # 채널은 -100 접두사 필요, 개인은 숫자만
   level: "INFO"              # INFO | WARN | ERROR
   enabled: false             # true 로 바꾸면 실제 전송
+
+# ──────────────────────────────────────────────────────
+# Phase 10 — 정보 수집·알람 서브시스템 (선택)
+# ──────────────────────────────────────────────────────
+info:
+  enabled: false             # true 로 바꾸면 정보 수집 서브시스템 시작
+
+  # DART 공시 수집 (https://opendart.fss.or.kr → API 키 발급)
+  dart:
+    api_key: "your-dart-api-key"
+
+  # Finnhub 해외 뉴스 (https://finnhub.io → 무료 API 키 발급)
+  finnhub:
+    api_key: "your-finnhub-api-key"
+
+  # Google Calendar OAuth2 (GCP Console → Calendar API → 자격증명 다운로드)
+  google_calendar:
+    credentials_path: "~/.quanteo/google/credentials.json"
+
+  # Claude Haiku AI 필터 (https://console.anthropic.com → API 키 발급)
+  anthropic:
+    api_key: "your-anthropic-api-key"
+
+  # 환율 급변 알람 임계값 (USD/KRW 기준 %)
+  fx_alert_threshold: 1.0
+
+  # info 전용 Telegram chat_id (비어 있으면 위 telegram.chat_id 사용)
+  telegram:
+    chat_id: ""

@@ -40,12 +40,25 @@ class TelegramConfig(BaseModel):
     enabled: bool = False
 
 
+class InfoSettings(BaseModel):
+    """정보 수집·알람 서브시스템 설정 (Phase 10)."""
+
+    enabled: bool = False
+    dart_api_key: str = ""
+    finnhub_api_key: str = ""
+    google_calendar_credentials_path: str = ""
+    anthropic_api_key: str = ""
+    fx_alert_threshold: float = 1.0  # USD/KRW 급변 알람 임계값 (%)
+    telegram_chat_id: str = ""  # info 전용 chat_id (없으면 main telegram.chat_id 사용)
+
+
 class Settings(BaseModel):
     """quanteo 전체 설정."""
 
     market: Market = Market.DOMESTIC
     credentials: TossCredentials
     telegram: TelegramConfig = TelegramConfig()
+    info: InfoSettings = InfoSettings()
 
 
 _DEFAULT_CONFIG_PATH = Path.home() / "quanteo" / "config" / "quanteo.yaml"
@@ -102,8 +115,22 @@ def load_settings(
         enabled=telegram_raw.get("enabled", False),
     )
 
+    info_raw = raw.get("info", {})
+    info = InfoSettings(
+        enabled=info_raw.get("enabled", False),
+        dart_api_key=info_raw.get("dart", {}).get("api_key", ""),
+        finnhub_api_key=info_raw.get("finnhub", {}).get("api_key", ""),
+        google_calendar_credentials_path=info_raw.get("google_calendar", {}).get(
+            "credentials_path", ""
+        ),
+        anthropic_api_key=info_raw.get("anthropic", {}).get("api_key", ""),
+        fx_alert_threshold=info_raw.get("fx_alert_threshold", 1.0),
+        telegram_chat_id=info_raw.get("telegram", {}).get("chat_id", ""),
+    )
+
     return Settings(
         market=market,
         credentials=credentials,
         telegram=telegram,
+        info=info,
     )

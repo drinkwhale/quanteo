@@ -1,12 +1,12 @@
 # Project Index: quanteo
 
-Generated: 2026-06-29 (Phase 9 완료)
+Generated: 2026-06-30 (Phase 10 완료)
 
 ---
 
 ## 📋 Status
 
-**Phase 1~9 전체 완료** — T001~T056 모든 구현 Task 완료.
+**Phase 1~10 전체 완료** — T001~T068 모든 구현 Task 완료.
 
 | Phase    | Tasks     | 상태    | 내용                                                                            |
 | -------- | --------- | ------- | ------------------------------------------------------------------------------- |
@@ -20,8 +20,9 @@ Generated: 2026-06-29 (Phase 9 완료)
 | **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                              |
 | **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트 |
 | **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI    |
+| **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)      |
 
-**테스트:** 291 passed (Python) · TypeScript tsc clean (2026-06-29 기준)
+**테스트:** 393 passed (Python) · TypeScript tsc clean (2026-06-30 기준)
 
 ---
 
@@ -77,7 +78,26 @@ quanteo/
 │   │   ├── engine.py         # StrategyEngine (플러그인 로드·시그널 루프)
 │   │   ├── harness.py        # BacktestHarness (과거 캔들로 시그널 검증)
 │   │   └── plugins/ma_cross.py  # 이동평균 교차 전략 플러그인
-│   └── app.py                # 코어 부팅·asyncio.gather wiring + prod 게이트
+│   └── app.py                # 코어 부팅·asyncio.gather wiring + prod 게이트 + --with-info
+├── info/                     # Phase 10: 정보 수집·알람 서브시스템 (선택 통합)
+│   ├── ai_filter/
+│   │   └── claude_filter.py  # ClaudeFilter (Haiku, CRITICAL_KEYWORDS 2단 필터, FilterResult)
+│   ├── news/
+│   │   ├── rss_collector.py  # RssCollector (SQLite dedup, asyncio.gather 병렬 수집)
+│   │   ├── dart_collector.py # DartCollector (opendartreader, 공시 수집)
+│   │   └── finnhub_collector.py  # FinnhubCollector + YahooRssCollector (429 백오프)
+│   ├── fx/
+│   │   ├── rate_monitor.py   # FxRateMonitor (yfinance, 0.0 가드, 임계값 알람)
+│   │   ├── daily_report.py   # FxDailyReporter (16:00 마감 리포트)
+│   │   └── rate_rule.py      # interpret_fx() 해석 함수
+│   ├── calendar/
+│   │   ├── google_cal.py     # GoogleCalendarClient (gcsa, 중복방지, 401/429 재시도)
+│   │   ├── earnings_data.py  # EarningsEvent + EARNINGS_SCHEDULE (2026 H2 8종목)
+│   │   └── macro_events.py   # MacroEvent + MACRO_SCHEDULE (FOMC/CPI/NFP/BOK/PMI 30개)
+│   ├── telegram/
+│   │   └── info_notifier.py  # InfoNotifier (5개 포맷 함수, DLQ, 3회 재시도)
+│   ├── scheduler.py          # InfoScheduler (AsyncIOScheduler KST, 7개 잡)
+│   └── main.py               # InfoSystem (DI 조립, start/stop, DLQ 재시도 루프)
 ├── dashboard/                # TypeScript 웹 대시보드
 │   ├── src/
 │   │   ├── api/
@@ -146,8 +166,9 @@ quanteo/
 uv sync
 uv run python -m core.app                              # vps(모의투자), Control API만
 uv run python -m core.app --with-trading               # 시장데이터·전략·주문 포함
+uv run python -m core.app --with-info                  # 정보 수집·알람 서브시스템 포함
 uv run python -m core.app --env prod --i-understand-real-money  # 실전 (이중 확인 필수)
-uv run pytest                                          # 테스트 (291 cases)
+uv run pytest                                          # 테스트 (393 cases)
 uv run ruff check . && ruff format .                   # 린트·포맷
 
 # Docker

@@ -82,6 +82,7 @@ async def run(
     api_port: int = 8000,
     with_trading: bool = False,
     confirmed: bool = False,
+    with_info: bool = False,
 ) -> None:
     """quanteo 코어 전체를 시작한다.
 
@@ -94,6 +95,8 @@ async def run(
                       False이면 Control API + Notifier만 구동 (개발/검수용).
         confirmed: CLI --i-understand-real-money 플래그.
                    with_trading=True 시 반드시 함께 지정.
+        with_info: True이면 정보 수집·알람 서브시스템(InfoSystem)도 함께 시작.
+                   settings.info.enabled=True 여야 실제로 동작.
 
     Raises:
         TradingGateError: with_trading=True인데 confirmed=False일 때.
@@ -112,6 +115,16 @@ async def run(
     notifier = make_notifier(settings)
 
     wire_notifier(bus, notifier)
+
+    # InfoSystem 조립 (enabled 확인)
+    info_system = None
+    if with_info and settings.info.enabled:
+        try:
+            from info.main import InfoSystem
+            info_system = InfoSystem(settings)
+            logger.info("InfoSystem 초기화 완료")
+        except Exception as exc:
+            logger.error("InfoSystem 초기화 실패 — info 비활성화: %s", exc)
 
     container = AppContainer(
         store=store,
@@ -150,7 +163,7 @@ async def run(
         await stop_event.wait()
         logger.info("정상 종료 시작...")
         uvicorn_server.should_exit = True
-        await _shutdown(bus, notifier, store)
+        await _shutdown(bus, notifier, store, info_system=info_system)
 
     try:
         async with asyncio.TaskGroup() as tg:
@@ -160,6 +173,9 @@ async def run(
 
             if with_trading:
                 _start_trading_tasks(tg, settings, bus, risk, store)
+
+            if info_system is not None:
+                tg.create_task(info_system.start(), name="info-system")
 
             tg.create_task(_wait_stop(), name="shutdown-watcher")
 
@@ -270,13 +286,24 @@ def _start_trading_tasks(
 # ---------------------------------------------------------------------------
 
 
-async def _shutdown(bus: EventBus, notifier: object, store: StateStore) -> None:
-    """Event Bus → Notifier → StateStore 순으로 정상 종료한다."""
+async def _shutdown(
+    bus: EventBus,
+    notifier: object,
+    store: StateStore,
+    info_system: object | None = None,
+) -> None:
+    """Event Bus → Notifier → InfoSystem → StateStore 순으로 정상 종료한다."""
     for name, obj in [("EventBus", bus), ("Notifier", notifier)]:
         try:
             await obj.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("%s 종료 오류: %s", name, exc)
+
+    if info_system is not None:
+        try:
+            await info_system.stop()  # type: ignore[union-attr]
+        except Exception as exc:
+            logger.error("InfoSystem 종료 오류: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +320,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="Control API 호스트")
     parser.add_argument("--port", type=int, default=8000, help="Control API 포트")
     parser.add_argument("--with-trading", action="store_true", help="MarketData/Strategy/Executor 포함")
+    parser.add_argument("--with-info", action="store_true", dest="with_info", help="정보 수집·알람 서브시스템 포함 (settings.info.enabled 필요)")
     parser.add_argument(
         "--i-understand-real-money",
         action="store_true",
@@ -314,6 +342,7 @@ def main() -> None:
                 api_port=args.port,
                 with_trading=args.with_trading,
                 confirmed=args.confirmed,
+                with_info=args.with_info,
             )
         )
     except TradingGateError as exc:

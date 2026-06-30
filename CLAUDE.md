@@ -23,7 +23,7 @@ git branch --show-current
 
 ## 📊 현재 구현 상태
 
-**Phase 1~~9 전체 완료 (T001~~T056)**
+**Phase 1~~10 전체 완료 (T001~~T068)**
 
 | Phase | 내용                          | Tasks     |
 | ----- | ----------------------------- | --------- |
@@ -37,11 +37,13 @@ git branch --show-current
 | 7     | 안전·운영 (Rate Limit·Docker) | T029~T032 |
 | 8     | Toss증권 어댑터 마이그레이션  | T039~T048 |
 | 9     | Toss증권 어댑터 운영 완성     | T049~T056 |
+| 10    | 정보 수집·알람 서브시스템     | T057~T068 |
 
 **다음:** 신규 Phase 계획 필요 (specs/tasks.md 참고)
 
 주요 구현 모듈: `core/config`, `core/adapters/toss/` (auth/rest/models), `core/adapters/base.py` (BrokerAdapter Protocol), `core/store/`, `core/marketdata/`, `core/events/`,
-`core/strategy/`, `core/risk/`, `core/execution/`, `core/api/`, `core/notifier/`, `dashboard/` (React+Vite+Tailwind)
+`core/strategy/`, `core/risk/`, `core/execution/`, `core/api/`, `core/notifier/`, `dashboard/` (React+Vite+Tailwind),
+`info/` (ai_filter·news·fx·calendar·telegram·scheduler·main)
 
 코드를 작성하기 전에 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
 
