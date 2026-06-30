@@ -394,7 +394,7 @@
   - `get_cci_zone(cci_value: float) -> Literal["과매수강", "과매수", "중립", "과매도", "과매도강"]` — ±100/±200 기준
   - `tests/strategy/test_cci.py`: 공식 수식 검증, 골든/데드크로스 경계 케이스, 데이터 부족(period-1개) 처리, **`test_cci_flat_price` (20봉 동일 가격 → MD=0 → 전체 `0.0` 반환 검증)**
 
-- [ ] **T070** 이동평균선 & 거래량 지표 모듈 (`core/strategy/indicators/ma.py`)
+- [x] **T070** 이동평균선 & 거래량 지표 모듈 (`core/strategy/indicators/ma.py`)
   - `calculate_sma(values: list[float], period: int) -> list[float]` — 범용 SMA. 반환 길이 = `len(values) - (period - 1)`.
   - `CandleClass(StrEnum)`: `BULLISH = "bullish"`, `BEARISH = "bearish"`, `DOJI = "doji"` — 한국어 Literal 대신 StrEnum 사용 (grep·API 경계 안전)
   - `PricePosition(StrEnum)`: `ABOVE = "above"`, `BETWEEN = "between"`, `BELOW = "below"`
