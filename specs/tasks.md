@@ -333,7 +333,7 @@
     - **추가:** `add_event()` 중 401 발생 시 토큰 갱신 트리거 + 재시도 검증
     - **추가:** 429 할당량 초과 시 백오프 후 다음 이벤트 계속 처리 검증
 
-- [ ] **T066** 실적발표 & 경제지표 캘린더 데이터 (`info/calendar/earnings_data.py`, `macro_events.py`)
+- [x] **T066** 실적발표 & 경제지표 캘린더 데이터 (`info/calendar/earnings_data.py`, `macro_events.py`)
   - **`EarningsEvent` 타입 정의** (`CalEvent` 서브클래스, T062 `send_earnings_alert` 연동):
     - `ticker: str`, `consensus_eps: str | None`, `consensus_sales: str | None`, `timing: Literal["장전","장중","장후"]`, `sk_impact: Literal["🔴 최고","🔴 높음","🟡 중간"]`
   - `EARNINGS_SCHEDULE: list[EarningsEvent]`: 스펙 2-4절 2026 하반기 실적 하드코딩 (ASML·TSM·AMD·NVDA·AVGO·MU + AMAT·LRCX·KLAC·MRVL·META·MSFT·GOOGL·AMZN), 컨센서스 값 포함
