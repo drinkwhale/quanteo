@@ -126,9 +126,7 @@ class TimeframeJudge:
 
         # CCI와 signal 길이 확인
         if len(state.cci_signal) == 0:
-            logger.warning(
-                f"{timeframe_name} CCI 시그널 데이터 부족 — NEUTRAL 처리"
-            )
+            logger.warning(f"{timeframe_name} CCI 시그널 데이터 부족 — NEUTRAL 처리")
             return MarketDirection.NEUTRAL
 
         # 최신 CCI 값

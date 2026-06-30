@@ -136,7 +136,9 @@ def test_assess_monthly_boundary_cci_equals_zero(judge, sample_timeframe_state):
     # 0 > -10이지만 0 > 0이 아니므로 BEARISH
     modified = TimeframeState(
         candles=sample_timeframe_state.candles,
-        cci=[-10.0 + i for i in range(20)],  # 마지막: 10... no 마지막: -10 + 19 = 9? 아 이건 마지막 인덱스
+        cci=[
+            -10.0 + i for i in range(20)
+        ],  # 마지막: 10... no 마지막: -10 + 19 = 9? 아 이건 마지막 인덱스
         cci_signal=[-20.0 + i for i in range(20)],
         ma5=sample_timeframe_state.ma5,
         ma20=sample_timeframe_state.ma20,
