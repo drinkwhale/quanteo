@@ -345,7 +345,7 @@
     - 날짜 필터링·중요도 매핑·bulk_add 중복 방지 검증
     - **추가:** `today_us_earnings()` — 오늘 날짜 기준 장후 실적만 필터 검증 (경계: 22:29 vs 22:30 KST)
 
-- [ ] **T067** APScheduler 스케줄러 통합 (`info/scheduler.py`, `info/main.py`)
+- [x] **T067** APScheduler 스케줄러 통합 (`info/scheduler.py`, `info/main.py`)
   - **⚠️ 타임존 필수:** `AsyncIOScheduler(timezone="Asia/Seoul")` + 각 `CronTrigger(timezone="Asia/Seoul")`. 미설정 시 UTC 기준으로 모든 잡이 KST보다 9시간 늦게 실행됨
   - `InfoScheduler`: `AsyncIOScheduler` 기반 — 아래 크론 잡 전체 등록 (스펙 7절 기준):
     - `CronTrigger(hour=8, minute=0)` KST — 장전 뉴스 수집 + 당일 일정 브리핑
