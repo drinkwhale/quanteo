@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-from core.strategy.multi_timeframe import MultiTimeframeData
+from core.strategy.multi_timeframe import MultiTimeframeData, TimeframeState
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class TimeframeJudge:
 
     def _assess_timeframe(
         self,
-        state,  # TimeframeState
+        state: TimeframeState,
         timeframe_name: str,
         require_positive_cci: bool = False,
     ) -> MarketDirection:
