@@ -514,7 +514,7 @@
   - **과최적화 감지:** 인샘플 대비 아웃샘플 샤프지수 저하율 30% 초과 시 경고
   - `tests/backtest/test_walk_forward.py`: 기간 분리 정확도, 과최적화 감지 임계값 검증
 
-- [ ] **T081** 헤드앤숄더 패턴 감지 (보조 신호, `core/strategy/indicators/head_shoulders.py`)
+- [x] **T081** 헤드앤숄더 패턴 감지 (보조 신호, `core/strategy/indicators/head_shoulders.py`)
   - **적용 타임프레임:** 주봉 (스펙 7절)
   - `detect_head_shoulders(candles: list[Candle]) -> HeadShouldersResult | None`
   - `HeadShouldersResult`: `pattern_type: Literal["하락전환", "상승전환"]`, `right_shoulder_idx: int`, `neckline: float`, `volume_confirms: bool`

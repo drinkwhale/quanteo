@@ -278,6 +278,23 @@ class CciBbcStrategy:
         if not candles:
             return None
 
+        # ── 헤드앤숄더 하락전환 override (스코어 무관 즉시 전량 매도) ──
+        from core.strategy.indicators.head_shoulders import detect_head_shoulders
+        hs_result = detect_head_shoulders(candles)
+        if hs_result is not None and hs_result.pattern_type == "하락전환" and hs_result.volume_confirms:
+            logger.info(
+                "헤드앤숄더 하락전환 감지 — 즉시 전량 매도 override (symbol=%s, neckline=%.0f)",
+                tick.symbol, hs_result.neckline,
+            )
+            return Signal(
+                strategy=self.name,
+                symbol=tick.symbol,
+                side=SignalSide.SELL,
+                qty=9999,  # Risk Manager가 보유 수량으로 조정
+                price=tick.price,
+                reason=f"헤드앤숄더 하락전환 override (넥라인={hs_result.neckline:.0f})",
+            )
+
         # 타임프레임 방향 판단
         if self._mtf_data is None:
             logger.debug("on_tick: MTF 데이터 없음, 시그널 생략")
