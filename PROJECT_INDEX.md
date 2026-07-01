@@ -1,30 +1,31 @@
 # Project Index: quanteo
 
-Generated: 2026-07-01 (Phase 12 완료)
+Generated: 2026-07-01 (Phase 13 완료)
 
 ---
 
 ## 📋 Status
 
-**Phase 1~12 전체 완료** — T001~T076 모든 구현 Task 완료.
+**Phase 1~13 전체 완료** — T001~T083 모든 구현 Task 완료.
 
-| Phase    | Tasks     | 상태    | 내용                                                                            |
-| -------- | --------- | ------- | ------------------------------------------------------------------------------- |
-| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, Toss 인증 기반                               |
-| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus                                 |
-| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)                                         |
-| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness                                    |
-| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)                                        |
-| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring                                          |
-| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                       |
-| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                              |
-| **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트 |
-| **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI    |
-| **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)      |
-| **P11**  | T069–T072 | ✅ 완료 | CCI 지표 + 멀티 타임프레임 방향 판정 엔진                                       |
-| **P12**  | T073–T076 | ✅ 완료 | 박병창 매매기법 전략 플러그인 (매수3원칙·매도2원칙·장중4유형·CCI+BBC 통합)      |
+| Phase    | Tasks     | 상태    | 내용                                                                                |
+| -------- | --------- | ------- | ----------------------------------------------------------------------------------- |
+| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, Toss 인증 기반                                   |
+| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus                                     |
+| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)                                             |
+| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness                                        |
+| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)                                            |
+| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring                                              |
+| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                           |
+| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                                  |
+| **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트     |
+| **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI        |
+| **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)          |
+| **P11**  | T069–T072 | ✅ 완료 | CCI 지표 + 멀티 타임프레임 방향 판정 엔진                                           |
+| **P12**  | T073–T076 | ✅ 완료 | 박병창 매매기법 전략 플러그인 (매수3원칙·매도2원칙·장중4유형·CCI+BBC 통합)          |
+| **P13**  | T077–T083 | ✅ 완료 | 백테스트 프레임워크 (엔진·메트릭·데이터소스·Walk-Forward·헤드앤숄더·API·대시보드UI) |
 
-**테스트:** 577 passed (Python) · TypeScript tsc clean (2026-07-01 기준)
+**테스트:** 644 passed (Python) · TypeScript build clean (2026-07-01 기준)
 
 ---
 
@@ -52,7 +53,8 @@ quanteo/
 │   │       ├── control.py    # POST /control/pause|resume|kill
 │   │       ├── stream.py     # WS /stream (Event Bus 브로드캐스트)
 │   │       ├── market.py     # GET /market-status, GET /risk-metrics
-│   │       └── trades.py     # GET /trades (체결 내역)
+│   │       ├── trades.py     # GET /trades (체결 내역)
+│   │       └── backtest.py  # POST /backtest/run, GET /backtest/status|results (Phase 13)
 │   ├── config/settings.py    # AppSettings (Pydantic), quanteo.yaml 로딩
 │   ├── events/
 │   │   ├── bus.py            # EventBus (asyncio.Queue pub/sub)
@@ -81,14 +83,20 @@ quanteo/
 │   │   ├── harness.py        # BacktestHarness (과거 캔들로 시그널 검증)
 │   │   ├── timeframe_judge.py  # 멀티 타임프레임 방향 판정 (Phase 11)
 │   │   ├── indicators/
-│   │   │   ├── cci.py        # CCI 계산 + 골든/데드크로스 감지
-│   │   │   └── ma.py         # 이동평균, 캔들 분류, 대형캔들 판정
+│   │   │   ├── cci.py            # CCI 계산 + 골든/데드크로스 감지
+│   │   │   ├── ma.py             # 이동평균, 캔들 분류, 대형캔들 판정
+│   │   │   └── head_shoulders.py # 헤드앤숄더 패턴 감지 (하락전환·상승전환, Phase 13)
 │   │   └── plugins/
 │   │       ├── ma_cross.py         # 이동평균 교차 전략 플러그인
 │   │       ├── bbc_buy.py          # 박병창 매수 3원칙 (T073)
 │   │       ├── bbc_sell.py         # 박병창 매도 2원칙·45도 하락 (T074)
 │   │       ├── intraday_signal.py  # 장중 시그널 4유형·Look-ahead bias 방지 (T075)
-│   │       └── cci_bbc_strategy.py # CCI+BBC 통합 전략·신뢰도 스코어링 (T076)
+│   │       └── cci_bbc_strategy.py # CCI+BBC 통합 전략·신뢰도 스코어링·H&S override (T076+T081)
+│   ├── backtest/             # 백테스트 프레임워크 (Phase 13)
+│   │   ├── engine.py         # BacktestEngine (룩어헤드 방지, 수수료·세금 정확 반영)
+│   │   ├── metrics.py        # PerformanceMetrics (MDD·Sharpe·승률·수익률 계산)
+│   │   ├── toss_data_source.py # BacktestDataSource Protocol + SQLite 캐시(TTL 24h)
+│   │   └── walk_forward.py   # WalkForwardValidator (슬라이딩 윈도우, 과적합 감지 30%)
 │   └── app.py                # 코어 부팅·asyncio.gather wiring + prod 게이트 + --with-info
 ├── info/                     # Phase 10: 정보 수집·알람 서브시스템 (선택 통합)
 │   ├── ai_filter/
@@ -113,7 +121,8 @@ quanteo/
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── client.ts     # REST fetch 래퍼 + WebSocket 팩토리
-│   │   │   └── types.ts      # BotStatus/PositionItem/OrderItem/StreamMessage 타입
+│   │   │   ├── types.ts      # BotStatus/PositionItem/OrderItem/StreamMessage 타입
+│   │   │   └── backtest.ts   # 백테스트 API 클라이언트 + pollUntilDone (Phase 13)
 │   │   ├── components/
 │   │   │   ├── StatusBar.tsx      # 봇 상태 상단바 (halt_level·env·uptime)
 │   │   │   ├── PositionsTable.tsx # 포지션 테이블
@@ -127,7 +136,9 @@ quanteo/
 │   │   │   ├── useOrders.ts    # 5초 폴링
 │   │   │   ├── useFills.ts     # 10초 폴링
 │   │   │   └── useStream.ts    # WebSocket + 3초 재연결
-│   │   ├── App.tsx           # 3탭 레이아웃: 포지션·주문·체결
+│   │   ├── pages/
+│   │   │   └── Strategy.tsx  # 전략 모니터링 (CCI·신뢰도 게이지·시그널 토스트·백테스트 UI·킬스위치)
+│   │   ├── App.tsx           # 4탭 레이아웃: 포지션·주문·체결·전략
 │   │   └── main.tsx          # React 18 진입점
 │   ├── vite.config.ts        # /api → localhost:8000 proxy
 │   ├── tailwind.config.js    # 다크 트레이딩 테마
@@ -199,20 +210,23 @@ npm run build  # 프로덕션 빌드
 
 ## 🔌 Control API 엔드포인트
 
-| Method | Path                  | 설명                                  |
-| ------ | --------------------- | ------------------------------------- |
-| GET    | `/status`             | 봇 상태 (halt_level·env·uptime)       |
-| GET    | `/positions`          | 보유 포지션 목록                      |
-| GET    | `/orders`             | 주문 내역                             |
-| POST   | `/orders/{id}/cancel` | 주문 취소                             |
-| POST   | `/orders/{id}/modify` | 주문 정정                             |
-| GET    | `/trades`             | 체결 내역 조회                        |
-| GET    | `/market-status`      | 국내·해외 개장 여부 + 캘린더          |
-| GET    | `/risk-metrics`       | 리스크 지표 (halt_level·buying_power) |
-| POST   | `/control/pause`      | 일시정지                              |
-| POST   | `/control/resume`     | 재개                                  |
-| POST   | `/control/kill`       | 킬스위치 활성화                       |
-| WS     | `/stream`             | Event Bus 실시간 브로드캐스트         |
+| Method | Path                         | 설명                                       |
+| ------ | ---------------------------- | ------------------------------------------ |
+| GET    | `/status`                    | 봇 상태 (halt_level·env·uptime)            |
+| GET    | `/positions`                 | 보유 포지션 목록                           |
+| GET    | `/orders`                    | 주문 내역                                  |
+| POST   | `/orders/{id}/cancel`        | 주문 취소                                  |
+| POST   | `/orders/{id}/modify`        | 주문 정정                                  |
+| GET    | `/trades`                    | 체결 내역 조회                             |
+| GET    | `/market-status`             | 국내·해외 개장 여부 + 캘린더               |
+| GET    | `/risk-metrics`              | 리스크 지표 (halt_level·buying_power)      |
+| POST   | `/control/pause`             | 일시정지                                   |
+| POST   | `/control/resume`            | 재개                                       |
+| POST   | `/control/kill`              | 킬스위치 활성화                            |
+| WS     | `/stream`                    | Event Bus 실시간 브로드캐스트              |
+| POST   | `/backtest/run`              | 백테스트 비동기 실행 → run_id 반환 (202)   |
+| GET    | `/backtest/status/{run_id}`  | 실행 상태 조회 (running/completed/failed)  |
+| GET    | `/backtest/results/{run_id}` | 결과 조회 (PerformanceMetrics·에쿼티 커브) |
 
 ---
 

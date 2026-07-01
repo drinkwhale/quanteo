@@ -487,7 +487,7 @@
 > **신규 디렉토리:** `core/backtest/` — 엔진·데이터 소스·성과 지표.
 > **기존 재사용:** T055 `get_candles()`, T071 `MultiTimeframeLoader`, Phase 12 전략 플러그인.
 
-- [ ] **T077** 백테스트 엔진 기반 (`core/backtest/engine.py`)
+- [x] **T077** 백테스트 엔진 기반 (`core/backtest/engine.py`)
   - `BacktestEngine`: `strategy: Strategy`, `data_source: BacktestDataSource`, `commission_rate: float = 0.015 / 100`, `tax_rate: float = 0.18 / 100`, `slippage_bps: float = 2.0`
   - **수수료 정책:** 매수 수수료 0.015%, 매도 수수료 0.015% + 증권거래세 0.18% = 매도 총 0.195%. 각각 해당 거래 측에만 부과 (매도세는 매도 시에만).
   - 일봉 기준 시뮬레이션 루프 — 각 일봉 시점마다 상위 타임프레임(월/주) 상태 룩업 (`MultiTimeframeData.lookup_upper()`)
@@ -496,25 +496,25 @@
   - `BacktestResult`: `trades: list[Trade]`, `equity_curve: list[float]`, `metrics: PerformanceMetrics`, `unfilled_signals: list[Signal]` — 마지막 봉에서 시그널이 발생했으나 다음 봉이 없어 미체결된 시그널 목록
   - `tests/backtest/test_engine.py`: 미래참조 방지 검증, 매수·매도 수수료 분리 계산 정확도, 포지션 비율 관리, 마지막 봉 미체결 시그널 `unfilled_signals` 포함 확인
 
-- [ ] **T078** 성과 지표 계산 (`core/backtest/metrics.py`)
+- [x] **T078** 성과 지표 계산 (`core/backtest/metrics.py`)
   - `PerformanceMetrics`: `win_rate: float`, `profit_loss_ratio: float`, `mdd: float`, `sharpe_ratio: float`, `total_trades: int`, `annualized_return: float`
   - `calculate_mdd(equity_curve: list[float]) -> float` — 최대낙폭 (고점 대비 최저점 비율)
   - `calculate_sharpe(returns: list[float], risk_free: float = 0.035) -> float` — 연환산 샤프지수 (국고채 3.5% 기준)
   - `tests/backtest/test_metrics.py`: MDD·샤프지수 수식 검증, 거래 0건 엣지 케이스
 
-- [ ] **T079** Toss 캔들 데이터 소스 & 캐싱 (`core/backtest/toss_data_source.py`)
+- [x] **T079** Toss 캔들 데이터 소스 & 캐싱 (`core/backtest/toss_data_source.py`)
   - `BacktestDataSource(Protocol)`: `get_candles(symbol: str, interval: str, count: int = 100, before: str | None = None, adjusted: bool = True) -> list[Candle]` — T055 `TossRestClient.get_candles()` 시그니처와 정렬 (start/end 날짜 파라미터 아님)
   - `TossBacktestDataSource`: T055 `get_candles()` 직접 위임 + SQLite 캐싱 (`~/.quanteo/backtest_cache.db`, TTL 24시간). 날짜 범위가 필요한 경우 `before` 파라미터를 이동하며 여러 번 호출하는 어댑터 메서드 `fetch_range(symbol, interval, start_date, end_date)` 제공 (캐시는 pre-backtest 역사 데이터 전용 — 라이브 시세 캐시와 분리).
   - `CSVBacktestDataSource`: 로컬 CSV 파일 소스 (오프라인 테스트·반복 최적화용)
   - `tests/backtest/test_data_source.py`: 캐시 히트/미스, API 장애 시 캐시 폴백, `fetch_range` → 여러 번 `get_candles()` 호출 조합 검증
 
-- [ ] **T080** Walk-Forward 검증 (`core/backtest/walk_forward.py`)
+- [x] **T080** Walk-Forward 검증 (`core/backtest/walk_forward.py`)
   - `WalkForwardValidator`: `in_sample_months: int = 12`, `out_sample_months: int = 3`
   - 인샘플 기간으로 파라미터 탐색 → 아웃샘플로 성과 검증 반복
   - **과최적화 감지:** 인샘플 대비 아웃샘플 샤프지수 저하율 30% 초과 시 경고
   - `tests/backtest/test_walk_forward.py`: 기간 분리 정확도, 과최적화 감지 임계값 검증
 
-- [ ] **T081** 헤드앤숄더 패턴 감지 (보조 신호, `core/strategy/indicators/head_shoulders.py`)
+- [x] **T081** 헤드앤숄더 패턴 감지 (보조 신호, `core/strategy/indicators/head_shoulders.py`)
   - **적용 타임프레임:** 주봉 (스펙 7절)
   - `detect_head_shoulders(candles: list[Candle]) -> HeadShouldersResult | None`
   - `HeadShouldersResult`: `pattern_type: Literal["하락전환", "상승전환"]`, `right_shoulder_idx: int`, `neckline: float`, `volume_confirms: bool`
@@ -523,14 +523,14 @@
   - 상승 전환(역헤드앤숄더): 거래량 급증 + 장대양봉으로 왼쪽 고점 돌파 → 추세 상승 신호
   - `tests/strategy/test_head_shoulders.py`: 패턴 감지 경계 케이스, 거래량 조건 충족/불충족, override 시 스코어 무시 검증
 
-- [ ] **T082** 백테스트 Control API 엔드포인트 (`core/api/backtest.py`)
+- [x] **T082** 백테스트 Control API 엔드포인트 (`core/api/backtest.py`)
   - `POST /backtest/run` — 요청: `{symbol, start_date, end_date, strategy_params}` → `run_id` 반환 (비동기 실행)
   - `GET /backtest/results/{run_id}` — 결과: `PerformanceMetrics` + 거래 내역 + 에쿼티 커브
   - `GET /backtest/status/{run_id}` — 실행 상태 (`running` / `completed` / `failed`)
   - SQLite `backtest_runs` 테이블에 결과 영속화
   - `tests/api/test_backtest.py`: 비동기 실행, 상태 조회, 결과 파싱 검증
 
-- [ ] **T083** 대시보드 전략 모니터링 UI (`dashboard/src/pages/Strategy.tsx`)
+- [x] **T083** 대시보드 전략 모니터링 UI (`dashboard/src/pages/Strategy.tsx`)
   - **CCI 현황 패널:** 4개 타임프레임 CCI 값·시그널·골든/데드크로스 상태 (스펙 11절 스냅샷 형태)
   - **신뢰도 스코어 게이지:** 0~~8점 + 항목별 breakdown (7이상 녹색·4~~6 노랑·음수 빨강)
   - **실시간 시그널 알람:** `/stream` WS 구독 → 매수/매도 시그널 발생 시 토스트 알람

@@ -86,9 +86,9 @@ export function OrdersTable({ orders, total, error, onRefetch }: Props) {
                       {o.symbol}
                     </td>
                     <td
-                      className={`px-4 py-2 font-semibold ${o.side === "buy" ? "text-positive" : "text-negative"}`}
+                      className={`px-4 py-2 font-semibold ${o.side === "BUY" ? "text-positive" : "text-negative"}`}
                     >
-                      {o.side === "buy" ? "BUY" : "SELL"}
+                      {o.side === "BUY" ? "BUY" : "SELL"}
                     </td>
                     <td className="px-4 py-2 text-right text-white">
                       {o.qty.toLocaleString()}

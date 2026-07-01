@@ -10,8 +10,9 @@ import { useOrders } from "./hooks/useOrders";
 import { usePositions } from "./hooks/usePositions";
 import { useStatus } from "./hooks/useStatus";
 import { useStream } from "./hooks/useStream";
+import { StrategyPage } from "./pages/Strategy";
 
-type Tab = "positions" | "orders" | "fills";
+type Tab = "positions" | "orders" | "fills" | "strategy";
 
 export default function App() {
   const { status, refetch: refetchStatus } = useStatus(3000);
@@ -41,6 +42,7 @@ export default function App() {
                 { key: "positions", label: "포지션" },
                 { key: "orders", label: "주문" },
                 { key: "fills", label: "체결" },
+                { key: "strategy", label: "전략" },
               ] as { key: Tab; label: string }[]
             ).map(({ key, label }) => (
               <button
@@ -76,6 +78,14 @@ export default function App() {
           )}
           {tab === "fills" && (
             <FillsTable fills={fills} total={fillTotal} error={fillError} />
+          )}
+
+          {tab === "strategy" && (
+            <StrategyPage
+              logs={logs}
+              positions={positions}
+              onKill={refetchStatus}
+            />
           )}
 
           <StreamLog logs={logs} connected={connected} />
