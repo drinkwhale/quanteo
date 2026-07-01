@@ -530,7 +530,7 @@
   - SQLite `backtest_runs` 테이블에 결과 영속화
   - `tests/api/test_backtest.py`: 비동기 실행, 상태 조회, 결과 파싱 검증
 
-- [ ] **T083** 대시보드 전략 모니터링 UI (`dashboard/src/pages/Strategy.tsx`)
+- [x] **T083** 대시보드 전략 모니터링 UI (`dashboard/src/pages/Strategy.tsx`)
   - **CCI 현황 패널:** 4개 타임프레임 CCI 값·시그널·골든/데드크로스 상태 (스펙 11절 스냅샷 형태)
   - **신뢰도 스코어 게이지:** 0~~8점 + 항목별 breakdown (7이상 녹색·4~~6 노랑·음수 빨강)
   - **실시간 시그널 알람:** `/stream` WS 구독 → 매수/매도 시그널 발생 시 토스트 알람

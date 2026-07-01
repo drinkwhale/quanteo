@@ -1,0 +1,593 @@
+/**
+ * 전략 모니터링 페이지
+ *
+ * - CCI 현황 패널 (4개 타임프레임)
+ * - 신뢰도 스코어 게이지 (0~8점)
+ * - 실시간 시그널 토스트 (WebSocket)
+ * - 포지션 진행 바
+ * - 백테스트 실행 UI
+ * - 킬스위치
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../api/client";
+import {
+  type BacktestMetrics,
+  type BacktestStatusResponse,
+  backtestApi,
+  pollUntilDone,
+} from "../api/backtest";
+import type { PositionItem } from "../api/types";
+import type { LogEntry } from "../hooks/useStream";
+
+// ============================================================================
+// 타입
+// ============================================================================
+
+interface CciTimeframe {
+  label: string;
+  value: number | null;
+  signal: "buy" | "sell" | "neutral";
+  cross: "golden" | "dead" | null;
+}
+
+interface SignalToast {
+  id: number;
+  side: "BUY" | "SELL";
+  symbol: string;
+  price: number;
+  reason: string;
+  ts: string;
+}
+
+// ============================================================================
+// 서브 컴포넌트: CCI 패널
+// ============================================================================
+
+function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
+  return (
+    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
+      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+        CCI 현황
+      </h2>
+      <div className="grid grid-cols-2 gap-2">
+        {timeframes.map((tf) => (
+          <div
+            key={tf.label}
+            className="bg-surface border border-border rounded p-2 space-y-1"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-muted">{tf.label}</span>
+              {tf.cross === "golden" && (
+                <span className="text-[10px] font-mono text-positive">GC</span>
+              )}
+              {tf.cross === "dead" && (
+                <span className="text-[10px] font-mono text-negative">DC</span>
+              )}
+            </div>
+            <div
+              className={`text-sm font-mono font-bold ${
+                tf.signal === "buy"
+                  ? "text-positive"
+                  : tf.signal === "sell"
+                    ? "text-negative"
+                    : "text-muted"
+              }`}
+            >
+              {tf.value !== null ? tf.value.toFixed(1) : "—"}
+            </div>
+            <div className="text-[10px] font-mono text-muted capitalize">
+              {tf.signal}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-muted font-mono">
+        * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
+      </p>
+    </section>
+  );
+}
+
+// ============================================================================
+// 서브 컴포넌트: 신뢰도 스코어 게이지
+// ============================================================================
+
+interface ReliabilityProps {
+  score: number | null;
+  breakdown: Record<string, boolean>;
+}
+
+function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
+  const color =
+    score === null
+      ? "text-muted"
+      : score >= 7
+        ? "text-positive"
+        : score >= 4
+          ? "text-warning"
+          : "text-negative";
+
+  const barColor =
+    score === null
+      ? "bg-border"
+      : score >= 7
+        ? "bg-positive"
+        : score >= 4
+          ? "bg-warning"
+          : "bg-negative";
+
+  const pct =
+    score !== null ? Math.max(0, Math.min(100, (score / 8) * 100)) : 0;
+
+  return (
+    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
+      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+        신뢰도 스코어
+      </h2>
+
+      <div className="flex items-end gap-2">
+        <span className={`text-3xl font-mono font-bold ${color}`}>
+          {score !== null ? score : "—"}
+        </span>
+        <span className="text-muted font-mono text-sm mb-1">/ 8</span>
+      </div>
+
+      <div className="w-full h-2 bg-surface rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {Object.keys(breakdown).length > 0 && (
+        <ul className="space-y-1">
+          {Object.entries(breakdown).map(([key, passed]) => (
+            <li key={key} className="flex items-center gap-2 text-xs font-mono">
+              <span className={passed ? "text-positive" : "text-muted"}>
+                {passed ? "✓" : "○"}
+              </span>
+              <span className={passed ? "text-white" : "text-muted"}>
+                {key}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {Object.keys(breakdown).length === 0 && (
+        <p className="text-[10px] text-muted font-mono">
+          * 스코어 데이터 대기 중
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ============================================================================
+// 서브 컴포넌트: 포지션 진행 바
+// ============================================================================
+
+function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
+  // 분할 매수 스텝: 1차 30%, 2차 50%, 3차 20% (스펙 기준 예시)
+  const STEPS = [
+    { label: "1차", pct: 30 },
+    { label: "2차", pct: 50 },
+    { label: "3차", pct: 20 },
+  ];
+
+  if (positions.length === 0) {
+    return (
+      <section className="bg-panel border border-border rounded-lg p-4">
+        <h2 className="text-xs font-mono font-semibold text-white tracking-wider mb-3">
+          포지션 현황
+        </h2>
+        <p className="text-xs text-muted font-mono">보유 포지션 없음</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
+      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+        포지션 현황
+      </h2>
+      {positions.slice(0, 5).map((pos) => (
+        <div key={pos.symbol} className="space-y-1">
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-white">{pos.symbol}</span>
+            <span className="text-muted">{pos.qty.toLocaleString()}주</span>
+          </div>
+          <div className="flex gap-0.5 h-2">
+            {STEPS.map((step, i) => (
+              <div
+                key={step.label}
+                className="h-full rounded-sm"
+                style={{
+                  width: `${step.pct}%`,
+                  backgroundColor:
+                    i === 0
+                      ? "rgb(34 197 94 / 0.8)"
+                      : i === 1
+                        ? "rgb(34 197 94 / 0.5)"
+                        : "rgb(34 197 94 / 0.25)",
+                }}
+                title={`${step.label} ${step.pct}%`}
+              />
+            ))}
+          </div>
+          <div className="flex gap-2 text-[10px] font-mono text-muted">
+            {STEPS.map((s) => (
+              <span key={s.label}>
+                {s.label} {s.pct}%
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+// ============================================================================
+// 서브 컴포넌트: 백테스트 UI
+// ============================================================================
+
+function BacktestPanel() {
+  const [symbol, setSymbol] = useState("005930");
+  const [startDate, setStartDate] = useState("2024-01-01");
+  const [endDate, setEndDate] = useState("2024-12-31");
+  const [running, setRunning] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<BacktestMetrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setRunning(true);
+    setStatusMsg("백테스트 시작...");
+    setResult(null);
+    setError(null);
+
+    try {
+      const { run_id } = await backtestApi.run({
+        symbol,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      });
+
+      const res = await pollUntilDone(run_id, (s: BacktestStatusResponse) => {
+        setStatusMsg(`실행 중... (${s.status})`);
+      });
+
+      if (res.status === "failed") {
+        setError("백테스트 실패");
+      } else if (res.metrics) {
+        setResult(res.metrics);
+        setStatusMsg("완료");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류 발생");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section className="bg-panel border border-border rounded-lg p-4 space-y-4">
+      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+        백테스트
+      </h2>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="space-y-1">
+          <label className="text-[10px] font-mono text-muted">종목코드</label>
+          <input
+            type="text"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+            placeholder="005930"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-mono text-muted">시작일</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-mono text-muted">종료일</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+          />
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={run}
+        disabled={running || !symbol}
+        className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-mono font-semibold
+                   hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        {running ? (statusMsg ?? "실행 중...") : "백테스트 실행"}
+      </button>
+
+      {error && (
+        <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      {result && (
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              {
+                label: "승률",
+                value: `${(result.win_rate * 100).toFixed(1)}%`,
+              },
+              { label: "MDD", value: `${(result.mdd * 100).toFixed(1)}%` },
+              { label: "샤프", value: result.sharpe_ratio.toFixed(2) },
+              {
+                label: "수익률",
+                value: `${(result.annualized_return * 100).toFixed(1)}%`,
+              },
+              { label: "P/L비", value: result.profit_loss_ratio.toFixed(2) },
+              { label: "거래수", value: String(result.total_trades) },
+            ] as { label: string; value: string }[]
+          ).map(({ label, value }) => (
+            <div
+              key={label}
+              className="bg-surface border border-border rounded p-2 text-center"
+            >
+              <div className="text-[10px] font-mono text-muted">{label}</div>
+              <div className="text-sm font-mono font-bold text-white">
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ============================================================================
+// 서브 컴포넌트: 킬스위치
+// ============================================================================
+
+function KillSwitchButton({ onAction }: { onAction: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleKill() {
+    if (
+      !window.confirm(
+        "⚠️ 킬스위치를 활성화하면 모든 신규 주문이 차단됩니다. 계속하겠습니까?",
+      )
+    )
+      return;
+
+    setLoading(true);
+    try {
+      await api.kill();
+      setDone(true);
+      onAction();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleKill}
+      disabled={loading || done}
+      className="w-full py-2 rounded bg-negative/10 text-negative border border-negative/30 text-sm font-mono font-semibold
+                 hover:bg-negative/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    >
+      {done ? "킬스위치 활성화됨" : loading ? "처리 중..." : "킬스위치"}
+    </button>
+  );
+}
+
+// ============================================================================
+// 서브 컴포넌트: 시그널 토스트
+// ============================================================================
+
+function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border shadow-lg text-xs font-mono animate-fade-in ${
+            t.side === "BUY"
+              ? "bg-positive/10 border-positive/40 text-positive"
+              : "bg-negative/10 border-negative/40 text-negative"
+          }`}
+        >
+          <div className="font-bold text-sm">
+            {t.side === "BUY" ? "▲ 매수 시그널" : "▼ 매도 시그널"}
+          </div>
+          <div className="text-white">
+            {t.symbol} @ {t.price.toLocaleString()}
+          </div>
+          <div className="text-muted truncate">{t.reason}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// 메인 Strategy 페이지
+// ============================================================================
+
+interface Props {
+  logs: LogEntry[];
+  positions: PositionItem[];
+  onKill: () => void;
+}
+
+const PLACEHOLDER_CCI: CciTimeframe[] = [
+  { label: "5m", value: null, signal: "neutral", cross: null },
+  { label: "15m", value: null, signal: "neutral", cross: null },
+  { label: "1h", value: null, signal: "neutral", cross: null },
+  { label: "1d", value: null, signal: "neutral", cross: null },
+];
+
+const TOAST_TTL = 8_000;
+
+export function StrategyPage({ logs, positions, onKill }: Props) {
+  const [toasts, setToasts] = useState<SignalToast[]>([]);
+  const toastKeyRef = useRef(0);
+  const seenRef = useRef(new Set<string>());
+
+  // 스트림 로그에서 signal 이벤트를 토스트로 변환
+  useEffect(() => {
+    const latest = logs[0];
+    if (!latest) return;
+    if (latest.event_type !== "signal") return;
+
+    const dedupeKey = `${latest._key}`;
+    if (seenRef.current.has(dedupeKey)) return;
+    seenRef.current.add(dedupeKey);
+
+    const payload = latest.payload as {
+      side?: string;
+      symbol?: string;
+      price?: number;
+      reason?: string;
+    } | null;
+
+    if (!payload?.side || !payload?.symbol) return;
+
+    const toast: SignalToast = {
+      id: toastKeyRef.current++,
+      side: payload.side as "BUY" | "SELL",
+      symbol: payload.symbol,
+      price: payload.price ?? 0,
+      reason: payload.reason ?? "",
+      ts: latest.timestamp,
+    };
+
+    setToasts((prev) => [toast, ...prev].slice(0, 5));
+    setTimeout(
+      () => setToasts((prev) => prev.filter((t) => t.id !== toast.id)),
+      TOAST_TTL,
+    );
+  }, [logs]);
+
+  // CCI 스냅샷: 스트림에서 cci_snapshot 이벤트 파싱
+  const cciData = useCallback((): CciTimeframe[] => {
+    const snap = logs.find((l) => l.event_type === "cci_snapshot");
+    if (!snap) return PLACEHOLDER_CCI;
+
+    const p = snap.payload as Record<string, unknown> | null;
+    if (!p) return PLACEHOLDER_CCI;
+
+    return (["5m", "15m", "1h", "1d"] as const).map((tf) => {
+      const data = p[tf] as
+        { value: number; signal: string; cross: string | null } | undefined;
+      return {
+        label: tf,
+        value: data?.value ?? null,
+        signal: (data?.signal as CciTimeframe["signal"]) ?? "neutral",
+        cross: (data?.cross as CciTimeframe["cross"]) ?? null,
+      };
+    });
+  }, [logs]);
+
+  // 신뢰도 스코어: 스트림에서 reliability_score 이벤트 파싱
+  const reliabilityData = useCallback((): {
+    score: number | null;
+    breakdown: Record<string, boolean>;
+  } => {
+    const snap = logs.find((l) => l.event_type === "reliability_score");
+    if (!snap) return { score: null, breakdown: {} };
+
+    const p = snap.payload as {
+      score: number;
+      breakdown: Record<string, boolean>;
+    } | null;
+    if (!p) return { score: null, breakdown: {} };
+    return { score: p.score, breakdown: p.breakdown };
+  }, [logs]);
+
+  const { score, breakdown } = reliabilityData();
+  const cciFrames = cciData();
+
+  return (
+    <>
+      <SignalToasts toasts={toasts} />
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* 왼쪽: CCI + 포지션 */}
+        <div className="space-y-4">
+          <CciPanel timeframes={cciFrames} />
+          <PositionProgressBars positions={positions} />
+        </div>
+
+        {/* 가운데: 신뢰도 + 백테스트 */}
+        <div className="space-y-4">
+          <ReliabilityGauge score={score} breakdown={breakdown} />
+          <BacktestPanel />
+        </div>
+
+        {/* 오른쪽: 킬스위치 + 최근 시그널 */}
+        <div className="space-y-4">
+          <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
+            <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+              긴급 제어
+            </h2>
+            <KillSwitchButton onAction={onKill} />
+          </section>
+
+          <section className="bg-panel border border-border rounded-lg p-4 space-y-2">
+            <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
+              최근 시그널
+            </h2>
+            {logs.filter((l) => l.event_type === "signal").length === 0 ? (
+              <p className="text-xs text-muted font-mono">대기 중...</p>
+            ) : (
+              logs
+                .filter((l) => l.event_type === "signal")
+                .slice(0, 8)
+                .map((l) => {
+                  const p = l.payload as {
+                    side?: string;
+                    symbol?: string;
+                    price?: number;
+                  } | null;
+                  return (
+                    <div
+                      key={l._key}
+                      className={`flex items-center justify-between text-xs font-mono px-2 py-1 rounded ${
+                        p?.side === "BUY"
+                          ? "text-positive bg-positive/5"
+                          : "text-negative bg-negative/5"
+                      }`}
+                    >
+                      <span>
+                        {p?.side === "BUY" ? "▲" : "▼"} {p?.symbol}
+                      </span>
+                      <span>{p?.price?.toLocaleString()}</span>
+                    </div>
+                  );
+                })
+            )}
+          </section>
+        </div>
+      </div>
+    </>
+  );
+}
