@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "description": "FastAPI·aiogram·React·pandas 등 라이브러리 최신 문서 조회"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "description": "CCI·BBC 전략 로직, 백테스트 알고리즘 등 복잡한 분석에 체인 사고 적용"
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PAT_HERE"
+      },
+      "description": "PR 생성·이슈 관리·코드 검색 (GITHUB_PAT 설정 필요)"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp", "--browser", "chrome"],
+      "description": "대시보드 E2E 테스트 및 시각적 검증 (localhost:5173)"
+    },
+    "exa-web-search": {
+      "command": "npx",
+      "args": ["-y", "exa-mcp-server"],
+      "env": {
+        "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE"
+      },
+      "description": "주식 전략·Toss API·금융 리서치 웹 검색 (EXA_API_KEY 설정 필요)"
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": ["shadcn@latest", "mcp"],
+      "description": "shadcn/ui 컴포넌트 참조 및 설치 — 대시보드 UI 작업 시 컴포넌트 검색·추가 지원 (공식 shadcn CLI v4.12.0+)"
+    }
+  }
+}
