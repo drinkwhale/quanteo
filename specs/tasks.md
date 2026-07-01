@@ -508,7 +508,7 @@
   - `CSVBacktestDataSource`: 로컬 CSV 파일 소스 (오프라인 테스트·반복 최적화용)
   - `tests/backtest/test_data_source.py`: 캐시 히트/미스, API 장애 시 캐시 폴백, `fetch_range` → 여러 번 `get_candles()` 호출 조합 검증
 
-- [ ] **T080** Walk-Forward 검증 (`core/backtest/walk_forward.py`)
+- [x] **T080** Walk-Forward 검증 (`core/backtest/walk_forward.py`)
   - `WalkForwardValidator`: `in_sample_months: int = 12`, `out_sample_months: int = 3`
   - 인샘플 기간으로 파라미터 탐색 → 아웃샘플로 성과 검증 반복
   - **과최적화 감지:** 인샘플 대비 아웃샘플 샤프지수 저하율 30% 초과 시 경고
