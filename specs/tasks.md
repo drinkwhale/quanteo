@@ -382,7 +382,7 @@
 > **신규 디렉토리:** `core/strategy/indicators/` — 지표 계산 순수 함수 모음. `core/strategy/multi_timeframe.py` — 타임프레임 동기화 엔진.
 > **기존 재사용:** `core/adapters/toss/rest.py` `get_candles()` (T055), `core/strategy/engine.py` (T012).
 
-- [ ] **T069** CCI 지표 계산 모듈 (`core/strategy/indicators/cci.py`)
+- [x] **T069** CCI 지표 계산 모듈 (`core/strategy/indicators/cci.py`)
   - 계산 공식 (스펙 1.1절): `TP = (high + low + close) / 3` → `SMA(20)` → `MD(20)` → `CCI = (TP - SMA) / (0.015 * MD)`
   - `calculate_cci(candles: list[Candle], period: int = 20) -> list[float]`
     - **반환 계약:** 반환 길이 = `len(candles) - (period - 1)`. `len(candles) < period`이면 `[]` 반환 (예외 미발생).
@@ -394,7 +394,7 @@
   - `get_cci_zone(cci_value: float) -> Literal["과매수강", "과매수", "중립", "과매도", "과매도강"]` — ±100/±200 기준
   - `tests/strategy/test_cci.py`: 공식 수식 검증, 골든/데드크로스 경계 케이스, 데이터 부족(period-1개) 처리, **`test_cci_flat_price` (20봉 동일 가격 → MD=0 → 전체 `0.0` 반환 검증)**
 
-- [ ] **T070** 이동평균선 & 거래량 지표 모듈 (`core/strategy/indicators/ma.py`)
+- [x] **T070** 이동평균선 & 거래량 지표 모듈 (`core/strategy/indicators/ma.py`)
   - `calculate_sma(values: list[float], period: int) -> list[float]` — 범용 SMA. 반환 길이 = `len(values) - (period - 1)`.
   - `CandleClass(StrEnum)`: `BULLISH = "bullish"`, `BEARISH = "bearish"`, `DOJI = "doji"` — 한국어 Literal 대신 StrEnum 사용 (grep·API 경계 안전)
   - `PricePosition(StrEnum)`: `ABOVE = "above"`, `BETWEEN = "between"`, `BELOW = "below"`
@@ -404,7 +404,7 @@
   - `price_position(price: float, ma5: float, ma20: float) -> PricePosition` — 스펙 3절 포지션 분류
   - `tests/strategy/test_ma.py`: 분류 경계 케이스 (십자형 threshold, 장대 ratio, `high==low` 제로 분모)
 
-- [ ] **T071** 멀티 타임프레임 데이터 동기화 (`core/strategy/multi_timeframe.py`)
+- [x] **T071** 멀티 타임프레임 데이터 동기화 (`core/strategy/multi_timeframe.py`)
   - `TimeframeState` 데이터클래스: `candles: list[Candle]`, `cci: list[float]`, `cci_signal: list[float]`, `ma5: list[float]`, `ma20: list[float]`, `volume_ma20: list[float]`, `last_updated: datetime`, `is_resampled: bool = False`
     - `__post_init__`: `len(cci) == len(cci_signal)` 검증 → `ValueError` (배열 정렬 보장)
   - **앱 시작 시 초기화:** 일봉 최근 500일치 fetch → `pandas resample`로 주봉·월봉 생성. 60분봉은 1분봉 60개 집계. 리샘플된 상태는 `is_resampled=True` 표시. Toss API가 네이티브 주봉/월봉을 지원하는 시점에 전환.
@@ -416,7 +416,7 @@
   - **TTL 캐시:** 월봉 1시간, 주봉 30분, 일봉 5분, 60분봉 1분 — 폴링 루프의 API 과호출 방지
   - `tests/strategy/test_multi_timeframe.py`: mock `get_candles()`로 4개 타임프레임 조회·지표 계산·캐시 TTL 검증; 1개 TF 실패 시 나머지 정상 반환 확인
 
-- [ ] **T072** 타임프레임 계층 방향 판단 (`core/strategy/timeframe_judge.py`)
+- [x] **T072** 타임프레임 계층 방향 판단 (`core/strategy/timeframe_judge.py`)
   - `MarketDirection(enum)`: `BULLISH`, `BEARISH`, `NEUTRAL`
   - `TimeframeJudge.assess(mtf: MultiTimeframeData) -> dict[str, MarketDirection]` — 4개 타임프레임별 방향 반환
     - **데이터 미비 처리:** `TimeframeState.candles`가 비어 있거나 리샘플 캔들 수 < period(20)이면 해당 TF → `NEUTRAL` + `logger.warning(f"{timeframe} 데이터 부족 — NEUTRAL 처리")`. 결과는 반환하되 경고 기록.
