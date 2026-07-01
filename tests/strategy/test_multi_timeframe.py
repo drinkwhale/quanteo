@@ -21,6 +21,7 @@ from core.strategy.multi_timeframe import (
     MultiTimeframeData,
     MultiTimeframeLoader,
     TimeframeState,
+    UpperTimeframeState,
     _aggregate_minute_candles_to_hourly,
     _resample_candles_to_monthly,
     _resample_candles_to_weekly,
@@ -574,6 +575,7 @@ async def test_load_no_previous_cache_creates_empty_state(mock_rest_client):
     assert result.sixty_min.cci == []
     assert result.sixty_min.cci_signal == []
     assert result.sixty_min.is_resampled is True
+    assert result.sixty_min.is_empty is True
 
 
 # ============================================================================
@@ -581,7 +583,7 @@ async def test_load_no_previous_cache_creates_empty_state(mock_rest_client):
 # ============================================================================
 
 
-def test_lookup_upper_returns_typed_dict():
+def test_lookup_upper_returns_upper_timeframe_state():
     """MultiTimeframeData.lookup_upper(): UpperTimeframeState 반환."""
     now = datetime.now(UTC)
 
@@ -638,17 +640,14 @@ def test_lookup_upper_returns_typed_dict():
 
     result = data.lookup_upper(datetime.now(UTC))
 
-    assert isinstance(result, dict)
-    assert "monthly" in result
-    assert "weekly" in result
-    assert "sixty_min" in result
-    assert result["monthly"] is monthly
-    assert result["weekly"] is weekly
-    assert result["sixty_min"] is sixty_min
+    assert isinstance(result, UpperTimeframeState)
+    assert result.monthly is monthly
+    assert result.weekly is weekly
+    assert result.sixty_min is sixty_min
 
 
-def test_lookup_upper_keys():
-    """MultiTimeframeData.lookup_upper(): TypedDict 키 검증."""
+def test_lookup_upper_fields():
+    """MultiTimeframeData.lookup_upper(): UpperTimeframeState 필드 검증."""
     now = datetime.now(UTC)
     state = TimeframeState(
         candles=[],
@@ -670,8 +669,10 @@ def test_lookup_upper_keys():
 
     result = data.lookup_upper(datetime.now(UTC))
 
-    # TypedDict 키 확인
-    assert set(result.keys()) == {"monthly", "weekly", "sixty_min"}
+    # frozen dataclass 필드 확인
+    assert result.monthly is not None
+    assert result.weekly is not None
+    assert result.sixty_min is not None
 
 
 # ============================================================================

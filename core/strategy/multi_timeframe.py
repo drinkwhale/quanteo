@@ -15,7 +15,6 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TypedDict
 
 import pandas as pd
 
@@ -45,6 +44,7 @@ class TimeframeState:
         volume_ma20: 거래량 20기간 이동평균 리스트.
         last_updated: 마지막 업데이트 시각.
         is_resampled: 리샘플링된 데이터 여부 (주봉·월봉·60분봉 등).
+        is_empty: API 장애 + 이전 캐시 없음으로 데이터 사용 불가 상태.
     """
 
     candles: list[Candle]
@@ -55,13 +55,19 @@ class TimeframeState:
     volume_ma20: list[float]
     last_updated: datetime
     is_resampled: bool = False
+    is_empty: bool = False
 
     def __post_init__(self) -> None:
-        """배열 정렬 검증."""
+        """배열 정렬 및 지표 존재 검증."""
         if len(self.cci) != len(self.cci_signal):
             raise ValueError(
                 f"CCI/시그널 길이 불일치: cci={len(self.cci)}, signal={len(self.cci_signal)}"
             )
+        # 충분한 캔들이 있으면 이동평균 배열도 반드시 존재해야 함
+        if len(self.candles) >= 20 and not self.ma20:
+            raise ValueError("20개 이상 캔들에서 ma20이 비어있음 — 지표 계산 오류")
+        if len(self.candles) >= 5 and not self.ma5:
+            raise ValueError("5개 이상 캔들에서 ma5가 비어있음 — 지표 계산 오류")
 
 
 # ============================================================================
@@ -108,10 +114,7 @@ def _toss_candle_to_candle(
 
 
 def _resample_candles_to_weekly(daily_candles: list[Candle]) -> list[Candle]:
-    """일봉 → 주봉 리샘플링.
-
-    월요일 시작 주간 (W-MON).
-    """
+    """일봉 → 주봉 리샘플링 (월요일 시작 주간 W-MON)."""
     if not daily_candles:
         return []
 
@@ -129,38 +132,29 @@ def _resample_candles_to_weekly(daily_candles: list[Candle]) -> list[Candle]:
         ]
     ).set_index("timestamp")
 
-    # 주간 리샘플링
     weekly = df.resample("W-MON").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
-    )
-    weekly = weekly.dropna()
+    ).dropna()
 
-    # 결과를 Candle로 변환
-    candles = []
-    symbol = daily_candles[0].symbol if daily_candles else "UNKNOWN"
-    for timestamp, row in weekly.iterrows():
-        candles.append(
-            Candle(
-                symbol=symbol,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=int(row["volume"]),
-                timestamp=pd.Timestamp(timestamp).to_pydatetime().replace(tzinfo=UTC),
-                market=daily_candles[0].market,
-                interval="1w",
-            )
+    symbol = daily_candles[0].symbol
+    return [
+        Candle(
+            symbol=symbol,
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+            volume=int(row["volume"]),
+            timestamp=pd.Timestamp(ts).to_pydatetime().replace(tzinfo=UTC),
+            market=daily_candles[0].market,
+            interval="1w",
         )
-
-    return candles
+        for ts, row in weekly.iterrows()
+    ]
 
 
 def _resample_candles_to_monthly(daily_candles: list[Candle]) -> list[Candle]:
-    """일봉 → 월봉 리샘플링.
-
-    월 단위 리샘플링 (월초 ~ 월말).
-    """
+    """일봉 → 월봉 리샘플링 (월 단위 ME)."""
     if not daily_candles:
         return []
 
@@ -178,38 +172,29 @@ def _resample_candles_to_monthly(daily_candles: list[Candle]) -> list[Candle]:
         ]
     ).set_index("timestamp")
 
-    # 월간 리샘플링
     monthly = df.resample("ME").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
-    )
-    monthly = monthly.dropna()
+    ).dropna()
 
-    # 결과를 Candle로 변환
-    candles = []
-    symbol = daily_candles[0].symbol if daily_candles else "UNKNOWN"
-    for timestamp, row in monthly.iterrows():
-        candles.append(
-            Candle(
-                symbol=symbol,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=int(row["volume"]),
-                timestamp=pd.Timestamp(timestamp).to_pydatetime().replace(tzinfo=UTC),
-                market=daily_candles[0].market,
-                interval="1M",
-            )
+    symbol = daily_candles[0].symbol
+    return [
+        Candle(
+            symbol=symbol,
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+            volume=int(row["volume"]),
+            timestamp=pd.Timestamp(ts).to_pydatetime().replace(tzinfo=UTC),
+            market=daily_candles[0].market,
+            interval="1M",
         )
-
-    return candles
+        for ts, row in monthly.iterrows()
+    ]
 
 
 def _aggregate_minute_candles_to_hourly(minute_candles: list[Candle]) -> list[Candle]:
-    """1분봉 60개 → 60분봉 집계.
-
-    60개씩 그룹화해 OHLCV 계산.
-    """
+    """1분봉 60개 → 60분봉 집계 (60개씩 그룹화, 미완성 시간 제외)."""
     if not minute_candles:
         return []
 
@@ -217,23 +202,62 @@ def _aggregate_minute_candles_to_hourly(minute_candles: list[Candle]) -> list[Ca
     for i in range(0, len(minute_candles), 60):
         chunk = minute_candles[i : i + 60]
         if len(chunk) < 60:
-            # 미완성 시간 제외
             break
 
-        hourly = Candle(
-            symbol=chunk[0].symbol,
-            open=chunk[0].open,
-            high=max(c.high for c in chunk),
-            low=min(c.low for c in chunk),
-            close=chunk[-1].close,
-            volume=sum(c.volume for c in chunk),
-            timestamp=chunk[0].timestamp,
-            market=chunk[0].market,
-            interval="60m",
+        hourly_candles.append(
+            Candle(
+                symbol=chunk[0].symbol,
+                open=chunk[0].open,
+                high=max(c.high for c in chunk),
+                low=min(c.low for c in chunk),
+                close=chunk[-1].close,
+                volume=sum(c.volume for c in chunk),
+                timestamp=chunk[0].timestamp,
+                market=chunk[0].market,
+                interval="60m",
+            )
         )
-        hourly_candles.append(hourly)
 
     return hourly_candles
+
+
+# ============================================================================
+# 지표 계산 헬퍼
+# ============================================================================
+
+
+def _compute_timeframe_state(
+    candles: list[Candle],
+    now: datetime,
+    is_resampled: bool,
+) -> TimeframeState:
+    """캔들로부터 CCI·MA 지표를 계산하고 TimeframeState를 생성한다."""
+    close_prices = [c.close for c in candles]
+    volumes = [c.volume for c in candles]
+
+    cci_raw = calculate_cci(candles, period=20)
+    cci_signal = calculate_cci_signal(cci_raw, signal_period=20)
+
+    if not cci_signal:
+        # CCI(period=20) + signal(period=20) = 최소 40개 캔들 필요
+        logger.warning(
+            "CCI 시그널 계산 불가 — 최소 40개 캔들 필요 (현재 %d개)", len(candles)
+        )
+        cci = []
+    else:
+        # cci_signal이 더 짧으므로 cci 앞쪽을 trimming해 길이 맞춤
+        cci = cci_raw[-len(cci_signal):]
+
+    return TimeframeState(
+        candles=candles,
+        cci=cci,
+        cci_signal=cci_signal,
+        ma5=calculate_sma(close_prices, period=5),
+        ma20=calculate_sma(close_prices, period=20),
+        volume_ma20=calculate_sma(volumes, period=20),
+        last_updated=now,
+        is_resampled=is_resampled,
+    )
 
 
 # ============================================================================
@@ -273,120 +297,86 @@ class MultiTimeframeLoader:
         """
         now = datetime.now(UTC)
 
-        # 심볼별 캐시 초기화
         if symbol not in self._cache:
             self._cache[symbol] = {}
 
-        # 각 타임프레임 조회 태스크
-        tasks = [
-            self._load_timeframe(symbol, "daily", now),
+        # Step 1: daily 먼저 직렬 확정
+        # weekly/monthly는 daily 캔들을 리샘플링하므로 daily 캐시 준비 후 실행해야 함
+        daily_raw = (
+            await asyncio.gather(
+                self._load_timeframe(symbol, "daily", now),
+                return_exceptions=True,
+            )
+        )[0]
+
+        # Step 2: 나머지 3개 병렬 실행 (daily 캐시 준비 완료)
+        secondary = await asyncio.gather(
             self._load_timeframe(symbol, "weekly", now),
             self._load_timeframe(symbol, "monthly", now),
             self._load_timeframe(symbol, "60min", now),
-        ]
+            return_exceptions=True,
+        )
 
-        # 병렬 실행 (예외는 저장, 전파 안 함)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # 결과 매핑 및 예외 처리
-        # 개별 타임프레임 실패 시 이전 캐시 사용 (TTL 만료되었어도 유지)
-        daily_state = results[0] if not isinstance(results[0], Exception) else None
-        weekly_state = results[1] if not isinstance(results[1], Exception) else None
-        monthly_state = results[2] if not isinstance(results[2], Exception) else None
-        sixty_min_state = results[3] if not isinstance(results[3], Exception) else None
-
-        # 타임프레임별 예외 처리 및 캐시 보존
         tf_names = ["daily", "weekly", "monthly", "60min"]
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                tf_name = tf_names[i]
-                # 이전 캐시 확인 (TTL 만료 여부 무관)
-                prev_cache = self._cache.get(symbol, {}).get(tf_name)
+        all_results: list = [daily_raw, *secondary]
 
-                if prev_cache is not None:
-                    # 이전 캐시 사용 (stale cache)
-                    if tf_name == "daily":
-                        daily_state = prev_cache.state
-                    elif tf_name == "weekly":
-                        weekly_state = prev_cache.state
-                    elif tf_name == "monthly":
-                        monthly_state = prev_cache.state
-                    elif tf_name == "60min":
-                        sixty_min_state = prev_cache.state
+        # 성공 결과 추출
+        states: dict[str, TimeframeState | None] = {
+            name: (r if not isinstance(r, Exception) else None)
+            for name, r in zip(tf_names, all_results)
+        }
 
-                    logger.warning(
-                        "T071: %s 타임프레임 로드 실패, 이전 캐시 유지 (symbol=%s, error=%s)",
-                        tf_name,
-                        symbol,
-                        result,
-                    )
-                else:
-                    # 이전 캐시 없음
-                    logger.warning(
-                        "T071: %s 타임프레임 로드 실패, 이전 캐시 없음 (symbol=%s, error=%s)",
-                        tf_name,
-                        symbol,
-                        result,
-                    )
+        # 실패한 타임프레임: 이전 캐시 보존 (TTL 만료도 재사용)
+        for name, result in zip(tf_names, all_results):
+            if not isinstance(result, Exception):
+                continue
+            prev = self._cache[symbol].get(name)
+            if prev is not None:
+                states[name] = prev.state
+                logger.warning(
+                    "T071: %s 로드 실패, stale 캐시 유지 (symbol=%s, error=%s)",
+                    name,
+                    symbol,
+                    result,
+                )
+            else:
+                logger.warning(
+                    "T071: %s 로드 실패, 이전 캐시 없음 (symbol=%s, error=%s)",
+                    name,
+                    symbol,
+                    result,
+                )
 
-        # 최소 일봉은 필수 (critical)
-        if daily_state is None:
+        # 일봉은 필수 (critical)
+        if states["daily"] is None:
             raise RuntimeError(f"일봉 조회 실패 (symbol={symbol})")
 
-        # 주봉/월봉/60분봉이 None이면 빈 TimeframeState 생성
-        # (이전 캐시도 없는 경우, non-critical)
-        if weekly_state is None:
-            logger.warning(
-                "T071: 주봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
-                symbol,
-            )
-            weekly_state = TimeframeState(
-                candles=[],
-                cci=[],
-                cci_signal=[],
-                ma5=[],
-                ma20=[],
-                volume_ma20=[],
-                last_updated=now,
-                is_resampled=True,
-            )
-        if monthly_state is None:
-            logger.warning(
-                "T071: 월봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
-                symbol,
-            )
-            monthly_state = TimeframeState(
-                candles=[],
-                cci=[],
-                cci_signal=[],
-                ma5=[],
-                ma20=[],
-                volume_ma20=[],
-                last_updated=now,
-                is_resampled=True,
-            )
-        if sixty_min_state is None:
-            logger.warning(
-                "T071: 60분봉 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)",
-                symbol,
-            )
-            sixty_min_state = TimeframeState(
-                candles=[],
-                cci=[],
-                cci_signal=[],
-                ma5=[],
-                ma20=[],
-                volume_ma20=[],
-                last_updated=now,
-                is_resampled=True,
-            )
+        # 주봉/월봉/60분봉 없으면 빈 상태 (is_empty=True)로 대체
+        # is_empty=True는 "API 장애 + 이전 캐시 없음"을 의미
+        # TimeframeJudge가 일반 데이터 부족(NEUTRAL)과 구분해 로깅할 수 있음
+        for name in ("weekly", "monthly", "60min"):
+            if states[name] is None:
+                logger.warning(
+                    "T071: %s 데이터 사용 불가 (symbol=%s, 이전 캐시도 없음)", name, symbol
+                )
+                states[name] = TimeframeState(
+                    candles=[],
+                    cci=[],
+                    cci_signal=[],
+                    ma5=[],
+                    ma20=[],
+                    volume_ma20=[],
+                    last_updated=now,
+                    is_resampled=True,
+                    is_empty=True,
+                )
 
         return MultiTimeframeData(
             symbol=symbol,
-            daily=daily_state,
-            weekly=weekly_state,
-            monthly=monthly_state,
-            sixty_min=sixty_min_state,
+            daily=states["daily"],
+            weekly=states["weekly"],
+            monthly=states["monthly"],
+            sixty_min=states["60min"],
         )
 
     async def _load_timeframe(
@@ -394,7 +384,6 @@ class MultiTimeframeLoader:
         symbol: str,
         timeframe: str,
         now: datetime,
-        skip_cache: bool = False,
     ) -> TimeframeState:
         """단일 타임프레임 조회.
 
@@ -402,7 +391,6 @@ class MultiTimeframeLoader:
             symbol: 종목 심볼.
             timeframe: 타임프레임 ("daily", "weekly", "monthly", "60min").
             now: 현재 시각.
-            skip_cache: 캐시 무시 여부.
 
         Returns:
             TimeframeState.
@@ -411,10 +399,9 @@ class MultiTimeframeLoader:
             Exception: API 조회 실패 시.
         """
         # 캐시 확인
-        if not skip_cache:
-            cache_entry = self._cache.get(symbol, {}).get(timeframe)
-            if cache_entry and now < cache_entry.expires_at:
-                return cache_entry.state
+        cache_entry = self._cache.get(symbol, {}).get(timeframe)
+        if cache_entry and now < cache_entry.expires_at:
+            return cache_entry.state
 
         # 조회 수행
         if timeframe == "daily":
@@ -440,171 +427,63 @@ class MultiTimeframeLoader:
         return state
 
     async def _fetch_and_compute_daily(self, symbol: str, now: datetime) -> TimeframeState:
-        """일봉 조회 및 지표 계산.
-
-        최근 500일치 조회.
-        """
+        """일봉 조회 및 지표 계산 (최근 500일)."""
         toss_candles = await self._rest_client.get_candles(
             symbol, interval="1d", count=500, adjusted=True
         )
         candles = [_toss_candle_to_candle(tc, symbol, "1d") for tc in toss_candles]
-
-        # 지표 계산
-        close_prices = [c.close for c in candles]
-        volumes = [c.volume for c in candles]
-
-        cci = calculate_cci(candles, period=20)
-        cci_signal = calculate_cci_signal(cci, signal_period=20)
-
-        # CCI와 signal 길이 정렬 (둘 다 같은 길이로 trimming)
-        # signal = cci[20:], cci는 원본 길이 유지하되 signal과 정렬 필요
-        # 따라서 둘 다 signal 길이로 통일
-        min_cci_signal_len = len(cci_signal)
-        cci = cci[-min_cci_signal_len:] if min_cci_signal_len > 0 else []
-
-        ma5 = calculate_sma(close_prices, period=5)
-        ma20 = calculate_sma(close_prices, period=20)
-        volume_ma20 = calculate_sma(volumes, period=20)
-
-        return TimeframeState(
-            candles=candles,
-            cci=cci,
-            cci_signal=cci_signal,
-            ma5=ma5,
-            ma20=ma20,
-            volume_ma20=volume_ma20,
-            last_updated=now,
-            is_resampled=False,
-        )
+        return _compute_timeframe_state(candles, now, is_resampled=False)
 
     async def _fetch_and_compute_weekly(self, symbol: str, now: datetime) -> TimeframeState:
-        """주봉 조회 및 지표 계산.
+        """주봉 조회 및 지표 계산 (일봉 리샘플링).
 
-        현재: 일봉 500개를 주간 리샘플링 (추후 native 지원 시 변경).
+        load()에서 daily를 먼저 확정했으므로 daily 캐시가 반드시 유효하다.
         """
-        # 일봉 조회 (캐시 사용, TTL 무시)
         daily_cache = self._cache.get(symbol, {}).get("daily")
-        if daily_cache and daily_cache.expires_at > now:
+        if daily_cache:
             daily_candles = daily_cache.state.candles
         else:
+            # load()를 우회한 직접 호출 시 안전망
             daily_state = await self._fetch_and_compute_daily(symbol, now)
             daily_candles = daily_state.candles
 
-        # 주봉으로 리샘플링
         candles = _resample_candles_to_weekly(daily_candles)
         if not candles:
             raise RuntimeError("주봉 리샘플링 실패")
 
-        # 지표 계산
-        close_prices = [c.close for c in candles]
-        volumes = [c.volume for c in candles]
-
-        cci = calculate_cci(candles, period=20)
-        cci_signal = calculate_cci_signal(cci, signal_period=20)
-
-        # CCI와 signal 길이 정렬
-        min_cci_signal_len = len(cci_signal)
-        cci = cci[-min_cci_signal_len:] if min_cci_signal_len > 0 else []
-
-        ma5 = calculate_sma(close_prices, period=5)
-        ma20 = calculate_sma(close_prices, period=20)
-        volume_ma20 = calculate_sma(volumes, period=20)
-
-        return TimeframeState(
-            candles=candles,
-            cci=cci,
-            cci_signal=cci_signal,
-            ma5=ma5,
-            ma20=ma20,
-            volume_ma20=volume_ma20,
-            last_updated=now,
-            is_resampled=True,
-        )
+        return _compute_timeframe_state(candles, now, is_resampled=True)
 
     async def _fetch_and_compute_monthly(self, symbol: str, now: datetime) -> TimeframeState:
-        """월봉 조회 및 지표 계산.
+        """월봉 조회 및 지표 계산 (일봉 리샘플링).
 
-        현재: 일봉 500개를 월간 리샘플링 (추후 native 지원 시 변경).
+        load()에서 daily를 먼저 확정했으므로 daily 캐시가 반드시 유효하다.
         """
-        # 일봉 조회 (캐시 사용, TTL 무시)
         daily_cache = self._cache.get(symbol, {}).get("daily")
-        if daily_cache and daily_cache.expires_at > now:
+        if daily_cache:
             daily_candles = daily_cache.state.candles
         else:
+            # load()를 우회한 직접 호출 시 안전망
             daily_state = await self._fetch_and_compute_daily(symbol, now)
             daily_candles = daily_state.candles
 
-        # 월봉으로 리샘플링
         candles = _resample_candles_to_monthly(daily_candles)
         if not candles:
             raise RuntimeError("월봉 리샘플링 실패")
 
-        # 지표 계산
-        close_prices = [c.close for c in candles]
-        volumes = [c.volume for c in candles]
-
-        cci = calculate_cci(candles, period=20)
-        cci_signal = calculate_cci_signal(cci, signal_period=20)
-
-        # CCI와 signal 길이 정렬
-        min_cci_signal_len = len(cci_signal)
-        cci = cci[-min_cci_signal_len:] if min_cci_signal_len > 0 else []
-
-        ma5 = calculate_sma(close_prices, period=5)
-        ma20 = calculate_sma(close_prices, period=20)
-        volume_ma20 = calculate_sma(volumes, period=20)
-
-        return TimeframeState(
-            candles=candles,
-            cci=cci,
-            cci_signal=cci_signal,
-            ma5=ma5,
-            ma20=ma20,
-            volume_ma20=volume_ma20,
-            last_updated=now,
-            is_resampled=True,
-        )
+        return _compute_timeframe_state(candles, now, is_resampled=True)
 
     async def _fetch_and_compute_60min(self, symbol: str, now: datetime) -> TimeframeState:
-        """60분봉 조회 및 지표 계산.
-
-        현재: 1분봉 3600개(60시간)를 60분 집계 (추후 native 지원 시 변경).
-        """
+        """60분봉 조회 및 지표 계산 (1분봉 집계)."""
         toss_candles = await self._rest_client.get_candles(
             symbol, interval="1m", count=3600, adjusted=True
         )
         minute_candles = [_toss_candle_to_candle(tc, symbol, "1m") for tc in toss_candles]
 
-        # 60분 집계
         candles = _aggregate_minute_candles_to_hourly(minute_candles)
         if not candles:
             raise RuntimeError("60분봉 집계 실패")
 
-        # 지표 계산
-        close_prices = [c.close for c in candles]
-        volumes = [c.volume for c in candles]
-
-        cci = calculate_cci(candles, period=20)
-        cci_signal = calculate_cci_signal(cci, signal_period=20)
-
-        # CCI와 signal 길이 정렬
-        min_cci_signal_len = len(cci_signal)
-        cci = cci[-min_cci_signal_len:] if min_cci_signal_len > 0 else []
-
-        ma5 = calculate_sma(close_prices, period=5)
-        ma20 = calculate_sma(close_prices, period=20)
-        volume_ma20 = calculate_sma(volumes, period=20)
-
-        return TimeframeState(
-            candles=candles,
-            cci=cci,
-            cci_signal=cci_signal,
-            ma5=ma5,
-            ma20=ma20,
-            volume_ma20=volume_ma20,
-            last_updated=now,
-            is_resampled=True,
-        )
+        return _compute_timeframe_state(candles, now, is_resampled=True)
 
 
 # ============================================================================
@@ -612,10 +491,13 @@ class MultiTimeframeLoader:
 # ============================================================================
 
 
-class UpperTimeframeState(TypedDict):
+@dataclass(frozen=True)
+class UpperTimeframeState:
     """상위 타임프레임 상태 (lookup_upper 반환).
 
-    Keys:
+    frozen dataclass로 불변성 보장.
+
+    Attributes:
         monthly: 월봉 TimeframeState.
         weekly: 주봉 TimeframeState.
         sixty_min: 60분봉 TimeframeState.

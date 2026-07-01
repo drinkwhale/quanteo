@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from core.strategy.multi_timeframe import MultiTimeframeData, TimeframeState
 
@@ -25,13 +25,13 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-class MarketDirection(Enum):
+class MarketDirection(StrEnum):
     """시장 방향 표시.
 
     Values:
         BULLISH: 강세 (매매 허용)
         BEARISH: 약세 (관망)
-        NEUTRAL: 중립 (데이터 부족)
+        NEUTRAL: 중립 (데이터 부족 또는 사용 불가)
     """
 
     BULLISH = "bullish"
@@ -52,7 +52,8 @@ class TimeframeJudge:
         None (stateless).
     """
 
-    CCI_PERIOD = 20  # CCI 계산 기간
+    # 박병창 매매기법 기준 20기간. 일봉·주봉·월봉 모두 동일하게 적용.
+    CCI_PERIOD = 20
 
     def assess(self, mtf: MultiTimeframeData) -> dict[str, MarketDirection]:
         """4개 타임프레임별 방향 판단.
@@ -116,6 +117,13 @@ class TimeframeJudge:
         Returns:
             MarketDirection (BULLISH, BEARISH, 또는 NEUTRAL).
         """
+        # API 장애 + 이전 캐시 없음: "데이터 없음"을 명시적으로 구분해 로깅
+        if state.is_empty:
+            logger.warning(
+                "%s 데이터 없음 (API 장애, 이전 캐시도 없음) — NEUTRAL 처리", timeframe_name
+            )
+            return MarketDirection.NEUTRAL
+
         # 데이터 미비 검사
         if not state.candles or len(state.cci) < self.CCI_PERIOD:
             logger.warning(

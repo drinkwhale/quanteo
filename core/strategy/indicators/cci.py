@@ -53,6 +53,8 @@ def calculate_cci(candles: list[Candle], period: int = 20) -> list[float]:
         md = sum(abs(val - sma) for val in window) / period
 
         # CCI = (TP - SMA) / (0.015 * MD)
+        # 0.015는 Lambert(1980) 원 논문의 정규화 상수.
+        # ±100 존 경계가 일반적인 추세 이탈 구간에 해당하도록 스케일링된 값.
         if md < 1e-9:
             cci = 0.0
             logger.warning("CCI: MD≈0, 중립값 대체")
