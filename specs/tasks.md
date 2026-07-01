@@ -465,7 +465,7 @@
   - **⚠️ Look-ahead bias 방지:** `UnconfirmedSignal(type, partial_candles)` / `ConfirmedSignal(type, candles)` 두 타입으로 분리 — `is_confirmed: bool` bool flag 대신 타입 시스템으로 강제. 장 마감(`≥ 15:30`) 전에는 `UnconfirmedSignal`만 반환.
   - `tests/strategy/test_intraday_signal.py`: 유형별 60분봉 시나리오(확정/미확정 분기), `UnconfirmedSignal` 사용처에서 `ConfirmedSignal` 전달 시 타입 오류 확인
 
-- [ ] **T076** 신뢰도 스코어링 & CCI+BBC 통합 전략 플러그인 (`core/strategy/plugins/cci_bbc_strategy.py`)
+- [x] **T076** 신뢰도 스코어링 & CCI+BBC 통합 전략 플러그인 (`core/strategy/plugins/cci_bbc_strategy.py`)
   - `ReliabilityScore` 데이터클래스: `score: int`, `breakdown: dict[str, int]`, `action: Literal["적극매수", "소극매수", "관망", "매도검토"]`
   - **스코어링 (스펙 8.3절, 8점 만점 — 양성 항목 합계 최대 8점):** 월봉GC+1, 주봉GC+1, 일봉GC+2, 60분봉GC+1, 거래량1.5배+1, ①③유형+1, 정배열+1, 일봉DC-2, 45도하락-1, ④유형-2 → 합산 → 7이상 적극매수 / 4~~6 소극매수 / 0~~3 관망 / 음수 매도검토
   - **4단계 매수 의사결정 트리 (스펙 8.1절):**
