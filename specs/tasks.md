@@ -487,7 +487,7 @@
 > **신규 디렉토리:** `core/backtest/` — 엔진·데이터 소스·성과 지표.
 > **기존 재사용:** T055 `get_candles()`, T071 `MultiTimeframeLoader`, Phase 12 전략 플러그인.
 
-- [ ] **T077** 백테스트 엔진 기반 (`core/backtest/engine.py`)
+- [x] **T077** 백테스트 엔진 기반 (`core/backtest/engine.py`)
   - `BacktestEngine`: `strategy: Strategy`, `data_source: BacktestDataSource`, `commission_rate: float = 0.015 / 100`, `tax_rate: float = 0.18 / 100`, `slippage_bps: float = 2.0`
   - **수수료 정책:** 매수 수수료 0.015%, 매도 수수료 0.015% + 증권거래세 0.18% = 매도 총 0.195%. 각각 해당 거래 측에만 부과 (매도세는 매도 시에만).
   - 일봉 기준 시뮬레이션 루프 — 각 일봉 시점마다 상위 타임프레임(월/주) 상태 룩업 (`MultiTimeframeData.lookup_upper()`)
