@@ -127,10 +127,15 @@ def _detect_bearish(
         return None
 
     # 직전 하락폭 50% 미달 조건: 오른쪽 어깨가 머리에서의 반등 폭 < 50%
-    head_to_right = right_shoulder_close - head_close  # 반등 폭 (양수이면 반등)
-    head_to_left = left_shoulder_close - head_close  # 왼쪽 어깨 반등 기준
-
-    if head_to_left > 0 and head_to_right / head_to_left >= 0.5:
+    # 절댓값 높이 기반으로 계산해 부호 의존 제거.
+    # head_height = 머리가 왼쪽어깨보다 높은 폭 (항상 양수여야 함)
+    head_height = head_close - left_shoulder_close
+    if head_height <= 0:
+        # 머리가 왼쪽어깨보다 반드시 높아야 함 (퇴화 패턴 방지)
+        return None
+    # rebound = 오른쪽어깨가 머리보다 얼마나 반등했는지 (최소 0)
+    rebound = max(right_shoulder_close - head_close, 0.0)
+    if rebound / head_height >= 0.5:
         # 50% 이상 반등 → 전형적인 헤드앤숄더 아님
         return None
 

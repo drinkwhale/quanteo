@@ -79,6 +79,7 @@ def _pair_trades(trades: list[Trade]) -> list[tuple[Trade, Trade]]:
 
     단순 구현: 매수-매도 순서대로 쌍을 만든다.
     분할 매수/매도는 쌍이 맞지 않을 수 있으므로 FIFO 방식 적용.
+    미청산 매수(orphaned buy)는 메트릭에서 제외되며 WARNING으로 기록한다.
     """
     pairs: list[tuple[Trade, Trade]] = []
     buy_queue: list[Trade] = []
@@ -89,6 +90,14 @@ def _pair_trades(trades: list[Trade]) -> list[tuple[Trade, Trade]]:
         elif trade.side == SignalSide.SELL and buy_queue:
             buy = buy_queue.pop(0)
             pairs.append((buy, trade))
+
+    if buy_queue:
+        logger.warning(
+            "미청산 매수 %d건이 메트릭 계산에서 제외됨 (미실현 손익 미반영). "
+            "symbols=%s",
+            len(buy_queue),
+            [t.symbol for t in buy_queue],
+        )
 
     return pairs
 
@@ -141,8 +150,8 @@ def calculate_metrics(result: BacktestResult, risk_free: float = _DEFAULT_RISK_F
     win_rate = wins / total_closed if total_closed > 0 else 0.0
     avg_profit = total_profit / wins if wins > 0 else 0.0
     avg_loss = total_loss / losses if losses > 0 else 0.0
-    # losses=0이면 손실 거래 없음 → 손익비 = avg_profit (의미있는 양수)
-    pl_ratio = avg_profit / avg_loss if avg_loss > 0 else avg_profit
+    # losses=0이면 손실 거래 없음 → 손익비 = inf (비율이므로 금액 반환 금지)
+    pl_ratio = avg_profit / avg_loss if avg_loss > 0 else float("inf")
 
     mdd = calculate_mdd(equity_curve)
     daily_returns = _equity_to_returns(equity_curve)

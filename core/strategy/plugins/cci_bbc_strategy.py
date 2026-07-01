@@ -279,21 +279,34 @@ class CciBbcStrategy:
             return None
 
         # ── 헤드앤숄더 하락전환 override (스코어 무관 즉시 전량 매도) ──
+        # MTF 데이터가 있을 때만 실행: 월봉 또는 주봉이 BEARISH/NEUTRAL이어야 override 허용.
+        # 강한 상승 추세(월봉+주봉 모두 BULLISH) 중 로컬 노이즈에 반응하는 오발을 방지한다.
         from core.strategy.indicators.head_shoulders import detect_head_shoulders
         hs_result = detect_head_shoulders(candles)
         if hs_result is not None and hs_result.pattern_type == "하락전환" and hs_result.volume_confirms:
-            logger.info(
-                "헤드앤숄더 하락전환 감지 — 즉시 전량 매도 override (symbol=%s, neckline=%.0f)",
-                tick.symbol, hs_result.neckline,
-            )
-            return Signal(
-                strategy=self.name,
-                symbol=tick.symbol,
-                side=SignalSide.SELL,
-                qty=9999,  # Risk Manager가 보유 수량으로 조정
-                price=tick.price,
-                reason=f"헤드앤숄더 하락전환 override (넥라인={hs_result.neckline:.0f})",
-            )
+            # MTF 데이터 없으면 override 취소 (방향 확인 불가)
+            if self._mtf_data is not None:
+                directions = self._judge.assess(self._mtf_data)
+                monthly_ok = directions.get("monthly") != MarketDirection.BULLISH
+                weekly_ok = directions.get("weekly") != MarketDirection.BULLISH
+                if monthly_ok or weekly_ok:
+                    logger.info(
+                        "헤드앤숄더 하락전환 감지 — 즉시 전량 매도 override (symbol=%s, neckline=%.0f)",
+                        tick.symbol, hs_result.neckline,
+                    )
+                    return Signal(
+                        strategy=self.name,
+                        symbol=tick.symbol,
+                        side=SignalSide.SELL,
+                        qty=9999,  # Risk Manager가 보유 수량으로 조정
+                        price=tick.price,
+                        reason=f"헤드앤숄더 하락전환 override (넥라인={hs_result.neckline:.0f})",
+                    )
+                else:
+                    logger.debug(
+                        "헤드앤숄더 감지됐으나 월봉+주봉 BULLISH — override 취소 (symbol=%s)",
+                        tick.symbol,
+                    )
 
         # 타임프레임 방향 판단
         if self._mtf_data is None:

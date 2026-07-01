@@ -240,8 +240,20 @@ function BacktestPanel() {
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [result, setResult] = useState<BacktestMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // 언마운트 시 진행 중인 폴링 취소
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   async function run() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setRunning(true);
     setStatusMsg("백테스트 시작...");
     setResult(null);
@@ -254,9 +266,15 @@ function BacktestPanel() {
         end_date: endDate || undefined,
       });
 
-      const res = await pollUntilDone(run_id, (s: BacktestStatusResponse) => {
-        setStatusMsg(`실행 중... (${s.status})`);
-      });
+      const res = await pollUntilDone(
+        run_id,
+        (s: BacktestStatusResponse) => {
+          setStatusMsg(`실행 중... (${s.status})`);
+        },
+        1500,
+        120_000,
+        controller.signal,
+      );
 
       if (res.status === "failed") {
         setError("백테스트 실패");
@@ -265,6 +283,7 @@ function BacktestPanel() {
         setStatusMsg("완료");
       }
     } catch (e: unknown) {
+      if (e instanceof Error && e.message.includes("취소")) return;
       setError(e instanceof Error ? e.message : "오류 발생");
     } finally {
       setRunning(false);
@@ -462,29 +481,32 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
     if (seenRef.current.has(dedupeKey)) return;
     seenRef.current.add(dedupeKey);
 
-    const payload = latest.payload as {
-      side?: string;
-      symbol?: string;
-      price?: number;
-      reason?: string;
-    } | null;
+    // M3: as 캐스트 대신 런타임 타입 검증
+    const rawPayload = latest.payload as Record<string, unknown> | null;
+    if (!rawPayload) return;
 
-    if (!payload?.side || !payload?.symbol) return;
+    const side = rawPayload.side;
+    const symbol = rawPayload.symbol;
+    if (typeof side !== "string" || typeof symbol !== "string") return;
+    if (side !== "BUY" && side !== "SELL") return;
 
     const toast: SignalToast = {
       id: toastKeyRef.current++,
-      side: payload.side as "BUY" | "SELL",
-      symbol: payload.symbol,
-      price: payload.price ?? 0,
-      reason: payload.reason ?? "",
+      side,
+      symbol,
+      price: typeof rawPayload.price === "number" ? rawPayload.price : 0,
+      reason: typeof rawPayload.reason === "string" ? rawPayload.reason : "",
       ts: latest.timestamp,
     };
 
     setToasts((prev) => [toast, ...prev].slice(0, 5));
-    setTimeout(
+
+    // H6: setTimeout id를 반환해서 언마운트 시 정리
+    const timerId = setTimeout(
       () => setToasts((prev) => prev.filter((t) => t.id !== toast.id)),
       TOAST_TTL,
     );
+    return () => clearTimeout(timerId);
   }, [logs]);
 
   // CCI 스냅샷: 스트림에서 cci_snapshot 이벤트 파싱

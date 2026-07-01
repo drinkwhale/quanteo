@@ -367,8 +367,8 @@ class CSVBacktestDataSource:
             try:
                 before_dt = datetime.fromisoformat(before)
                 filtered = [c for c in filtered if c.timestamp < before_dt]
-            except ValueError:
-                pass
+            except ValueError as exc:
+                raise ValueError(f"before 날짜 형식 오류: {before!r}") from exc
 
         return filtered[-count:]
 

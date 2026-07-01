@@ -71,16 +71,26 @@ export async function pollUntilDone(
   onStatus: (s: BacktestStatusResponse) => void,
   intervalMs = 1500,
   timeoutMs = 120_000,
+  signal?: AbortSignal,
 ): Promise<BacktestResultResponse> {
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw new Error("백테스트 폴링 취소됨");
+
     const s = await backtestApi.status(runId);
     onStatus(s);
     if (s.status === "completed" || s.status === "failed") {
       return backtestApi.results(runId);
     }
-    await new Promise<void>((r) => setTimeout(r, intervalMs));
+
+    await new Promise<void>((resolve, reject) => {
+      const id = setTimeout(resolve, intervalMs);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(id);
+        reject(new Error("백테스트 폴링 취소됨"));
+      });
+    });
   }
   throw new Error("백테스트 타임아웃 (2분 초과)");
 }

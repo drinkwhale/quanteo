@@ -118,6 +118,7 @@ async def run_backtest(
 async def _run_backtest_task(run_id: str, req: BacktestRunRequest) -> None:
     """백그라운드 백테스트 실행."""
     import json
+    import traceback
 
     conn = _get_conn()
     try:
@@ -148,11 +149,13 @@ async def _run_backtest_task(run_id: str, req: BacktestRunRequest) -> None:
         logger.info("백테스트 완료: run_id=%s", run_id)
 
     except Exception as e:
-        logger.error("백테스트 실패: run_id=%s, error=%s", run_id, e)
+        tb = traceback.format_exc()
+        logger.error("백테스트 실패: run_id=%s, error=%s\n%s", run_id, e, tb)
         now = datetime.now(UTC).isoformat()
+        error_detail = f"{type(e).__name__}: {e}\n{tb}"
         conn.execute(
             "UPDATE backtest_runs SET status=?, completed_at=?, error_msg=? WHERE run_id=?",
-            ("failed", now, str(e), run_id),
+            ("failed", now, error_detail, run_id),
         )
         conn.commit()
     finally:
