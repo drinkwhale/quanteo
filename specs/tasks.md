@@ -437,7 +437,7 @@
 > **신규 파일:** `core/strategy/plugins/cci_bbc_strategy.py` — 통합 플러그인 진입점.
 > **보조 모듈:** `core/strategy/plugins/bbc_buy.py`, `bbc_sell.py`, `intraday_signal.py`.
 
-- [ ] **T073** 박병창 매수 3원칙 구현 (`core/strategy/plugins/bbc_buy.py`)
+- [x] **T073** 박병창 매수 3원칙 구현 (`core/strategy/plugins/bbc_buy.py`)
   - `EntryTime(StrEnum)`: `MORNING = "morning"`, `AFTERNOON = "afternoon"`
   - `BbcBuySignal` 데이터클래스: `principle: Literal[1, 2, 3]`, `entry_time: EntryTime`, `volume_ok: bool`, `reason: str`
   - **`peak_volume` 정의:** 직전 상승 국면(최근 20봉 내 최고 거래량). `if len(candles) < 20: logger.warning(...); peak_volume = max(c.volume for c in candles)`
