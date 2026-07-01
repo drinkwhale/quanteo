@@ -446,7 +446,7 @@
   - **매수 제3원칙** (급락 저점): `price < ma20`. 조건: 거래량 최저 후 급증(`volume > volume_ma20 * 2.0`), 양봉 또는 십자형. 금지: 거래량 증가 하락.
   - `tests/strategy/test_bbc_buy.py`: 3원칙 각 조건 경계 케이스, 금지 조건 차단 검증, `peak_volume` 20봉 미만 fallback
 
-- [ ] **T074** 박병창 매도 2원칙 구현 (`core/strategy/plugins/bbc_sell.py`)
+- [x] **T074** 박병창 매도 2원칙 구현 (`core/strategy/plugins/bbc_sell.py`)
   - `SellAction(StrEnum)`: `FULL_EXIT = "full_exit"`, `PARTIAL_30PCT = "partial_30pct"`, `PARTIAL_40PCT = "partial_40pct"`, `PARTIAL_50PCT = "partial_50pct"` — `sell_ratio: float + is_full_exit: bool` 콤보 대신 단일 StrEnum으로 교체 (invalid 조합 불가)
   - `BbcSellSignal` 데이터클래스: `principle: Literal[1, 2]`, `action: SellAction`, `reason: str`
   - **매도 제1원칙** (5일선 위): 거래량급증+음봉 → `PARTIAL_40PCT`, 거래량폭증+십자형 → `PARTIAL_30PCT`, `price < ma5 AND ma5 < ma20` → `FULL_EXIT`
