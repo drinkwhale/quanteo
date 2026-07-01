@@ -496,7 +496,7 @@
   - `BacktestResult`: `trades: list[Trade]`, `equity_curve: list[float]`, `metrics: PerformanceMetrics`, `unfilled_signals: list[Signal]` — 마지막 봉에서 시그널이 발생했으나 다음 봉이 없어 미체결된 시그널 목록
   - `tests/backtest/test_engine.py`: 미래참조 방지 검증, 매수·매도 수수료 분리 계산 정확도, 포지션 비율 관리, 마지막 봉 미체결 시그널 `unfilled_signals` 포함 확인
 
-- [ ] **T078** 성과 지표 계산 (`core/backtest/metrics.py`)
+- [x] **T078** 성과 지표 계산 (`core/backtest/metrics.py`)
   - `PerformanceMetrics`: `win_rate: float`, `profit_loss_ratio: float`, `mdd: float`, `sharpe_ratio: float`, `total_trades: int`, `annualized_return: float`
   - `calculate_mdd(equity_curve: list[float]) -> float` — 최대낙폭 (고점 대비 최저점 비율)
   - `calculate_sharpe(returns: list[float], risk_free: float = 0.035) -> float` — 연환산 샤프지수 (국고채 3.5% 기준)
