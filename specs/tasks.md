@@ -454,7 +454,7 @@
   - `detect_45_degree_decline(candles: list[Candle], window: int = 12) -> bool` — 장중 완만 지속 하락 감지 (선형회귀 기울기 + 거래량 분산). `len(candles) < window`이면 `False + logger.warning` (조기 판단 방지)
   - `tests/strategy/test_bbc_sell.py`: 1/2원칙 `SellAction` 매핑 정확도, 전량 매도 트리거, 45도 하락 경계 케이스, 캔들 부족 시 `False` 반환
 
-- [ ] **T075** 장중 시그널 4유형 감지 (`core/strategy/plugins/intraday_signal.py`)
+- [x] **T075** 장중 시그널 4유형 감지 (`core/strategy/plugins/intraday_signal.py`)
   - `IntradaySignalType(StrEnum)`: `TYPE_1 = "type_1"`, `TYPE_2 = "type_2"`, `TYPE_3 = "type_3"`, `TYPE_4 = "type_4"`, `NONE = "none"` — `TYPE_45DEG` 제거 (매도 방향성 패턴으로 별도 분리)
   - `SellPattern(StrEnum)`: `NORMAL = "normal"`, `FORTY_FIVE_DEGREE = "forty_five_degree"` — T074 `detect_45_degree_decline()` 결과를 담는 독립 분류
   - **입력:** 60분봉 캔들 리스트(당일), `open_price: float`, `current_time: time`
