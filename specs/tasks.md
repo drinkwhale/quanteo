@@ -502,7 +502,7 @@
   - `calculate_sharpe(returns: list[float], risk_free: float = 0.035) -> float` — 연환산 샤프지수 (국고채 3.5% 기준)
   - `tests/backtest/test_metrics.py`: MDD·샤프지수 수식 검증, 거래 0건 엣지 케이스
 
-- [ ] **T079** Toss 캔들 데이터 소스 & 캐싱 (`core/backtest/toss_data_source.py`)
+- [x] **T079** Toss 캔들 데이터 소스 & 캐싱 (`core/backtest/toss_data_source.py`)
   - `BacktestDataSource(Protocol)`: `get_candles(symbol: str, interval: str, count: int = 100, before: str | None = None, adjusted: bool = True) -> list[Candle]` — T055 `TossRestClient.get_candles()` 시그니처와 정렬 (start/end 날짜 파라미터 아님)
   - `TossBacktestDataSource`: T055 `get_candles()` 직접 위임 + SQLite 캐싱 (`~/.quanteo/backtest_cache.db`, TTL 24시간). 날짜 범위가 필요한 경우 `before` 파라미터를 이동하며 여러 번 호출하는 어댑터 메서드 `fetch_range(symbol, interval, start_date, end_date)` 제공 (캐시는 pre-backtest 역사 데이터 전용 — 라이브 시세 캐시와 분리).
   - `CSVBacktestDataSource`: 로컬 CSV 파일 소스 (오프라인 테스트·반복 최적화용)
