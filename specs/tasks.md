@@ -437,7 +437,7 @@
 > **신규 파일:** `core/strategy/plugins/cci_bbc_strategy.py` — 통합 플러그인 진입점.
 > **보조 모듈:** `core/strategy/plugins/bbc_buy.py`, `bbc_sell.py`, `intraday_signal.py`.
 
-- [ ] **T073** 박병창 매수 3원칙 구현 (`core/strategy/plugins/bbc_buy.py`)
+- [x] **T073** 박병창 매수 3원칙 구현 (`core/strategy/plugins/bbc_buy.py`)
   - `EntryTime(StrEnum)`: `MORNING = "morning"`, `AFTERNOON = "afternoon"`
   - `BbcBuySignal` 데이터클래스: `principle: Literal[1, 2, 3]`, `entry_time: EntryTime`, `volume_ok: bool`, `reason: str`
   - **`peak_volume` 정의:** 직전 상승 국면(최근 20봉 내 최고 거래량). `if len(candles) < 20: logger.warning(...); peak_volume = max(c.volume for c in candles)`
@@ -446,7 +446,7 @@
   - **매수 제3원칙** (급락 저점): `price < ma20`. 조건: 거래량 최저 후 급증(`volume > volume_ma20 * 2.0`), 양봉 또는 십자형. 금지: 거래량 증가 하락.
   - `tests/strategy/test_bbc_buy.py`: 3원칙 각 조건 경계 케이스, 금지 조건 차단 검증, `peak_volume` 20봉 미만 fallback
 
-- [ ] **T074** 박병창 매도 2원칙 구현 (`core/strategy/plugins/bbc_sell.py`)
+- [x] **T074** 박병창 매도 2원칙 구현 (`core/strategy/plugins/bbc_sell.py`)
   - `SellAction(StrEnum)`: `FULL_EXIT = "full_exit"`, `PARTIAL_30PCT = "partial_30pct"`, `PARTIAL_40PCT = "partial_40pct"`, `PARTIAL_50PCT = "partial_50pct"` — `sell_ratio: float + is_full_exit: bool` 콤보 대신 단일 StrEnum으로 교체 (invalid 조합 불가)
   - `BbcSellSignal` 데이터클래스: `principle: Literal[1, 2]`, `action: SellAction`, `reason: str`
   - **매도 제1원칙** (5일선 위): 거래량급증+음봉 → `PARTIAL_40PCT`, 거래량폭증+십자형 → `PARTIAL_30PCT`, `price < ma5 AND ma5 < ma20` → `FULL_EXIT`
@@ -454,7 +454,7 @@
   - `detect_45_degree_decline(candles: list[Candle], window: int = 12) -> bool` — 장중 완만 지속 하락 감지 (선형회귀 기울기 + 거래량 분산). `len(candles) < window`이면 `False + logger.warning` (조기 판단 방지)
   - `tests/strategy/test_bbc_sell.py`: 1/2원칙 `SellAction` 매핑 정확도, 전량 매도 트리거, 45도 하락 경계 케이스, 캔들 부족 시 `False` 반환
 
-- [ ] **T075** 장중 시그널 4유형 감지 (`core/strategy/plugins/intraday_signal.py`)
+- [x] **T075** 장중 시그널 4유형 감지 (`core/strategy/plugins/intraday_signal.py`)
   - `IntradaySignalType(StrEnum)`: `TYPE_1 = "type_1"`, `TYPE_2 = "type_2"`, `TYPE_3 = "type_3"`, `TYPE_4 = "type_4"`, `NONE = "none"` — `TYPE_45DEG` 제거 (매도 방향성 패턴으로 별도 분리)
   - `SellPattern(StrEnum)`: `NORMAL = "normal"`, `FORTY_FIVE_DEGREE = "forty_five_degree"` — T074 `detect_45_degree_decline()` 결과를 담는 독립 분류
   - **입력:** 60분봉 캔들 리스트(당일), `open_price: float`, `current_time: time`
@@ -465,7 +465,7 @@
   - **⚠️ Look-ahead bias 방지:** `UnconfirmedSignal(type, partial_candles)` / `ConfirmedSignal(type, candles)` 두 타입으로 분리 — `is_confirmed: bool` bool flag 대신 타입 시스템으로 강제. 장 마감(`≥ 15:30`) 전에는 `UnconfirmedSignal`만 반환.
   - `tests/strategy/test_intraday_signal.py`: 유형별 60분봉 시나리오(확정/미확정 분기), `UnconfirmedSignal` 사용처에서 `ConfirmedSignal` 전달 시 타입 오류 확인
 
-- [ ] **T076** 신뢰도 스코어링 & CCI+BBC 통합 전략 플러그인 (`core/strategy/plugins/cci_bbc_strategy.py`)
+- [x] **T076** 신뢰도 스코어링 & CCI+BBC 통합 전략 플러그인 (`core/strategy/plugins/cci_bbc_strategy.py`)
   - `ReliabilityScore` 데이터클래스: `score: int`, `breakdown: dict[str, int]`, `action: Literal["적극매수", "소극매수", "관망", "매도검토"]`
   - **스코어링 (스펙 8.3절, 8점 만점 — 양성 항목 합계 최대 8점):** 월봉GC+1, 주봉GC+1, 일봉GC+2, 60분봉GC+1, 거래량1.5배+1, ①③유형+1, 정배열+1, 일봉DC-2, 45도하락-1, ④유형-2 → 합산 → 7이상 적극매수 / 4~~6 소극매수 / 0~~3 관망 / 음수 매도검토
   - **4단계 매수 의사결정 트리 (스펙 8.1절):**

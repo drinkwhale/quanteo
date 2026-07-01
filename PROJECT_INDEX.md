@@ -1,12 +1,12 @@
 # Project Index: quanteo
 
-Generated: 2026-06-30 (Phase 10 완료)
+Generated: 2026-07-01 (Phase 12 완료)
 
 ---
 
 ## 📋 Status
 
-**Phase 1~10 전체 완료** — T001~T068 모든 구현 Task 완료.
+**Phase 1~12 전체 완료** — T001~T076 모든 구현 Task 완료.
 
 | Phase    | Tasks     | 상태    | 내용                                                                            |
 | -------- | --------- | ------- | ------------------------------------------------------------------------------- |
@@ -21,8 +21,10 @@ Generated: 2026-06-30 (Phase 10 완료)
 | **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트 |
 | **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI    |
 | **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)      |
+| **P11**  | T069–T072 | ✅ 완료 | CCI 지표 + 멀티 타임프레임 방향 판정 엔진                                       |
+| **P12**  | T073–T076 | ✅ 완료 | 박병창 매매기법 전략 플러그인 (매수3원칙·매도2원칙·장중4유형·CCI+BBC 통합)      |
 
-**테스트:** 393 passed (Python) · TypeScript tsc clean (2026-06-30 기준)
+**테스트:** 577 passed (Python) · TypeScript tsc clean (2026-07-01 기준)
 
 ---
 
@@ -77,7 +79,16 @@ quanteo/
 │   │   ├── base.py           # Strategy Protocol (warmup/on_tick/on_candle)
 │   │   ├── engine.py         # StrategyEngine (플러그인 로드·시그널 루프)
 │   │   ├── harness.py        # BacktestHarness (과거 캔들로 시그널 검증)
-│   │   └── plugins/ma_cross.py  # 이동평균 교차 전략 플러그인
+│   │   ├── timeframe_judge.py  # 멀티 타임프레임 방향 판정 (Phase 11)
+│   │   ├── indicators/
+│   │   │   ├── cci.py        # CCI 계산 + 골든/데드크로스 감지
+│   │   │   └── ma.py         # 이동평균, 캔들 분류, 대형캔들 판정
+│   │   └── plugins/
+│   │       ├── ma_cross.py         # 이동평균 교차 전략 플러그인
+│   │       ├── bbc_buy.py          # 박병창 매수 3원칙 (T073)
+│   │       ├── bbc_sell.py         # 박병창 매도 2원칙·45도 하락 (T074)
+│   │       ├── intraday_signal.py  # 장중 시그널 4유형·Look-ahead bias 방지 (T075)
+│   │       └── cci_bbc_strategy.py # CCI+BBC 통합 전략·신뢰도 스코어링 (T076)
 │   └── app.py                # 코어 부팅·asyncio.gather wiring + prod 게이트 + --with-info
 ├── info/                     # Phase 10: 정보 수집·알람 서브시스템 (선택 통합)
 │   ├── ai_filter/
@@ -126,7 +137,7 @@ quanteo/
 ├── Dockerfile                # 멀티스테이지 빌드 (builder/runtime, 비루트 유저)
 ├── .dockerignore             # 자격증명·테스트·대시보드 제외
 ├── docker-compose.yml        # vps 기본 실행, 볼륨 마운트, healthcheck
-├── tests/                    # pytest (291 cases)
+├── tests/                    # pytest (577 cases)
 │   ├── adapters/toss/        # TossAuth (8) + TossRestClient (9) + Phase9 (24) 단위 테스트
 │   ├── api/                  # Control API 엔드포인트 테스트 (market-status·trades 포함)
 │   ├── config/, events/, execution/, marketdata/
@@ -135,7 +146,10 @@ quanteo/
 │   ├── risk/                 # RiskManager 한도·손절·킬스위치 테스트
 │   ├── store/                # StateStore CRUD + 재시작 복구 테스트
 │   ├── test_prod_gate.py     # prod 이중 확인 게이트 안전 테스트
-│   ├── strategy/             # Engine·Harness·MA Cross 플러그인 테스트
+│   ├── strategy/
+│   │   ├── test_engine.py, test_harness.py
+│   │   ├── indicators/       # CCI·MA 지표 단위 테스트 (Phase 11)
+│   │   └── plugins/          # MA Cross·bbc_buy·bbc_sell·intraday_signal·cci_bbc_strategy 테스트 (Phase 12)
 │   ├── integration/          # signal→risk→order 라운드트립 + Toss 라운드트립 테스트
 │   └── conftest.py           # 공통 fixture (AppContainer mock, DB)
 ├── specs/
