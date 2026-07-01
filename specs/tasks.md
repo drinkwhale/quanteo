@@ -523,7 +523,7 @@
   - 상승 전환(역헤드앤숄더): 거래량 급증 + 장대양봉으로 왼쪽 고점 돌파 → 추세 상승 신호
   - `tests/strategy/test_head_shoulders.py`: 패턴 감지 경계 케이스, 거래량 조건 충족/불충족, override 시 스코어 무시 검증
 
-- [ ] **T082** 백테스트 Control API 엔드포인트 (`core/api/backtest.py`)
+- [x] **T082** 백테스트 Control API 엔드포인트 (`core/api/backtest.py`)
   - `POST /backtest/run` — 요청: `{symbol, start_date, end_date, strategy_params}` → `run_id` 반환 (비동기 실행)
   - `GET /backtest/results/{run_id}` — 결과: `PerformanceMetrics` + 거래 내역 + 에쿼티 커브
   - `GET /backtest/status/{run_id}` — 실행 상태 (`running` / `completed` / `failed`)
