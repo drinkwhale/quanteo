@@ -2,13 +2,14 @@
 
 2원칙:
   1원칙: 5일선 위에 있을 때
-    - 거래량 급증 + 음봉       → 40% 분할 매도
-    - 거래량 폭증 + 십자형     → 30% 분할 매도
-    - price < ma5 AND ma5 < ma20 → 전량 매도
+    - 거래량 급증(> 2x) + 음봉       → 분할 매도 (40%)
+    - 거래량 급증(> 2x) + 십자형     → 분할 매도 (30%)
+    - price < ma5 AND ma5 < ma20     → 전량 매도 (역배열)
+    ※ 비율은 스펙상 30~50% 범위이며, 위는 기본 적용값임
 
   2원칙: 5일선과 20일선 사이에 있을 때
-    - 거래량 증가 + 음봉       → 50% 분할 매도
-    - 20일선 바로 위 거래량 급증 + 장대음봉 → 전량 매도
+    - 거래량 증가(> 1.5x) + 음봉            → 50% 분할 매도
+    - 20일선 바로 위(5% 이내) + 거래량 급증(> 2x) + 장대음봉 → 전량 매도
 
   특수 패턴:
     - detect_45_degree_decline() — 장중 완만 지속 하락 감지
@@ -102,18 +103,38 @@ def detect_45_degree_decline(candles: list[Candle], window: int = 12) -> bool:
 
     cov_matrix = np.cov(x, closes)
     if cov_matrix.shape != (2, 2):
+        logger.warning("detect_45_degree_decline: 공분산 행렬 형태 이상 (단일값?), False 반환")
         return False
     var_x = cov_matrix[0, 0]
     cov_xy = cov_matrix[0, 1]
-    slope = cov_xy / var_x if var_x > 1e-9 else 0.0
+
+    # var_x ≈ 0이면 기울기 계산 불가 (모든 x 동일한 경우)
+    if var_x < 1e-9:
+        logger.debug("detect_45_degree_decline: 시간 분산 < 1e-9, 기울기 계산 불가 — False 반환")
+        return False
+    slope = cov_xy / var_x
 
     # 정규화 기울기 (시가 대비 비율로 스케일링)
     base_price = closes[0] if closes[0] > 0 else 1.0
     normalized_slope = slope / base_price
 
+    # NaN/Inf 방어
+    if not (normalized_slope == normalized_slope) or abs(normalized_slope) == float("inf"):
+        logger.error("detect_45_degree_decline: normalized_slope NaN/Inf, 데이터 이상")
+        return False
+
     # 거래량 분산 (낮을수록 꾸준한 매도)
-    vol_mean = float(np.mean(volumes)) if len(volumes) > 0 else 0.0
-    vol_cv = float(np.std(volumes) / vol_mean) if vol_mean > 1e-9 else 1.0
+    if len(volumes) == 0:
+        return False
+    vol_std = float(np.std(volumes))
+    if vol_std != vol_std or vol_std == float("inf"):  # NaN/Inf 체크
+        logger.error("detect_45_degree_decline: vol_std NaN/Inf")
+        return False
+    vol_mean = float(np.mean(volumes))
+    if vol_mean < 1e-9:
+        logger.debug("detect_45_degree_decline: 평균 거래량 ≈ 0, 거래량 조건 판단 불가 — False 반환")
+        return False
+    vol_cv = vol_std / vol_mean
 
     # 판단:
     # - 하락 추세: 정규화 기울기 < -0.001 (봉당 0.1% 이상 하락)

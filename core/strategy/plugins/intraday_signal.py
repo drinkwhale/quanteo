@@ -135,6 +135,12 @@ def _calc_volume_ma(candles: list[Candle], period: int = 20) -> float:
     """거래량 이동평균 계산."""
     if not candles:
         return 0.0
+    if len(candles) < period:
+        logger.warning(
+            "_calc_volume_ma: 캔들 수(%d) < 기간(%d), 불완전한 MA 반환 — 거래량 신호 신뢰도 낮음",
+            len(candles),
+            period,
+        )
     window = candles[-period:] if len(candles) >= period else candles
     return float(sum(c.volume for c in window) / len(window))
 
@@ -297,6 +303,10 @@ def detect_intraday_signal(
     """
     if volume_ma20 is None:
         volume_ma20 = _calc_volume_ma(candles)
+        if volume_ma20 <= 0.0:
+            logger.warning(
+                "detect_intraday_signal: volume_ma20=0.0 — 거래량 기준 없음, 패턴 감지 제한됨"
+            )
 
     is_confirmed_time = current_time >= _MARKET_CLOSE
     signal_type = IntradaySignalType.NONE

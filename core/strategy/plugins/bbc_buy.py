@@ -2,10 +2,7 @@
 
 3원칙:
   1원칙: 5일선 위 (급등주 매수) — price > ma5
-  2원칙: 눌림목 (5일선과 20일선 사이) — ma5 < price < ma20 (*)
-         (*) 스펙 조건: ma5 < price < ma20 는 "5일선 아래, 20일선 위" 눌림목 구간을 의미.
-             실제로는 ma20 < price <= ma5 즉 20일선 위 5일선 아래 눌림목을 가리키므로
-             price_position == BETWEEN 으로 처리.
+  2원칙: 눌림목 (5일선과 20일선 사이) — ma20 <= price <= ma5
   3원칙: 20일선 아래 (급락 저점) — price < ma20
 
 스펙 참고: specs/trading-strategy.md 3절
@@ -44,14 +41,16 @@ class BbcBuySignal:
     Attributes:
         principle: 매수 원칙 번호 (1, 2, 3).
         entry_time: 진입 타이밍 (morning / afternoon).
-        volume_ok: 거래량 조건 충족 여부.
         reason: 시그널 근거 설명.
     """
 
     principle: Literal[1, 2, 3]
     entry_time: EntryTime
-    volume_ok: bool
     reason: str
+
+    def __post_init__(self) -> None:
+        if self.principle not in (1, 2, 3):
+            raise ValueError(f"principle must be 1, 2, or 3; got {self.principle}")
 
 
 # ============================================================================
@@ -139,7 +138,6 @@ def check_principle_1(
             return BbcBuySignal(
                 principle=1,
                 entry_time=EntryTime.MORNING,
-                volume_ok=True,
                 reason=f"제1원칙 오전: price({current_price}) > ma5({ma5:.1f}), 시가 재돌파 + 거래량 급증",
             )
         return None
@@ -151,7 +149,6 @@ def check_principle_1(
             return BbcBuySignal(
                 principle=1,
                 entry_time=EntryTime.AFTERNOON,
-                volume_ok=True,
                 reason=f"제1원칙 오후: price({current_price}) > ma5({ma5:.1f}), 거래량 급증 재상승",
             )
         return None
@@ -193,8 +190,9 @@ def check_principle_2(
     Returns:
         BbcBuySignal or None.
     """
-    # 가격 위치 확인: 눌림목 구간 (20일선 위, 5일선 아래)
-    if not (ma20 < current_price <= ma5):
+    # 가격 위치 확인: 눌림목 구간 (20일선 위 포함, 5일선 아래)
+    # ma20 == price 인 경우도 20일선 지지 눌림목으로 허용 (C1 경계값 버그 수정)
+    if not (ma20 <= current_price <= ma5):
         return None
 
     if not candles or len(candles) < 2:
@@ -224,21 +222,28 @@ def check_principle_2(
     if not (volume_surge and is_bullish):
         return None
 
-    # 하락폭 50% 이내 확인 (최근 고점 대비)
-    recent_high = max(c.high for c in candles[-10:]) if len(candles) >= 2 else latest.high
-    decline_ratio = (recent_high - current_price) / recent_high if recent_high > 0 else 1.0
+    # 하락폭 50% 이내 확인 (최근 10봉 고점 대비)
+    # 10봉 미만 시 로그 경고 후 가용 캔들로 계산 (신뢰도 감소)
+    if len(candles) < 10:
+        logger.warning(
+            "bbc_buy: 제2원칙 캔들 수(%d) < 10, recent_high 신뢰도 낮음",
+            len(candles),
+        )
+    recent_high = max(c.high for c in candles[-10:]) if candles else latest.high
+    if recent_high <= 0:
+        logger.error("bbc_buy: recent_high <= 0, 데이터 오류 — 제2원칙 거부")
+        return None
+    decline_ratio = (recent_high - current_price) / recent_high
     within_50pct = decline_ratio <= 0.5
 
     if not within_50pct:
         return None
 
-    afternoon_start = time(14, 30, 0)
     entry_time = EntryTime.MORNING if current_time < time(10, 0, 0) else EntryTime.AFTERNOON
 
     return BbcBuySignal(
         principle=2,
         entry_time=entry_time,
-        volume_ok=True,
         reason=(
             f"제2원칙 눌림목: price({current_price}) between ma20({ma20:.1f})~ma5({ma5:.1f}), "
             f"거래량 급증({current_volume:.0f} > {volume_ma20 * 1.5:.0f}), 양봉/십자, "
@@ -298,7 +303,6 @@ def check_principle_3(
     return BbcBuySignal(
         principle=3,
         entry_time=EntryTime.MORNING,  # 시간 무관, 거래량+캔들 조건 우선
-        volume_ok=True,
         reason=(
             f"제3원칙 급락저점: price({current_price}) < ma20({ma20:.1f}), "
             f"거래량 폭증({current_volume:.0f} > {volume_ma20 * 2.0:.0f}), "

@@ -100,7 +100,6 @@ def test_principle_1_morning_passes():
     assert result is not None
     assert result.principle == 1
     assert result.entry_time == EntryTime.MORNING
-    assert result.volume_ok is True
 
 
 def test_principle_1_morning_no_retrace():
@@ -264,7 +263,6 @@ def test_principle_3_passes():
     )
     assert result is not None
     assert result.principle == 3
-    assert result.volume_ok is True
 
 
 def test_principle_3_forbidden_bearish_decline():

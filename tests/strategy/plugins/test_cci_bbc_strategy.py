@@ -5,17 +5,94 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
+from core.marketdata.models import Candle, Tick
+from core.strategy.base import MarketContext
+from core.strategy.multi_timeframe import MultiTimeframeData, TimeframeState
+from core.strategy.plugins.bbc_buy import check_principle_2
 from core.strategy.plugins.cci_bbc_strategy import (
+    CciBbcStrategy,
     ReliabilityScore,
     calculate_position_size,
     compute_reliability_score,
 )
 from core.strategy.plugins.intraday_signal import IntradaySignalType
 from core.strategy.timeframe_judge import MarketDirection
+
+_KST = timezone(timedelta(hours=9))
+
+
+def _make_candle(
+    open_p: float = 100.0,
+    high: float = 105.0,
+    low: float = 95.0,
+    close: float = 102.0,
+    volume: int = 1000,
+    symbol: str = "TEST",
+) -> Candle:
+    return Candle(
+        symbol=symbol,
+        open=open_p,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        market="domestic",
+    )
+
+
+def _make_candles(count: int = 25, base_volume: int = 1000) -> list[Candle]:
+    return [_make_candle(volume=base_volume) for _ in range(count)]
+
+
+def _make_timeframe_state(
+    candles: list[Candle] | None = None,
+    cci: list[float] | None = None,
+    cci_signal: list[float] | None = None,
+    ma5: list[float] | None = None,
+    ma20: list[float] | None = None,
+    volume_ma20: list[float] | None = None,
+) -> TimeframeState:
+    c = candles or _make_candles()
+    return TimeframeState(
+        candles=c,
+        cci=cci or [0.0],
+        cci_signal=cci_signal or [0.0],
+        ma5=ma5 or [100.0],
+        ma20=ma20 or [95.0],
+        volume_ma20=volume_ma20 or [1000.0],
+        last_updated=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+
+def _make_mtf(
+    monthly_cci: float = 100.0,
+    weekly_cci: float = 100.0,
+    daily_ma5: float = 100.0,
+    daily_ma20: float = 95.0,
+) -> MultiTimeframeData:
+    return MultiTimeframeData(
+        symbol="TEST",
+        daily=_make_timeframe_state(ma5=[daily_ma5], ma20=[daily_ma20], volume_ma20=[1000.0]),
+        weekly=_make_timeframe_state(cci=[weekly_cci]),
+        monthly=_make_timeframe_state(cci=[monthly_cci]),
+        sixty_min=_make_timeframe_state(),
+    )
+
+
+def _make_tick(
+    price: float = 102.0,
+    volume: int = 1500,
+    symbol: str = "TEST",
+    hour: int = 10,
+    minute: int = 0,
+) -> Tick:
+    ts = datetime(2026, 1, 2, hour, minute, 0, tzinfo=_KST)
+    return Tick(symbol=symbol, price=price, volume=volume, timestamp=ts, market="domestic")
 
 
 # ============================================================================
@@ -100,26 +177,26 @@ def test_score_positive_max_8():
 
 def test_position_size_aggressive():
     """적극매수(7점 이상) → 30%."""
-    assert calculate_position_size(7, 1_000_000) == pytest.approx(0.30)
-    assert calculate_position_size(8, 1_000_000) == pytest.approx(0.30)
+    assert calculate_position_size(7) == pytest.approx(0.30)
+    assert calculate_position_size(8) == pytest.approx(0.30)
 
 
 def test_position_size_conservative():
     """소극매수(4~6점) → 10%."""
-    assert calculate_position_size(4, 1_000_000) == pytest.approx(0.10)
-    assert calculate_position_size(6, 1_000_000) == pytest.approx(0.10)
+    assert calculate_position_size(4) == pytest.approx(0.10)
+    assert calculate_position_size(6) == pytest.approx(0.10)
 
 
 def test_position_size_wait():
     """관망(0~3점) → 0%."""
-    assert calculate_position_size(3, 1_000_000) == 0.0
-    assert calculate_position_size(0, 1_000_000) == 0.0
+    assert calculate_position_size(3) == 0.0
+    assert calculate_position_size(0) == 0.0
 
 
 def test_position_size_negative_score():
     """음수 스코어 → 0.0 (음수에서 양수 비율 반환 방지)."""
-    assert calculate_position_size(-1, 1_000_000) == 0.0
-    assert calculate_position_size(-5, 1_000_000) == 0.0
+    assert calculate_position_size(-1) == 0.0
+    assert calculate_position_size(-5) == 0.0
 
 
 # ============================================================================
@@ -298,3 +375,118 @@ def test_score_boundary_6_to_7():
     )
     assert s8.score == 8
     assert s8.action == "적극매수"
+
+
+# ============================================================================
+# [H3] on_tick() 통합 테스트
+# ============================================================================
+
+
+def test_on_tick_returns_none_for_different_symbol():
+    """다른 종목 틱 → None."""
+    strategy = CciBbcStrategy(symbol="TEST", mtf_data=_make_mtf(), qty_per_unit=1)
+    strategy.warmup(_make_candles())
+    tick = _make_tick(symbol="OTHER")
+    ctx = MarketContext(symbol="TEST", recent_candles=tuple(_make_candles()))
+    assert strategy.on_tick(tick, ctx) is None
+
+
+def test_on_tick_returns_none_when_mtf_data_missing():
+    """mtf_data=None → 시그널 없음."""
+    strategy = CciBbcStrategy(symbol="TEST", mtf_data=None, qty_per_unit=1)
+    strategy.warmup(_make_candles())
+    tick = _make_tick()
+    ctx = MarketContext(symbol="TEST", recent_candles=tuple(_make_candles()))
+    assert strategy.on_tick(tick, ctx) is None
+
+
+def test_on_tick_returns_none_when_daily_candles_empty():
+    """일봉 캔들 비어 있으면 → None."""
+    mtf = _make_mtf()
+    mtf.daily.candles.clear()
+    strategy = CciBbcStrategy(symbol="TEST", mtf_data=mtf, qty_per_unit=1)
+    strategy.warmup([])
+    tick = _make_tick()
+    ctx = MarketContext(symbol="TEST", recent_candles=())
+    assert strategy.on_tick(tick, ctx) is None
+
+
+def test_on_tick_monthly_bearish_blocks_trading():
+    """월봉 BEARISH(CCI < 0) → 거래 금지 → None."""
+    mtf = _make_mtf(monthly_cci=-100.0)
+    strategy = CciBbcStrategy(symbol="TEST", mtf_data=mtf, qty_per_unit=1)
+    strategy.warmup(_make_candles())
+    tick = _make_tick()
+    ctx = MarketContext(symbol="TEST", recent_candles=tuple(_make_candles()))
+    assert strategy.on_tick(tick, ctx) is None
+
+
+def test_on_tick_returns_none_when_recent_candles_empty():
+    """recent_candles 비어 있으면 → None (ctx 조건 미충족)."""
+    mtf = _make_mtf()
+    strategy = CciBbcStrategy(symbol="TEST", mtf_data=mtf, qty_per_unit=1)
+    strategy.warmup(_make_candles())
+    tick = _make_tick()
+    ctx = MarketContext(symbol="TEST", recent_candles=())
+    assert strategy.on_tick(tick, ctx) is None
+
+
+# ============================================================================
+# [M4] check_principle_2 경계 테스트
+# ============================================================================
+
+
+def test_principle_2_price_exactly_at_ma20():
+    """경계값: price == ma20 → 눌림목 허용 (ma20 <= price <= ma5)."""
+    from datetime import time
+    candles = _make_candles(count=25, base_volume=300)
+    # 양봉: open < close
+    candles[-1] = _make_candle(open_p=98.0, close=100.0, volume=2000)
+
+    result = check_principle_2(
+        current_price=100.0,
+        ma5=105.0,
+        ma20=100.0,  # price == ma20: 경계 포함 여부 확인
+        candles=candles,
+        volume_ma20=1000.0,
+        current_volume=2000,
+        current_time=time(9, 30),
+    )
+    assert result is not None
+    assert result.principle == 2
+
+
+def test_principle_2_price_above_ma5_excluded():
+    """price > ma5 → 제2원칙 미해당."""
+    from datetime import time
+    candles = _make_candles(count=25)
+    result = check_principle_2(
+        current_price=110.0,
+        ma5=105.0,
+        ma20=95.0,
+        candles=candles,
+        volume_ma20=1000.0,
+        current_volume=2000,
+        current_time=time(10, 0),
+    )
+    assert result is None
+
+
+def test_principle_2_fewer_than_20_candles_fallback():
+    """캔들 < 20봉 → 경고 후 가용 캔들로 계산, 조건 충족 시 시그널 반환."""
+    from datetime import time
+    candles = _make_candles(count=8, base_volume=300)
+    candles[-1] = _make_candle(open_p=98.0, close=102.0, volume=2000)
+
+    result = check_principle_2(
+        current_price=102.0,
+        ma5=105.0,
+        ma20=95.0,
+        candles=candles,
+        volume_ma20=1000.0,
+        current_volume=2000,
+        current_time=time(9, 30),
+    )
+    # 8봉밖에 없어도 조건 충족 시 시그널 반환 (신뢰도 낮음 경고만)
+    assert result is not None
+    assert result.principle == 2

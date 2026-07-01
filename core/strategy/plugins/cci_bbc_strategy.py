@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import time, timedelta, timezone
 from typing import Literal
+
+_KST = timezone(timedelta(hours=9))  # 한국 표준시
 
 from core.marketdata.models import Candle, Tick
 from core.strategy.base import MarketContext, Signal, SignalSide
@@ -75,25 +77,38 @@ class ReliabilityScore:
     Attributes:
         score: 총 점수 (음수 가능).
         breakdown: 항목별 점수 내역.
-        action: 점수 기반 행동 지침.
+        action: 점수 기반 행동 지침 (from_breakdown으로 생성 시 score와 일관성 보장).
     """
 
     score: int
     breakdown: dict[str, int]
     action: Literal["적극매수", "소극매수", "관망", "매도검토"]
 
+    def __post_init__(self) -> None:
+        """action이 score와 일관된지 검증한다 (직접 생성 시 모순 방지)."""
+        expected = self._compute_action(self.score)
+        if self.action != expected:
+            raise ValueError(
+                f"action={self.action!r}이 score={self.score}와 불일치; "
+                f"expected {expected!r}"
+            )
+
+    @staticmethod
+    def _compute_action(score: int) -> Literal["적극매수", "소극매수", "관망", "매도검토"]:
+        if score >= 7:
+            return "적극매수"
+        elif score >= 4:
+            return "소극매수"
+        elif score >= 0:
+            return "관망"
+        else:
+            return "매도검토"
+
     @classmethod
     def from_breakdown(cls, breakdown: dict[str, int]) -> "ReliabilityScore":
         """breakdown dict에서 ReliabilityScore 생성."""
         score = sum(breakdown.values())
-        if score >= 7:
-            action: Literal["적극매수", "소극매수", "관망", "매도검토"] = "적극매수"
-        elif score >= 4:
-            action = "소극매수"
-        elif score >= 0:
-            action = "관망"
-        else:
-            action = "매도검토"
+        action = cls._compute_action(score)
         return cls(score=score, breakdown=breakdown, action=action)
 
 
@@ -102,15 +117,14 @@ class ReliabilityScore:
 # ============================================================================
 
 
-def calculate_position_size(score: int, available_capital: float) -> float:
+def calculate_position_size(score: int) -> float:
     """신뢰도 스코어 기반 포지션 크기 비율 계산.
 
     Args:
         score: 신뢰도 점수.
-        available_capital: 사용 가능 자본 (정보성 파라미터, 비율 계산에 미사용).
 
     Returns:
-        포지션 비율 (0.0 ~ 1.0). score < 0이면 0.0 반환.
+        포지션 비율 (0.0 ~ 1.0). score < 0 또는 관망(0~3점)이면 0.0 반환.
     """
     if score < 0:
         return 0.0
@@ -286,17 +300,24 @@ class CciBbcStrategy:
         volume_ma20 = daily_state.volume_ma20[-1] if daily_state.volume_ma20 else 0.0
         current_volume = tick.volume
 
-        # 장중 시그널 감지 (현재 시각 없으므로 종합 판단)
+        # 틱 타임스탬프를 KST로 변환하여 장중 시각 판단 (look-ahead bias 방지)
+        current_time = tick.timestamp.astimezone(_KST).time()
+
+        # 장중 시그널 감지 (실제 틱 시각 기준)
         intraday_result = detect_intraday_signal(
             candles=candles,
             open_price=candles[0].open if candles else tick.price,
-            current_time=time(15, 30),  # 틱 기반 → 확정 시간 사용
+            current_time=current_time,
             volume_ma20=volume_ma20,
         )
         intraday_type = intraday_result.signal_type
 
-        # 45도 하락 패턴 감지
-        has_45deg = detect_45_degree_decline(candles, window=min(12, len(candles)))
+        # 45도 하락 패턴 감지 (12봉 이상일 때만 — 적은 데이터에서 오탐 방지)
+        if len(candles) >= 12:
+            has_45deg = detect_45_degree_decline(candles, window=12)
+        else:
+            logger.debug("on_tick: 캔들 수(%d) < 12, 45도 하락 감지 생략", len(candles))
+            has_45deg = False
 
         # 신뢰도 스코어 계산
         score_obj = compute_reliability_score(
@@ -345,7 +366,7 @@ class CciBbcStrategy:
         if score_obj.score < 0:
             return None
 
-        position_ratio = calculate_position_size(score_obj.score, self._available_capital)
+        position_ratio = calculate_position_size(score_obj.score)
         if position_ratio <= 0:
             return None
 
@@ -353,8 +374,8 @@ class CciBbcStrategy:
         if directions.get("weekly") != MarketDirection.BULLISH:
             logger.debug("on_tick: 주봉 비강세 — 소극 매수만 허용")
 
-        # 3단계: 일봉 CCI + BBC 매수 원칙
-        bbc_buy = self._check_bbc_buy(tick, candles, ma5_val, ma20_val, volume_ma20, current_volume)
+        # 3단계: 일봉 CCI + BBC 매수 원칙 (실제 시각 전달)
+        bbc_buy = self._check_bbc_buy(tick, candles, ma5_val, ma20_val, volume_ma20, current_volume, current_time)
         if bbc_buy is None:
             return None
 
@@ -432,6 +453,7 @@ class CciBbcStrategy:
         ma20: float,
         volume_ma20: float,
         current_volume: int,
+        current_time: time,
     ) -> BbcBuySignal | None:
         """일봉 CCI 조건 + BBC 매수 원칙 통합 확인."""
         return evaluate_buy(
@@ -441,7 +463,7 @@ class CciBbcStrategy:
             current_volume=current_volume,
             volume_ma20=volume_ma20,
             candles=candles,
-            current_time=time(9, 30),  # 틱 기반 기본값 (warmup 후 갱신 예정)
+            current_time=current_time,
             current_open=candles[0].open if candles else tick.price,
         )
 
