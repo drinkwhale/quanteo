@@ -52,11 +52,12 @@ function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
       </h2>
       <div className="grid grid-cols-2">
         {timeframes.map((tf, i) => {
-          const isLastRow = i >= timeframes.length - 2;
+          const isLastRow =
+            i >= timeframes.length - (timeframes.length % 2 || 2);
           return (
             <div
               key={tf.label}
-              className={`py-2 pr-3 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
+              className={`py-2 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
                 isLastRow ? "" : "border-b border-border"
               }`}
             >
@@ -112,24 +113,28 @@ const RELIABILITY_STATUS = [
     min: 7,
     label: "적극매수",
     color: "text-positive",
+    bar: "bg-positive",
     badge: "bg-positive/10 border-positive/40 text-positive",
   },
   {
     min: 4,
     label: "소극매수",
     color: "text-warning",
+    bar: "bg-warning",
     badge: "bg-warning/10 border-warning/40 text-warning",
   },
   {
     min: 0,
     label: "관망",
     color: "text-muted",
+    bar: "bg-border",
     badge: "bg-muted/10 border-border text-muted",
   },
   {
     min: -Infinity,
     label: "매도검토",
     color: "text-negative",
+    bar: "bg-negative",
     badge: "bg-negative/10 border-negative/40 text-negative",
   },
 ] as const;
@@ -145,15 +150,7 @@ function reliabilityStatus(score: number | null) {
 function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
   const status = reliabilityStatus(score);
   const color = status?.color ?? "text-muted";
-
-  const barColor =
-    score === null
-      ? "bg-border"
-      : score >= 7
-        ? "bg-positive"
-        : score >= 4
-          ? "bg-warning"
-          : "bg-negative";
+  const barColor = status?.bar ?? "bg-border";
 
   const pct =
     score !== null ? Math.max(0, Math.min(100, (score / 8) * 100)) : 0;

@@ -53,7 +53,8 @@ export function ConfirmDialog({
     const dialog = dialogRef.current;
     if (!dialog) return;
 
-    // ESC(cancel 이벤트) 및 backdrop 클릭(close 이벤트) 모두 취소로 처리
+    // ESC(cancel 이벤트) 및 backdrop 클릭(click 이벤트) 모두 onCancel() 호출.
+    // close 이벤트는 취소가 아니라 트리거 버튼으로 포커스 복귀 전용.
     function handleCancel(e: Event) {
       e.preventDefault();
       onCancel();

@@ -16,21 +16,29 @@ export function KillSwitchButton({ onSuccess, disabled, fullWidth }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleConfirm() {
     setConfirmOpen(false);
     setLoading(true);
+    setError(null);
     try {
-      await api.kill();
+      const res = await api.kill();
+      if (!res.success) {
+        setError(res.message || "킬스위치 활성화 실패");
+        return;
+      }
       setDone(true);
       onSuccess?.();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류 발생");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <>
+    <div className={fullWidth ? "w-full space-y-2" : "space-y-2"}>
       <button
         type="button"
         onClick={() => setConfirmOpen(true)}
@@ -42,6 +50,12 @@ export function KillSwitchButton({ onSuccess, disabled, fullWidth }: Props) {
         {done ? "킬스위치 활성화됨" : loading ? "처리 중..." : "킬스위치"}
       </button>
 
+      {error && (
+        <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
+          {error}
+        </p>
+      )}
+
       <ConfirmDialog
         open={confirmOpen}
         title="킬스위치 활성화"
@@ -51,6 +65,6 @@ export function KillSwitchButton({ onSuccess, disabled, fullWidth }: Props) {
         onConfirm={handleConfirm}
         onCancel={() => setConfirmOpen(false)}
       />
-    </>
+    </div>
   );
 }
