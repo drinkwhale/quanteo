@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-02T00:00:00Z",
+  "title": "Design System: Quanteo Dashboard",
+  "extensions": {
+    "colorMeta": {
+      "space-black": {
+        "role": "neutral",
+        "displayName": "Space Black",
+        "canonical": "#0f1117",
+        "tonalRamp": [
+          "#0a0c10",
+          "#0f1117",
+          "#141720",
+          "#1a1d27",
+          "#232638",
+          "#2d3148",
+          "#3d4262",
+          "#6b7280"
+        ]
+      },
+      "midnight-panel": {
+        "role": "neutral",
+        "displayName": "Midnight Panel",
+        "canonical": "#1a1d27",
+        "tonalRamp": [
+          "#0f1117",
+          "#1a1d27",
+          "#222535",
+          "#2a2d3a",
+          "#353850",
+          "#424668",
+          "#6b7280",
+          "#9ca3af"
+        ]
+      },
+      "structural-line": {
+        "role": "neutral",
+        "displayName": "Structural Line",
+        "canonical": "#2a2d3a",
+        "tonalRamp": [
+          "#1a1d27",
+          "#222535",
+          "#2a2d3a",
+          "#353850",
+          "#464a65",
+          "#6b7280",
+          "#9ca3af",
+          "#d1d5db"
+        ]
+      },
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "#3b82f6",
+        "tonalRamp": [
+          "#1e3a8a",
+          "#1d4ed8",
+          "#2563eb",
+          "#3b82f6",
+          "#60a5fa",
+          "#93c5fd",
+          "#bfdbfe",
+          "#eff6ff"
+        ]
+      },
+      "signal-blue-deep": {
+        "role": "primary",
+        "displayName": "Signal Blue Deep",
+        "canonical": "#2563eb",
+        "tonalRamp": [
+          "#1e3a8a",
+          "#1e40af",
+          "#1d4ed8",
+          "#2563eb",
+          "#3b82f6",
+          "#60a5fa",
+          "#93c5fd",
+          "#bfdbfe"
+        ]
+      },
+      "live-green": {
+        "role": "secondary",
+        "displayName": "Live Green",
+        "canonical": "#22c55e",
+        "tonalRamp": [
+          "#14532d",
+          "#166534",
+          "#15803d",
+          "#16a34a",
+          "#22c55e",
+          "#4ade80",
+          "#86efac",
+          "#dcfce7"
+        ]
+      },
+      "alert-red": {
+        "role": "tertiary",
+        "displayName": "Alert Red",
+        "canonical": "#ef4444",
+        "tonalRamp": [
+          "#7f1d1d",
+          "#991b1b",
+          "#b91c1c",
+          "#dc2626",
+          "#ef4444",
+          "#f87171",
+          "#fca5a5",
+          "#fee2e2"
+        ]
+      },
+      "caution-amber": {
+        "role": "secondary",
+        "displayName": "Caution Amber",
+        "canonical": "#f59e0b",
+        "tonalRamp": [
+          "#78350f",
+          "#92400e",
+          "#b45309",
+          "#d97706",
+          "#f59e0b",
+          "#fbbf24",
+          "#fcd34d",
+          "#fef3c7"
+        ]
+      },
+      "ghost-gray": {
+        "role": "neutral",
+        "displayName": "Ghost Gray",
+        "canonical": "#6b7280",
+        "tonalRamp": [
+          "#111827",
+          "#1f2937",
+          "#374151",
+          "#4b5563",
+          "#6b7280",
+          "#9ca3af",
+          "#d1d5db",
+          "#f9fafb"
+        ]
+      },
+      "ink-white": {
+        "role": "neutral",
+        "displayName": "Ink White",
+        "canonical": "#f1f5f9",
+        "tonalRamp": [
+          "#64748b",
+          "#94a3b8",
+          "#cbd5e1",
+          "#e2e8f0",
+          "#f1f5f9",
+          "#f8fafc",
+          "#ffffff",
+          "#ffffff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display / Panel Header",
+        "purpose": "섹션 패널 제목, 운용 상태 레이블. semibold + wide tracking으로 위계 최상단."
+      },
+      "body": {
+        "displayName": "Body / Data",
+        "purpose": "테이블 데이터, 피드백 메시지. 화면의 기본 읽기 단위."
+      },
+      "label": {
+        "displayName": "Label / Meta",
+        "purpose": "컬럼 헤더, 시각 정보, 건수. 데이터의 주석 역할."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "150ms ease-in-out",
+        "purpose": "버튼 hover, 탭 전환 등 상태 변화. 운용 중 사용자는 기다리지 않는다."
+      },
+      {
+        "name": "row-hover",
+        "value": "100ms ease-in-out",
+        "purpose": "테이블 행 hover. 즉각적인 피드백."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "xl",
+        "value": "1280px",
+        "purpose": "xl:grid-cols-3 레이아웃 전환점. 탭 패널(2/3) + 컨트롤 패널(1/3)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button — Pause",
+      "kind": "button",
+      "refersTo": "btn-pause",
+      "description": "봇 일시정지. Caution Amber 틴트 — 동작 가능하지만 주의가 필요한 액션.",
+      "html": "<button class=\"ds-btn-pause\">일시정지</button>",
+      "css": ".ds-btn-pause { background: rgba(245, 158, 11, 0.10); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.30); border-radius: 4px; padding: 8px 16px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 150ms ease-in-out; } .ds-btn-pause:hover { background: rgba(245, 158, 11, 0.20); } .ds-btn-pause:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; } .ds-btn-pause:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Button — Resume",
+      "kind": "button",
+      "refersTo": "btn-resume",
+      "description": "봇 재개. Live Green 틴트 — 정상 상태로 복귀하는 안전한 액션.",
+      "html": "<button class=\"ds-btn-resume\">재개</button>",
+      "css": ".ds-btn-resume { background: rgba(34, 197, 94, 0.10); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.30); border-radius: 4px; padding: 8px 16px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 150ms ease-in-out; } .ds-btn-resume:hover { background: rgba(34, 197, 94, 0.20); } .ds-btn-resume:focus-visible { outline: 2px solid #22c55e; outline-offset: 2px; } .ds-btn-resume:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Button — Kill Switch",
+      "kind": "button",
+      "refersTo": "btn-kill",
+      "description": "킬스위치. Alert Red 틴트 — 되돌리기 어려운 위험 액션. 구조적으로 다른 버튼과 분리(ml-auto).",
+      "html": "<button class=\"ds-btn-kill\">킬스위치</button>",
+      "css": ".ds-btn-kill { background: rgba(239, 68, 68, 0.10); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.30); border-radius: 4px; padding: 8px 16px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 150ms ease-in-out; margin-left: auto; } .ds-btn-kill:hover { background: rgba(239, 68, 68, 0.20); } .ds-btn-kill:focus-visible { outline: 2px solid #ef4444; outline-offset: 2px; } .ds-btn-kill:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Section Panel",
+      "kind": "card",
+      "refersTo": "section-panel",
+      "description": "콘텐츠 컨테이너. Space Black 위에 Midnight Panel로 두 번째 레이어를 만든다.",
+      "html": "<section class=\"ds-panel\"><div class=\"ds-panel-header\"><h2>포지션</h2><span>0건</span></div><div class=\"ds-panel-body\">콘텐츠</div></section>",
+      "css": ".ds-panel { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; overflow: hidden; font-family: 'JetBrains Mono', 'Fira Code', monospace; } .ds-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #2a2d3a; } .ds-panel-header h2 { font-size: 0.875rem; font-weight: 600; color: #f1f5f9; letter-spacing: 0.05em; margin: 0; } .ds-panel-header span { font-size: 0.75rem; color: #6b7280; } .ds-panel-body { padding: 16px; }"
+    },
+    {
+      "name": "Data Table Row",
+      "kind": "custom",
+      "refersTo": "section-panel",
+      "description": "데이터 테이블 행. 주요 값 ink-white, 보조 값 ghost-gray, hover 시 space-black으로 어두워짐.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>종목</th><th>수량</th><th>장부금액</th></tr></thead><tbody><tr class=\"ds-table-row\"><td class=\"ds-primary\">AAPL</td><td class=\"ds-secondary\">100</td><td class=\"ds-highlight\">₩1,234,000</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; } .ds-table thead th { color: #6b7280; font-size: 0.75rem; font-weight: 400; padding: 8px 16px; text-align: left; border-bottom: 1px solid #2a2d3a; } .ds-table-row { border-bottom: 1px solid #2a2d3a; transition: background 100ms ease-in-out; } .ds-table-row:last-child { border-bottom: none; } .ds-table-row:hover { background: #0f1117; } .ds-table-row td { padding: 8px 16px; } .ds-primary { color: #f1f5f9; font-weight: 600; } .ds-secondary { color: #6b7280; } .ds-highlight { color: #3b82f6; }"
+    },
+    {
+      "name": "Tab Navigation",
+      "kind": "nav",
+      "refersTo": "section-panel",
+      "description": "탭 네비게이션. Signal Blue 하단 2px 보더로 활성 탭 표시. 배경 tint 없음.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">포지션</button><button class=\"ds-tab\">주문</button><button class=\"ds-tab\">체결</button><button class=\"ds-tab\">전략</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 4px; border-bottom: 1px solid #2a2d3a; } .ds-tab { padding: 8px 16px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; font-weight: 400; color: #6b7280; background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; transition: color 150ms ease-in-out; } .ds-tab:hover { color: #f1f5f9; } .ds-tab-active { color: #f1f5f9; border-bottom-color: #3b82f6; } .ds-tab:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Bar",
+      "kind": "nav",
+      "refersTo": "section-panel",
+      "description": "최상단 운용 상태 표시줄. 봇 상태, 환경, 마켓, 업타임, 스트림 연결 여부를 한 줄에.",
+      "html": "<header class=\"ds-statusbar\"><span class=\"ds-brand\">quanteo</span><span class=\"ds-status ds-running\">RUNNING</span><span class=\"ds-meta\">ENV: <span class=\"ds-env-vps\">VPS</span></span><span class=\"ds-stream\"><span class=\"ds-dot ds-dot-on\"></span>STREAM ON</span></header>",
+      "css": ".ds-statusbar { display: flex; align-items: center; gap: 24px; padding: 8px 16px; background: #1a1d27; border-bottom: 1px solid #2a2d3a; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.875rem; } .ds-brand { font-weight: 600; color: #f1f5f9; letter-spacing: 0.05em; } .ds-running { font-weight: 600; color: #22c55e; } .ds-meta { color: #6b7280; } .ds-env-vps { color: #3b82f6; } .ds-stream { display: flex; align-items: center; gap: 6px; color: #6b7280; margin-left: auto; } .ds-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; } .ds-dot-on { background: #22c55e; } .ds-dot-off { background: #ef4444; }"
+    },
+    {
+      "name": "Feedback Message — Success",
+      "kind": "custom",
+      "refersTo": "section-panel",
+      "description": "인라인 성공 피드백. 액션 완료 후 패널 내 하단에 표시.",
+      "html": "<p class=\"ds-feedback ds-feedback-ok\">봇이 재개되었습니다.</p>",
+      "css": ".ds-feedback { padding: 8px 12px; border-radius: 4px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.75rem; margin: 0; } .ds-feedback-ok { background: rgba(34, 197, 94, 0.05); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.20); } .ds-feedback-err { background: rgba(239, 68, 68, 0.05); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.20); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Silent Exchange",
+    "overview": "Quanteo 대시보드는 시장의 소음 속에서 침묵의 교환이 이루어지는 공간이다. 봇이 돌아가는 동안 운용자는 한 화면에서 모든 것을 읽어낸다 — 포지션, 주문, 체결, 전략 실행 흐름까지. 화면은 말하지 않는다. 그러나 상태가 달라지면 바로 안다.\n\n배경은 심우주 검정(#0f1117). 데이터는 어둠 속에서 부상한다. JetBrains Mono 단일 패밀리가 숫자, 기호, 레이블 모두를 같은 그리드 위에 정렬한다. Signal Blue는 클릭 가능하고 제어 가능한 것에만 쓴다 — 나머지는 위계 속에 침묵한다.\n\n이 시스템은 소비자 투자 앱(Trading212, Robinhood)의 게임화 미학을 명시적으로 거부한다. 운용자가 장중에 쓰는 도구는 시장의 전문성을 반영해야 한다.",
+    "keyCharacteristics": [
+      "모노스페이스 타이포그래피 일원화 — 단일 폰트 패밀리, 크기/굵기/색상으로만 위계",
+      "그림자 없음, 깊이는 배경 레이어링(space-black → midnight-panel)",
+      "상태 색상은 항상 레이블과 함께 — 색상 단독 의존 금지 (WCAG 1.4.1)",
+      "모든 핵심 제어는 현재 화면에서 — 탐색을 위한 탐색 없음"
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Signal Blue는 인터랙션 가능한 요소, 현재 선택 상태, 그리고 운용자가 집중해야 할 수치(장부금액)에만 쓴다. 장식 목적으로 사용하는 순간 신호로서의 의미가 사라진다.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Ambiguity Rule",
+        "body": "positive(live-green)/negative(alert-red) 색상은 반드시 텍스트 레이블 또는 아이콘과 함께 사용한다. 색맹 사용자는 색상만으로 이익/손실을 구분할 수 없다.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "폰트 패밀리를 추가하지 않는다. JetBrains Mono 단일 패밀리가 이 시스템의 정체성이다. 새로운 영역에 다른 폰트가 필요하다고 느껴지면, 폰트를 바꾸기 전에 굵기와 크기를 먼저 조정한다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "box-shadow는 이 시스템에 없다. 요소의 깊이는 배경색 차이로만 만든다. 그림자가 필요한 것처럼 느껴진다면, 그 요소의 배경 레이어 배치가 잘못된 것이다.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do Signal Blue를 인터랙션 가능한 요소, 현재 선택 상태, 핵심 수치 강조에만 사용한다.",
+      "Do positive/negative 상태는 색상과 텍스트 레이블을 반드시 함께 제공한다 (WCAG 1.4.1).",
+      "Do 제어 버튼의 색상 언어를 일관되게 유지한다: Pause = caution-amber, Resume = live-green, Kill = alert-red.",
+      "Do 새 섹션 컨테이너는 bg-panel border border-border rounded-lg 패턴을 따른다.",
+      "Do 타이포그래피는 JetBrains Mono 내에서 크기·굵기·색상으로만 위계를 만든다.",
+      "Do 빈 상태는 ghost-gray 텍스트로 명시한다. 빈 화면을 남기지 않는다.",
+      "Do 실전(prod) 환경 표시는 alert-red로, 명시적 경고 문구와 함께 항상 노출한다.",
+      "Do Kill 버튼은 시각적·구조적으로 다른 제어 버튼과 분리한다."
+    ],
+    "donts": [
+      "Don't Trading212, Robinhood 등 소비자 투자 앱의 밝은 배경, 게임화 그래픽, 원형 진척 그래프를 도입한다.",
+      "Don't 일반 SaaS 어드민 템플릿의 사이드바 + 동일 크기 카드 그리드 레이아웃을 모방한다.",
+      "Don't box-shadow를 사용한다. 깊이는 배경 틴트 차이로만 표현한다.",
+      "Don't border-left 1px 초과 컬러 스트라이프를 카드나 항목 강조에 사용한다.",
+      "Don't background-clip: text 그라데이션 텍스트를 사용한다.",
+      "Don't JetBrains Mono 외의 폰트 패밀리를 도입한다.",
+      "Don't Signal Blue를 배경 장식, 그라데이션, 비인터랙티브 요소에 사용한다.",
+      "Don't 색상만으로 positive/negative를 전달한다. 레이블이나 아이콘이 항상 동반해야 한다.",
+      "Don't Bloomberg 터미널의 정보 과밀을 복제한다. 밀도는 참고하되, 가독성 임계점은 지킨다."
+    ]
+  }
+}

@@ -541,6 +541,122 @@
 
 ---
 
+---
+
+## Phase 14 — 프론트엔드 디자인 시스템 정비
+
+> **목표:** `PRODUCT.md` + `DESIGN.md`에 정의된 _The Silent Exchange_ 디자인 원칙을 코드에 반영한다.
+> 현재 구현에서 발견된 스펙 위반 항목 수정, WCAG 2.1 AA 접근성 기준 충족, 토큰 시스템 공식화.
+>
+> **영향 범위:** `dashboard/src/` 전체.
+> **설계 근거:** [`PRODUCT.md`](../PRODUCT.md), [`DESIGN.md`](../DESIGN.md), [`DESIGN system: The Silent Exchange`]
+
+- [ ] **T084** CSS 커스텀 프로퍼티 토큰 공식화 (`dashboard/src/index.css`)
+  - `@layer base`에 `:root` 블록 추가 — 현재 `tailwind.config.js` hex 값을 CSS 변수로 이관
+    ```css
+    --color-space-black: #0f1117;
+    --color-midnight-panel: #1a1d27;
+    --color-structural-line: #2a2d3a;
+    --color-signal-blue: #3b82f6;
+    --color-signal-blue-deep: #2563eb;
+    --color-live-green: #22c55e;
+    --color-alert-red: #ef4444;
+    --color-caution-amber: #f59e0b;
+    --color-ghost-gray: #6b7280;
+    --color-ink-white: #f1f5f9;
+    ```
+  - `tailwind.config.js` 컬러 값을 `var(--color-*)` 참조로 교체 (이중 정의 제거)
+  - `--z-dropdown: 10; --z-sticky: 20; --z-modal-backdrop: 30; --z-modal: 40; --z-toast: 50; --z-tooltip: 60;` 시맨틱 z-index 스케일 정의
+  - `SignalToasts` `z-50` → `z-[var(--z-toast)]` 적용
+  - 테스트: Tailwind 빌드가 CSS 변수 참조로 정상 컴파일되는지 확인
+
+- [ ] **T085** `SignalToast` Flat-by-Default Rule 위반 수정 (`dashboard/src/pages/Strategy.tsx`)
+  - `shadow-lg` 제거 — **DESIGN.md 4절 "The Flat-by-Default Rule"** 위반
+  - 대신 `border` opacity를 `/40 → /60`으로 올려 가시성 확보
+  - `animate-fade-in` 클래스 → Tailwind `animate-[fadeIn_0.2s_ease-out]` + 해당 keyframe을 `index.css`에 정의
+  - `@media (prefers-reduced-motion: reduce)` 대안: `animate-none opacity-100` (즉시 표시)
+  - 테스트: BUY/SELL 토스트 시각 확인 + DevTools에서 reduced-motion 강제 적성 → 애니메이션 없이 나타나는지 확인
+
+- [ ] **T086** 전체 인터랙티브 요소 `focus-visible` 스타일 시스템 (`dashboard/src/`)
+  - **WCAG 2.1 AA SC 2.4.7** 준수 — 키보드 포커스가 화면에 보여야 한다
+  - `index.css` `@layer base`에 전역 기본 포커스 링 정의:
+    ```css
+    :focus-visible {
+      outline: 2px solid var(--color-signal-blue);
+      outline-offset: 2px;
+    }
+    ```
+  - `BacktestPanel` 입력 필드 `focus:outline-none` → 제거 (전역 스타일 활용), `focus:border-accent` 유지
+  - `ControlPanel` 버튼 3종 — 각 버튼 색상에 맞는 `focus-visible:outline` 추가:
+    - Pause: `focus-visible:outline-caution-amber`
+    - Resume: `focus-visible:outline-live-green`
+    - Kill: `focus-visible:outline-alert-red`
+  - 탭 네비게이션 버튼 `focus-visible:outline-signal-blue` 추가
+  - `KillSwitchButton` focus-visible 스타일 추가
+  - 테스트: 모든 인터랙티브 요소를 키보드(Tab)로 순회하며 포커스 링 확인
+
+- [ ] **T087** `ConfirmDialog` 접근 가능한 확인 모달 컴포넌트 (`dashboard/src/components/ConfirmDialog.tsx`)
+  - `window.confirm()` 2곳 교체 — **`ControlPanel.tsx`**(3액션), **`Strategy.tsx` `KillSwitchButton`**
+  - HTML `<dialog>` 요소 기반 구현 (Tailwind 포털 불필요, native dialog API 활용)
+  - Props: `open: boolean`, `title: string`, `message: string`, `confirmLabel: string`, `confirmVariant: 'warning' | 'danger'`, `onConfirm: () => void`, `onCancel: () => void`
+  - Kill 액션은 `confirmVariant='danger'` → 확인 버튼을 alert-red 스타일로
+  - `role="alertdialog"`, `aria-labelledby`, `aria-describedby` 속성
+  - ESC 키로 취소, 배경 클릭으로 취소
+  - 포커스 트랩: dialog 열릴 때 확인/취소 버튼에 포커스, 닫힐 때 trigger 버튼으로 복귀
+  - `@media (prefers-reduced-motion: reduce)` 적용
+  - 테스트: `Strategy.test.tsx` — 킬스위치 클릭 → dialog 열림 → 확인 → API 호출, ESC → dialog 닫힘 + API 미호출
+
+- [ ] **T088** `prefers-reduced-motion` 전역 지원 (`dashboard/src/index.css`)
+  - `StreamLog` 연결 표시 `animate-pulse` — reduced-motion 시 정적 표시
+  - `index.css`에 전역 규칙 추가:
+    ```css
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    ```
+  - `StatusBar` 연결 상태 점 `animate-pulse` → reduced-motion 시 정적 색상만 표시
+  - 테스트: DevTools에서 `prefers-reduced-motion: reduce` 강제 → 모든 애니메이션 정지 확인
+
+- [ ] **T089** `CciPanel` 중첩 카드 패턴 제거 (`dashboard/src/pages/Strategy.tsx`)
+  - **DESIGN.md 5절 "Nested Cards Prohibited"** 위반: `bg-panel rounded-lg` 내부에 `bg-surface border rounded` 카드 4개
+  - 4개 타임프레임 카드 → 2×2 행 레이아웃으로 교체. 각 항목은 보더로만 구분
+  - 내부 아이템: 배경 제거, 상하 `py-2` + `border-b border-border last:border-0` 패턴 사용 (테이블 행과 동일한 어휘)
+  - GC/DC 뱃지: `bg-surface` 배경 제거, 텍스트 색상만 유지
+  - 테스트: 4개 타임프레임 CCI 값 렌더링 확인 + 중첩 배경색 부재 확인
+
+- [ ] **T090** `BacktestPanel` 메트릭 결과 레이아웃 개선 (`dashboard/src/pages/Strategy.tsx`)
+  - **DESIGN.md 6절 "Don't identical card grids"** — 6칸 동일 크기 카드 그리드 (`bg-surface border rounded p-2 text-center`) 위반
+  - 6개 메트릭 → 2열 `dl`(description list) 레이아웃으로 교체:
+    - 좌: 레이블(ghost-gray, label weight), 우: 값(ink-white, data-emphasis weight)
+    - 행 구분: `border-b border-border last:border-0`
+  - 수익률/샤프지수 양수 → live-green, 음수 → alert-red (MDD는 항상 alert-red)
+  - 레이블에 단위 포함 (`MDD %`, `샤프 지수` 등)으로 수치 맥락 명확화
+  - 테스트: 메트릭 값 렌더링 + 수익률 양/음수 색상 분기 확인
+
+- [ ] **T091** `ReliabilityGauge` 접근성 개선 (`dashboard/src/pages/Strategy.tsx`)
+  - 색상 기반 스코어 표현에 ARIA 레이블 추가 — **The No-Ambiguity Rule** 준수
+  - 프로그레스 바에 `role="progressbar"`, `aria-valuenow`, `aria-valuemin="0"`, `aria-valuemax="8"`, `aria-label="신뢰도 스코어"` 추가
+  - 스코어 숫자 옆에 텍스트 상태 뱃지 추가: `7이상 → 적극매수(live-green)`, `4-6 → 소극매수(caution-amber)`, `0-3 → 관망(ghost-gray)`, `음수 → 매도검토(alert-red)`
+  - breakdown 체크리스트: `✓` → `aria-hidden="true"` + `<span class="sr-only">통과</span>` 보조 텍스트
+  - 테스트: score=7 → 뱃지 "적극매수" + live-green 확인, score=null → "—" 표시 확인
+
+- [ ] **T092** 킬스위치 중복 통합 (`dashboard/src/components/`, `dashboard/src/pages/Strategy.tsx`)
+  - 현재: `ControlPanel.tsx`에 Kill 버튼, `Strategy.tsx`에 독립적인 `KillSwitchButton` 컴포넌트 — 동일 API 호출 로직 중복
+  - `KillSwitchButton`을 `dashboard/src/components/KillSwitchButton.tsx`로 독립 파일로 추출
+  - `ControlPanel`의 Kill 버튼 → 새 `KillSwitchButton` 컴포넌트로 교체 (T087 ConfirmDialog 통합 포함)
+  - `StrategyPage`의 인라인 `KillSwitchButton` → import로 교체
+  - Props 인터페이스: `onSuccess?: () => void`, `disabled?: boolean`, `fullWidth?: boolean`
+  - 테스트: ControlPanel + StrategyPage 양쪽에서 동일 컴포넌트가 렌더링되는지, API 중복 호출 없는지 확인
+
+---
+
 ## 다음 단계
 
-구현을 시작하려면 "Phase 11 진행해줘" 또는 "T069까지 진행해줘"로 요청.
+구현을 시작하려면 "Phase 14 진행해줘" 또는 "T084까지 진행해줘"로 요청.
+프론트엔드 태스크 설계 근거: [`PRODUCT.md`](../PRODUCT.md), [`DESIGN.md`](../DESIGN.md)
