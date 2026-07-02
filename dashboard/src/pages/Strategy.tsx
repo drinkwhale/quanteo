@@ -10,13 +10,13 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
 import {
   type BacktestMetrics,
   type BacktestStatusResponse,
   backtestApi,
   pollUntilDone,
 } from "../api/backtest";
+import { KillSwitchButton } from "../components/KillSwitchButton";
 import type { PositionItem } from "../api/types";
 import type { LogEntry } from "../hooks/useStream";
 
@@ -50,37 +50,46 @@ function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
       <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
         CCI 현황
       </h2>
-      <div className="grid grid-cols-2 gap-2">
-        {timeframes.map((tf) => (
-          <div
-            key={tf.label}
-            className="bg-surface border border-border rounded p-2 space-y-1"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-muted">{tf.label}</span>
-              {tf.cross === "golden" && (
-                <span className="text-[10px] font-mono text-positive">GC</span>
-              )}
-              {tf.cross === "dead" && (
-                <span className="text-[10px] font-mono text-negative">DC</span>
-              )}
-            </div>
+      <div className="grid grid-cols-2">
+        {timeframes.map((tf, i) => {
+          const isLastRow = i >= timeframes.length - 2;
+          return (
             <div
-              className={`text-sm font-mono font-bold ${
-                tf.signal === "buy"
-                  ? "text-positive"
-                  : tf.signal === "sell"
-                    ? "text-negative"
-                    : "text-muted"
+              key={tf.label}
+              className={`py-2 pr-3 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
+                isLastRow ? "" : "border-b border-border"
               }`}
             >
-              {tf.value !== null ? tf.value.toFixed(1) : "—"}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono text-muted">{tf.label}</span>
+                {tf.cross === "golden" && (
+                  <span className="text-[10px] font-mono text-positive">
+                    GC
+                  </span>
+                )}
+                {tf.cross === "dead" && (
+                  <span className="text-[10px] font-mono text-negative">
+                    DC
+                  </span>
+                )}
+              </div>
+              <div
+                className={`text-sm font-mono font-bold ${
+                  tf.signal === "buy"
+                    ? "text-positive"
+                    : tf.signal === "sell"
+                      ? "text-negative"
+                      : "text-muted"
+                }`}
+              >
+                {tf.value !== null ? tf.value.toFixed(1) : "—"}
+              </div>
+              <div className="text-[10px] font-mono text-muted capitalize">
+                {tf.signal}
+              </div>
             </div>
-            <div className="text-[10px] font-mono text-muted capitalize">
-              {tf.signal}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <p className="text-[10px] text-muted font-mono">
         * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
@@ -98,15 +107,44 @@ interface ReliabilityProps {
   breakdown: Record<string, boolean>;
 }
 
+const RELIABILITY_STATUS = [
+  {
+    min: 7,
+    label: "적극매수",
+    color: "text-positive",
+    badge: "bg-positive/10 border-positive/40 text-positive",
+  },
+  {
+    min: 4,
+    label: "소극매수",
+    color: "text-warning",
+    badge: "bg-warning/10 border-warning/40 text-warning",
+  },
+  {
+    min: 0,
+    label: "관망",
+    color: "text-muted",
+    badge: "bg-muted/10 border-border text-muted",
+  },
+  {
+    min: -Infinity,
+    label: "매도검토",
+    color: "text-negative",
+    badge: "bg-negative/10 border-negative/40 text-negative",
+  },
+] as const;
+
+function reliabilityStatus(score: number | null) {
+  if (score === null) return null;
+  return (
+    RELIABILITY_STATUS.find((s) => score >= s.min) ??
+    RELIABILITY_STATUS[RELIABILITY_STATUS.length - 1]
+  );
+}
+
 function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
-  const color =
-    score === null
-      ? "text-muted"
-      : score >= 7
-        ? "text-positive"
-        : score >= 4
-          ? "text-warning"
-          : "text-negative";
+  const status = reliabilityStatus(score);
+  const color = status?.color ?? "text-muted";
 
   const barColor =
     score === null
@@ -126,14 +164,28 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
         신뢰도 스코어
       </h2>
 
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-2 flex-wrap">
         <span className={`text-3xl font-mono font-bold ${color}`}>
           {score !== null ? score : "—"}
         </span>
         <span className="text-muted font-mono text-sm mb-1">/ 8</span>
+        {status && (
+          <span
+            className={`ml-auto text-[10px] font-mono font-semibold px-2 py-1 rounded border ${status.badge}`}
+          >
+            {status.label}
+          </span>
+        )}
       </div>
 
-      <div className="w-full h-2 bg-surface rounded-full overflow-hidden">
+      <div
+        role="progressbar"
+        aria-valuenow={score ?? 0}
+        aria-valuemin={0}
+        aria-valuemax={8}
+        aria-label="신뢰도 스코어"
+        className="w-full h-2 bg-surface rounded-full overflow-hidden"
+      >
         <div
           className={`h-full rounded-full transition-all ${barColor}`}
           style={{ width: `${pct}%` }}
@@ -144,9 +196,13 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
         <ul className="space-y-1">
           {Object.entries(breakdown).map(([key, passed]) => (
             <li key={key} className="flex items-center gap-2 text-xs font-mono">
-              <span className={passed ? "text-positive" : "text-muted"}>
+              <span
+                aria-hidden="true"
+                className={passed ? "text-positive" : "text-muted"}
+              >
                 {passed ? "✓" : "○"}
               </span>
+              <span className="sr-only">{passed ? "통과" : "미통과"}</span>
               <span className={passed ? "text-white" : "text-muted"}>
                 {key}
               </span>
@@ -303,7 +359,7 @@ function BacktestPanel() {
             type="text"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
             placeholder="005930"
           />
         </div>
@@ -313,7 +369,7 @@ function BacktestPanel() {
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
           />
         </div>
         <div className="space-y-1">
@@ -322,7 +378,7 @@ function BacktestPanel() {
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-accent"
+            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
           />
         </div>
       </div>
@@ -344,75 +400,68 @@ function BacktestPanel() {
       )}
 
       {result && (
-        <div className="grid grid-cols-3 gap-2">
+        <dl className="text-xs font-mono">
           {(
             [
               {
-                label: "승률",
+                label: "승률 %",
                 value: `${(result.win_rate * 100).toFixed(1)}%`,
+                tone: "neutral",
               },
-              { label: "MDD", value: `${(result.mdd * 100).toFixed(1)}%` },
-              { label: "샤프", value: result.sharpe_ratio.toFixed(2) },
               {
-                label: "수익률",
-                value: `${(result.annualized_return * 100).toFixed(1)}%`,
+                label: "MDD %",
+                value: `${(result.mdd * 100).toFixed(1)}%`,
+                tone: "negative",
               },
-              { label: "P/L비", value: result.profit_loss_ratio.toFixed(2) },
-              { label: "거래수", value: String(result.total_trades) },
-            ] as { label: string; value: string }[]
-          ).map(({ label, value }) => (
+              {
+                label: "샤프 지수",
+                value: result.sharpe_ratio.toFixed(2),
+                tone: result.sharpe_ratio >= 0 ? "positive" : "negative",
+              },
+              {
+                label: "연환산 수익률 %",
+                value: `${(result.annualized_return * 100).toFixed(1)}%`,
+                tone: result.annualized_return >= 0 ? "positive" : "negative",
+              },
+              {
+                label: "손익비",
+                value: result.profit_loss_ratio.toFixed(2),
+                tone: "neutral",
+              },
+              {
+                label: "총 거래수",
+                value: String(result.total_trades),
+                tone: "neutral",
+              },
+            ] as {
+              label: string;
+              value: string;
+              tone: "positive" | "negative" | "neutral";
+            }[]
+          ).map(({ label, value, tone }, i, arr) => (
             <div
               key={label}
-              className="bg-surface border border-border rounded p-2 text-center"
+              className={`flex items-center justify-between py-1.5 ${
+                i === arr.length - 1 ? "" : "border-b border-border"
+              }`}
             >
-              <div className="text-[10px] font-mono text-muted">{label}</div>
-              <div className="text-sm font-mono font-bold text-white">
+              <dt className="text-muted">{label}</dt>
+              <dd
+                className={`font-bold ${
+                  tone === "positive"
+                    ? "text-positive"
+                    : tone === "negative"
+                      ? "text-negative"
+                      : "text-white"
+                }`}
+              >
                 {value}
-              </div>
+              </dd>
             </div>
           ))}
-        </div>
+        </dl>
       )}
     </section>
-  );
-}
-
-// ============================================================================
-// 서브 컴포넌트: 킬스위치
-// ============================================================================
-
-function KillSwitchButton({ onAction }: { onAction: () => void }) {
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-
-  async function handleKill() {
-    if (
-      !window.confirm(
-        "⚠️ 킬스위치를 활성화하면 모든 신규 주문이 차단됩니다. 계속하겠습니까?",
-      )
-    )
-      return;
-
-    setLoading(true);
-    try {
-      await api.kill();
-      setDone(true);
-      onAction();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleKill}
-      disabled={loading || done}
-      className="w-full py-2 rounded bg-negative/10 text-negative border border-negative/30 text-sm font-mono font-semibold
-                 hover:bg-negative/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-    >
-      {done ? "킬스위치 활성화됨" : loading ? "처리 중..." : "킬스위치"}
-    </button>
   );
 }
 
@@ -424,15 +473,16 @@ function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs">
+    <div className="fixed top-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 max-w-xs">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border shadow-lg text-xs font-mono animate-fade-in ${
-            t.side === "BUY"
-              ? "bg-positive/10 border-positive/40 text-positive"
-              : "bg-negative/10 border-negative/40 text-negative"
-          }`}
+          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border text-xs font-mono
+                      animate-[fadeIn_0.2s_ease-out] motion-reduce:animate-none motion-reduce:opacity-100 ${
+                        t.side === "BUY"
+                          ? "bg-positive/10 border-positive/60 text-positive"
+                          : "bg-negative/10 border-negative/60 text-negative"
+                      }`}
         >
           <div className="font-bold text-sm">
             {t.side === "BUY" ? "▲ 매수 시그널" : "▼ 매도 시그널"}
@@ -571,7 +621,7 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
             <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
               긴급 제어
             </h2>
-            <KillSwitchButton onAction={onKill} />
+            <KillSwitchButton onSuccess={onKill} fullWidth />
           </section>
 
           <section className="bg-panel border border-border rounded-lg p-4 space-y-2">
