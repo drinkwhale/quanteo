@@ -49,7 +49,7 @@ export default function App() {
                 key={key}
                 type="button"
                 onClick={() => setTab(key)}
-                className={`px-4 py-2 text-sm font-mono transition-colors border-b-2 -mb-px ${
+                className={`px-4 py-2 text-sm font-mono transition-colors border-b-2 -mb-px focus-visible:outline-accent ${
                   tab === key
                     ? "border-accent text-white"
                     : "border-transparent text-muted hover:text-white"

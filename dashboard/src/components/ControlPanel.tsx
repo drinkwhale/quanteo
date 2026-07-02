@@ -1,22 +1,24 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import type { BotStatus } from "../api/types";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { KillSwitchButton } from "./KillSwitchButton";
 
 interface Props {
   status: BotStatus | null;
   onAction: () => void;
 }
 
-type Action = "pause" | "resume" | "kill";
+type ToggleAction = "pause" | "resume";
 
-const CONFIRM_MESSAGE: Record<Action, string> = {
+const CONFIRM_MESSAGE: Record<ToggleAction, string> = {
   pause: "봇을 일시정지하겠습니까?",
   resume: "봇을 재개하겠습니까?",
-  kill: "⚠️ 킬스위치를 활성화하면 모든 신규 주문이 차단됩니다. 계속하겠습니까?",
 };
 
 export function ControlPanel({ status, onAction }: Props) {
-  const [loading, setLoading] = useState<Action | null>(null);
+  const [loading, setLoading] = useState<ToggleAction | null>(null);
+  const [pending, setPending] = useState<ToggleAction | null>(null);
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(
     null,
   );
@@ -24,19 +26,17 @@ export function ControlPanel({ status, onAction }: Props) {
   const isPaused = status?.halt_level === "pause";
   const isKilled = status?.halt_level === "kill";
 
-  async function execute(action: Action) {
-    if (!window.confirm(CONFIRM_MESSAGE[action])) return;
-
+  async function execute(action: ToggleAction) {
+    setPending(null);
     setLoading(action);
     setFeedback(null);
     try {
       const handlers: Record<
-        Action,
+        ToggleAction,
         () => Promise<{ success: boolean; message: string }>
       > = {
         pause: api.pause,
         resume: api.resume,
-        kill: api.kill,
       };
       const res = await handlers[action]();
       setFeedback({ ok: res.success, msg: res.message || "완료" });
@@ -59,32 +59,39 @@ export function ControlPanel({ status, onAction }: Props) {
 
       <div className="flex gap-3 flex-wrap">
         <button
-          onClick={() => execute("pause")}
+          onClick={() => setPending("pause")}
           disabled={isPaused || isKilled || loading !== null}
           className="px-4 py-2 rounded bg-warning/10 text-warning border border-warning/30 text-sm font-mono font-semibold
-                     hover:bg-warning/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                     hover:bg-warning/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
+                     focus-visible:outline-warning"
         >
           {loading === "pause" ? "처리 중..." : "일시정지"}
         </button>
 
         <button
-          onClick={() => execute("resume")}
+          onClick={() => setPending("resume")}
           disabled={(!isPaused && !isKilled) || loading !== null}
           className="px-4 py-2 rounded bg-positive/10 text-positive border border-positive/30 text-sm font-mono font-semibold
-                     hover:bg-positive/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                     hover:bg-positive/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
+                     focus-visible:outline-positive"
         >
           {loading === "resume" ? "처리 중..." : "재개"}
         </button>
 
-        <button
-          onClick={() => execute("kill")}
-          disabled={isKilled || loading !== null}
-          className="px-4 py-2 rounded bg-negative/10 text-negative border border-negative/30 text-sm font-mono font-semibold
-                     hover:bg-negative/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ml-auto"
-        >
-          {loading === "kill" ? "처리 중..." : "킬스위치"}
-        </button>
+        <div className="ml-auto">
+          <KillSwitchButton onSuccess={onAction} disabled={isKilled} />
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending === "pause" ? "일시정지" : "재개"}
+        message={pending ? CONFIRM_MESSAGE[pending] : ""}
+        confirmLabel={pending === "pause" ? "일시정지" : "재개"}
+        confirmVariant="warning"
+        onConfirm={() => pending && execute(pending)}
+        onCancel={() => setPending(null)}
+      />
 
       {feedback && (
         <p

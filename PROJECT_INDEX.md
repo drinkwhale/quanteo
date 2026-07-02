@@ -1,31 +1,32 @@
 # Project Index: quanteo
 
-Generated: 2026-07-01 (Phase 13 완료)
+Generated: 2026-07-02 (Phase 14 완료)
 
 ---
 
 ## 📋 Status
 
-**Phase 1~13 전체 완료** — T001~T083 모든 구현 Task 완료.
+**Phase 1~14 전체 완료** — T001~T092 모든 구현 Task 완료.
 
-| Phase    | Tasks     | 상태    | 내용                                                                                |
-| -------- | --------- | ------- | ----------------------------------------------------------------------------------- |
-| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, Toss 인증 기반                                   |
-| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus                                     |
-| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)                                             |
-| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness                                        |
-| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)                                            |
-| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring                                              |
-| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                           |
-| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                                  |
-| **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트     |
-| **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI        |
-| **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)          |
-| **P11**  | T069–T072 | ✅ 완료 | CCI 지표 + 멀티 타임프레임 방향 판정 엔진                                           |
-| **P12**  | T073–T076 | ✅ 완료 | 박병창 매매기법 전략 플러그인 (매수3원칙·매도2원칙·장중4유형·CCI+BBC 통합)          |
-| **P13**  | T077–T083 | ✅ 완료 | 백테스트 프레임워크 (엔진·메트릭·데이터소스·Walk-Forward·헤드앤숄더·API·대시보드UI) |
+| Phase    | Tasks     | 상태    | 내용                                                                                              |
+| -------- | --------- | ------- | ------------------------------------------------------------------------------------------------- |
+| **P1**   | T001–T005 | ✅ 완료 | 프로젝트 스캐폴드, 설정/환경 로딩, Toss 인증 기반                                                 |
+| **P2**   | T006–T010 | ✅ 완료 | Market Data 수신·정규화, State Store, Event Bus                                                   |
+| **P2.5** | T033–T038 | ✅ 완료 | Notifier 모듈 (Telegram + MockNotifier)                                                           |
+| **P3**   | T011–T014 | ✅ 완료 | Strategy Protocol, Engine, MA Cross, Harness                                                      |
+| **P4**   | T015–T020 | ✅ 완료 | Risk Manager + Order Executor (vps 주문)                                                          |
+| **P5**   | T021–T024 | ✅ 완료 | Control API REST/WS + 전체 모듈 wiring                                                            |
+| **P6**   | T025–T028 | ✅ 완료 | TypeScript 대시보드 (React+Vite+Tailwind)                                                         |
+| **P7**   | T029–T032 | ✅ 완료 | Rate Limit 스로틀러·재시작 복구·prod 게이트·Docker                                                |
+| **P8**   | T039–T048 | ✅ 완료 | BrokerAdapter Protocol + Toss증권 REST 어댑터 + REST 폴링 MarketDataFeed·테스트                   |
+| **P9**   | T049–T056 | ✅ 완료 | Toss 어댑터 운영 완성 (15개 엔드포인트) + Control API 확장 + 대시보드 3탭 UI                      |
+| **P10**  | T057–T068 | ✅ 완료 | 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)                        |
+| **P11**  | T069–T072 | ✅ 완료 | CCI 지표 + 멀티 타임프레임 방향 판정 엔진                                                         |
+| **P12**  | T073–T076 | ✅ 완료 | 박병창 매매기법 전략 플러그인 (매수3원칙·매도2원칙·장중4유형·CCI+BBC 통합)                        |
+| **P13**  | T077–T083 | ✅ 완료 | 백테스트 프레임워크 (엔진·메트릭·데이터소스·Walk-Forward·헤드앤숄더·API·대시보드UI)               |
+| **P14**  | T084–T092 | ✅ 완료 | 프론트엔드 디자인 시스템 정비 (CSS 토큰 공식화·접근성 WCAG 2.1 AA·ConfirmDialog·shadcn/ui 초기화) |
 
-**테스트:** 644 passed (Python) · TypeScript build clean (2026-07-01 기준)
+**테스트:** 644 passed (Python) · TypeScript build clean (2026-07-02 기준, shadcn/ui `radix-nova` 프리셋 적용)
 
 ---
 
