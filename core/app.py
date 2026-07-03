@@ -185,7 +185,9 @@ async def run(
                 _start_trading_tasks(tg, rest_client, bus, risk, store)
 
             if rest_client is not None:
-                position_sync = PositionSyncFeed(rest_client=rest_client, store=store, env=container.env)
+                position_sync = PositionSyncFeed(
+                    rest_client=rest_client, store=store, env=container.env, bus=bus
+                )
                 tg.create_task(position_sync.run(), name="position-sync")
 
             if info_system is not None:

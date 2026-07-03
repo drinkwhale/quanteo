@@ -6,6 +6,8 @@ import pytest
 
 from core.adapters.models import BalanceInfo, BalanceItem
 from core.config.settings import Market
+from core.events.bus import EventBus
+from core.events.types import EventType
 from core.execution.position_sync import PositionSyncFeed
 from core.store.db import StateStore
 
@@ -118,3 +120,56 @@ async def test_sync_once_preserves_opened_at_on_update(store):
         second_opened_at = (await cursor.fetchone())["opened_at"]
 
     assert first_opened_at == second_opened_at
+
+
+def _drain(bus: EventBus) -> list:
+    events = []
+    while not bus._queue.empty():
+        events.append(bus._queue.get_nowait())
+    return events
+
+
+@pytest.mark.asyncio
+async def test_sync_once_publishes_position_updated_for_new_position(store):
+    bus = EventBus()
+    rest = _FakeRestClient([_item("005930", 10, 70000.0)])
+    feed = PositionSyncFeed(rest_client=rest, store=store, env="prod", bus=bus)
+
+    await feed.sync_once()
+
+    events = _drain(bus)
+    assert len(events) == 1
+    assert events[0].type == EventType.POSITION_UPDATED
+    assert events[0].payload.symbol == "005930"
+    assert events[0].payload.change == "opened"
+
+
+@pytest.mark.asyncio
+async def test_sync_once_publishes_nothing_when_unchanged(store):
+    bus = EventBus()
+    rest = _FakeRestClient([_item("005930", 10, 70000.0)])
+    feed = PositionSyncFeed(rest_client=rest, store=store, env="prod", bus=bus)
+    await feed.sync_once()
+    _drain(bus)  # 최초 "opened" 이벤트 소진
+
+    # 동일한 잔고로 재조회 — 변화 없음
+    await feed.sync_once()
+
+    assert _drain(bus) == []
+
+
+@pytest.mark.asyncio
+async def test_sync_once_publishes_closed_event_for_liquidated_position(store):
+    bus = EventBus()
+    rest = _FakeRestClient([_item("005930", 10, 70000.0)])
+    feed = PositionSyncFeed(rest_client=rest, store=store, env="prod", bus=bus)
+    await feed.sync_once()
+    _drain(bus)
+
+    feed._rest = _FakeRestClient([])
+    await feed.sync_once()
+
+    events = _drain(bus)
+    assert len(events) == 1
+    assert events[0].payload.change == "closed"
+    assert events[0].payload.qty == 0

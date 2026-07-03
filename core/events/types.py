@@ -27,6 +27,9 @@ class EventType(StrEnum):
     ORDER_CANCELLED = "order_cancelled"
     ORDER_REJECTED = "order_rejected"
 
+    # 포지션
+    POSITION_UPDATED = "position_updated"
+
     # 리스크
     RISK_BREACH = "risk_breach"
     KILL_SWITCH = "kill_switch"
