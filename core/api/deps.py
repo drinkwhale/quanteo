@@ -9,11 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
-from typing import TYPE_CHECKING
-
-from fastapi import Depends, Request
+from fastapi import Depends
+from starlette.requests import HTTPConnection
 
 from core.events.bus import EventBus
 from core.risk.manager import RiskManager
@@ -40,8 +39,13 @@ class AppContainer:
     broker: "TossRestClient | None" = None
 
 
-def _get_container(request: Request) -> AppContainer:
-    return request.app.state.container  # type: ignore[no-any-return]
+def _get_container(conn: HTTPConnection) -> AppContainer:
+    """HTTP Request와 WebSocket 양쪽에서 재사용 가능한 컨테이너 조회.
+
+    Request/WebSocket은 둘 다 HTTPConnection을 상속하므로, 이 타입으로
+    받아야 /stream(WebSocket) 라우트에서도 동일 의존성을 쓸 수 있다.
+    """
+    return conn.app.state.container  # type: ignore[no-any-return]
 
 
 ContainerDep = Annotated[AppContainer, Depends(_get_container)]
