@@ -17,6 +17,7 @@ import {
   pollUntilDone,
 } from "../api/backtest";
 import { KillSwitchButton } from "../components/KillSwitchButton";
+import { Panel } from "../components/Panel";
 import type { PositionItem } from "../api/types";
 import type { LogEntry } from "../hooks/useStream";
 
@@ -46,56 +47,57 @@ interface SignalToast {
 
 function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
   return (
-    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-        CCI 현황
-      </h2>
-      <div className="grid grid-cols-2">
-        {timeframes.map((tf, i) => {
-          const isLastRow =
-            i >= timeframes.length - (timeframes.length % 2 || 2);
-          return (
-            <div
-              key={tf.label}
-              className={`py-2 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
-                isLastRow ? "" : "border-b border-border"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-muted">{tf.label}</span>
-                {tf.cross === "golden" && (
-                  <span className="text-[10px] font-mono text-positive">
-                    GC
-                  </span>
-                )}
-                {tf.cross === "dead" && (
-                  <span className="text-[10px] font-mono text-negative">
-                    DC
-                  </span>
-                )}
-              </div>
+    <Panel title="CCI 현황">
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-2">
+          {timeframes.map((tf, i) => {
+            const isLastRow =
+              i >= timeframes.length - (timeframes.length % 2 || 2);
+            return (
               <div
-                className={`text-sm font-mono font-bold ${
-                  tf.signal === "buy"
-                    ? "text-positive"
-                    : tf.signal === "sell"
-                      ? "text-negative"
-                      : "text-muted"
+                key={tf.label}
+                className={`py-2 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
+                  isLastRow ? "" : "border-b border-border"
                 }`}
               >
-                {tf.value !== null ? tf.value.toFixed(1) : "—"}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono text-muted">
+                    {tf.label}
+                  </span>
+                  {tf.cross === "golden" && (
+                    <span className="text-[10px] font-mono text-positive">
+                      GC
+                    </span>
+                  )}
+                  {tf.cross === "dead" && (
+                    <span className="text-[10px] font-mono text-negative">
+                      DC
+                    </span>
+                  )}
+                </div>
+                <div
+                  className={`text-sm font-mono font-bold ${
+                    tf.signal === "buy"
+                      ? "text-positive"
+                      : tf.signal === "sell"
+                        ? "text-negative"
+                        : "text-muted"
+                  }`}
+                >
+                  {tf.value !== null ? tf.value.toFixed(1) : "—"}
+                </div>
+                <div className="text-[10px] font-mono text-muted capitalize">
+                  {tf.signal}
+                </div>
               </div>
-              <div className="text-[10px] font-mono text-muted capitalize">
-                {tf.signal}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted font-mono">
+          * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
+        </p>
       </div>
-      <p className="text-[10px] text-muted font-mono">
-        * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
-      </p>
-    </section>
+    </Panel>
   );
 }
 
@@ -156,63 +158,64 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
     score !== null ? Math.max(0, Math.min(100, (score / 8) * 100)) : 0;
 
   return (
-    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-        신뢰도 스코어
-      </h2>
-
-      <div className="flex items-end gap-2 flex-wrap">
-        <span className={`text-3xl font-mono font-bold ${color}`}>
-          {score !== null ? score : "—"}
-        </span>
-        <span className="text-muted font-mono text-sm mb-1">/ 8</span>
-        {status && (
-          <span
-            className={`ml-auto text-[10px] font-mono font-semibold px-2 py-1 rounded border ${status.badge}`}
-          >
-            {status.label}
+    <Panel title="신뢰도 스코어">
+      <div className="p-4 space-y-3">
+        <div className="flex items-end gap-2 flex-wrap">
+          <span className={`text-3xl font-mono font-bold ${color}`}>
+            {score !== null ? score : "—"}
           </span>
+          <span className="text-muted font-mono text-sm mb-1">/ 8</span>
+          {status && (
+            <span
+              className={`ml-auto text-[10px] font-mono font-semibold px-2 py-1 rounded border ${status.badge}`}
+            >
+              {status.label}
+            </span>
+          )}
+        </div>
+
+        <div
+          role="progressbar"
+          aria-valuenow={score ?? 0}
+          aria-valuemin={0}
+          aria-valuemax={8}
+          aria-label="신뢰도 스코어"
+          className="w-full h-2 bg-surface rounded-full overflow-hidden"
+        >
+          <div
+            className={`h-full rounded-full transition-all ${barColor}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+
+        {Object.keys(breakdown).length > 0 && (
+          <ul className="space-y-1">
+            {Object.entries(breakdown).map(([key, passed]) => (
+              <li
+                key={key}
+                className="flex items-center gap-2 text-xs font-mono"
+              >
+                <span
+                  aria-hidden="true"
+                  className={passed ? "text-positive" : "text-muted"}
+                >
+                  {passed ? "✓" : "○"}
+                </span>
+                <span className="sr-only">{passed ? "통과" : "미통과"}</span>
+                <span className={passed ? "text-white" : "text-muted"}>
+                  {key}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {Object.keys(breakdown).length === 0 && (
+          <p className="text-[10px] text-muted font-mono">
+            * 스코어 데이터 대기 중
+          </p>
         )}
       </div>
-
-      <div
-        role="progressbar"
-        aria-valuenow={score ?? 0}
-        aria-valuemin={0}
-        aria-valuemax={8}
-        aria-label="신뢰도 스코어"
-        className="w-full h-2 bg-surface rounded-full overflow-hidden"
-      >
-        <div
-          className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      {Object.keys(breakdown).length > 0 && (
-        <ul className="space-y-1">
-          {Object.entries(breakdown).map(([key, passed]) => (
-            <li key={key} className="flex items-center gap-2 text-xs font-mono">
-              <span
-                aria-hidden="true"
-                className={passed ? "text-positive" : "text-muted"}
-              >
-                {passed ? "✓" : "○"}
-              </span>
-              <span className="sr-only">{passed ? "통과" : "미통과"}</span>
-              <span className={passed ? "text-white" : "text-muted"}>
-                {key}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {Object.keys(breakdown).length === 0 && (
-        <p className="text-[10px] text-muted font-mono">
-          * 스코어 데이터 대기 중
-        </p>
-      )}
-    </section>
+    </Panel>
   );
 }
 
@@ -230,54 +233,50 @@ function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
 
   if (positions.length === 0) {
     return (
-      <section className="bg-panel border border-border rounded-lg p-4">
-        <h2 className="text-xs font-mono font-semibold text-white tracking-wider mb-3">
-          포지션 현황
-        </h2>
-        <p className="text-xs text-muted font-mono">보유 포지션 없음</p>
-      </section>
+      <Panel title="포지션 현황">
+        <p className="p-4 text-xs text-muted font-mono">보유 포지션 없음</p>
+      </Panel>
     );
   }
 
   return (
-    <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-        포지션 현황
-      </h2>
-      {positions.slice(0, 5).map((pos) => (
-        <div key={pos.symbol} className="space-y-1">
-          <div className="flex justify-between text-xs font-mono">
-            <span className="text-white">{pos.symbol}</span>
-            <span className="text-muted">{pos.qty.toLocaleString()}주</span>
+    <Panel title="포지션 현황">
+      <div className="p-4 space-y-3">
+        {positions.slice(0, 5).map((pos) => (
+          <div key={pos.symbol} className="space-y-1">
+            <div className="flex justify-between text-xs font-mono">
+              <span className="text-white">{pos.symbol}</span>
+              <span className="text-muted">{pos.qty.toLocaleString()}주</span>
+            </div>
+            <div className="flex gap-0.5 h-2">
+              {STEPS.map((step, i) => (
+                <div
+                  key={step.label}
+                  className="h-full rounded-sm"
+                  style={{
+                    width: `${step.pct}%`,
+                    backgroundColor:
+                      i === 0
+                        ? "rgb(34 197 94 / 0.8)"
+                        : i === 1
+                          ? "rgb(34 197 94 / 0.5)"
+                          : "rgb(34 197 94 / 0.25)",
+                  }}
+                  title={`${step.label} ${step.pct}%`}
+                />
+              ))}
+            </div>
+            <div className="flex gap-2 text-[10px] font-mono text-muted">
+              {STEPS.map((s) => (
+                <span key={s.label}>
+                  {s.label} {s.pct}%
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-0.5 h-2">
-            {STEPS.map((step, i) => (
-              <div
-                key={step.label}
-                className="h-full rounded-sm"
-                style={{
-                  width: `${step.pct}%`,
-                  backgroundColor:
-                    i === 0
-                      ? "rgb(34 197 94 / 0.8)"
-                      : i === 1
-                        ? "rgb(34 197 94 / 0.5)"
-                        : "rgb(34 197 94 / 0.25)",
-                }}
-                title={`${step.label} ${step.pct}%`}
-              />
-            ))}
-          </div>
-          <div className="flex gap-2 text-[10px] font-mono text-muted">
-            {STEPS.map((s) => (
-              <span key={s.label}>
-                {s.label} {s.pct}%
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-    </section>
+        ))}
+      </div>
+    </Panel>
   );
 }
 
@@ -344,121 +343,119 @@ function BacktestPanel() {
   }
 
   return (
-    <section className="bg-panel border border-border rounded-lg p-4 space-y-4">
-      <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-        백테스트
-      </h2>
+    <Panel title="백테스트">
+      <div className="p-4 space-y-4">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-1">
+            <label className="text-[10px] font-mono text-muted">종목코드</label>
+            <input
+              type="text"
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value)}
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+              placeholder="005930"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-mono text-muted">시작일</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-mono text-muted">종료일</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+            />
+          </div>
+        </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="space-y-1">
-          <label className="text-[10px] font-mono text-muted">종목코드</label>
-          <input
-            type="text"
-            value={symbol}
-            onChange={(e) => setSymbol(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
-            placeholder="005930"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-mono text-muted">시작일</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] font-mono text-muted">종료일</label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
-          />
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={run}
-        disabled={running || !symbol}
-        className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-mono font-semibold
+        <button
+          type="button"
+          onClick={run}
+          disabled={running || !symbol}
+          className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-mono font-semibold
                    hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {running ? (statusMsg ?? "실행 중...") : "백테스트 실행"}
-      </button>
+        >
+          {running ? (statusMsg ?? "실행 중...") : "백테스트 실행"}
+        </button>
 
-      {error && (
-        <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
-          {error}
-        </p>
-      )}
+        {error && (
+          <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
+            {error}
+          </p>
+        )}
 
-      {result && (
-        <dl className="text-xs font-mono">
-          {(
-            [
-              {
-                label: "승률 %",
-                value: `${(result.win_rate * 100).toFixed(1)}%`,
-                tone: "neutral",
-              },
-              {
-                label: "MDD %",
-                value: `${(result.mdd * 100).toFixed(1)}%`,
-                tone: "negative",
-              },
-              {
-                label: "샤프 지수",
-                value: result.sharpe_ratio.toFixed(2),
-                tone: result.sharpe_ratio >= 0 ? "positive" : "negative",
-              },
-              {
-                label: "연환산 수익률 %",
-                value: `${(result.annualized_return * 100).toFixed(1)}%`,
-                tone: result.annualized_return >= 0 ? "positive" : "negative",
-              },
-              {
-                label: "손익비",
-                value: result.profit_loss_ratio.toFixed(2),
-                tone: "neutral",
-              },
-              {
-                label: "총 거래수",
-                value: String(result.total_trades),
-                tone: "neutral",
-              },
-            ] as {
-              label: string;
-              value: string;
-              tone: "positive" | "negative" | "neutral";
-            }[]
-          ).map(({ label, value, tone }, i, arr) => (
-            <div
-              key={label}
-              className={`flex items-center justify-between py-1.5 ${
-                i === arr.length - 1 ? "" : "border-b border-border"
-              }`}
-            >
-              <dt className="text-muted">{label}</dt>
-              <dd
-                className={`font-bold ${
-                  tone === "positive"
-                    ? "text-positive"
-                    : tone === "negative"
-                      ? "text-negative"
-                      : "text-white"
+        {result && (
+          <dl className="text-xs font-mono">
+            {(
+              [
+                {
+                  label: "승률 %",
+                  value: `${(result.win_rate * 100).toFixed(1)}%`,
+                  tone: "neutral",
+                },
+                {
+                  label: "MDD %",
+                  value: `${(result.mdd * 100).toFixed(1)}%`,
+                  tone: "negative",
+                },
+                {
+                  label: "샤프 지수",
+                  value: result.sharpe_ratio.toFixed(2),
+                  tone: result.sharpe_ratio >= 0 ? "positive" : "negative",
+                },
+                {
+                  label: "연환산 수익률 %",
+                  value: `${(result.annualized_return * 100).toFixed(1)}%`,
+                  tone: result.annualized_return >= 0 ? "positive" : "negative",
+                },
+                {
+                  label: "손익비",
+                  value: result.profit_loss_ratio.toFixed(2),
+                  tone: "neutral",
+                },
+                {
+                  label: "총 거래수",
+                  value: String(result.total_trades),
+                  tone: "neutral",
+                },
+              ] as {
+                label: string;
+                value: string;
+                tone: "positive" | "negative" | "neutral";
+              }[]
+            ).map(({ label, value, tone }, i, arr) => (
+              <div
+                key={label}
+                className={`flex items-center justify-between py-1.5 ${
+                  i === arr.length - 1 ? "" : "border-b border-border"
                 }`}
               >
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </section>
+                <dt className="text-muted">{label}</dt>
+                <dd
+                  className={`font-bold ${
+                    tone === "positive"
+                      ? "text-positive"
+                      : tone === "negative"
+                        ? "text-negative"
+                        : "text-white"
+                  }`}
+                >
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -614,47 +611,45 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
 
         {/* 오른쪽: 킬스위치 + 최근 시그널 */}
         <div className="space-y-4">
-          <section className="bg-panel border border-border rounded-lg p-4 space-y-3">
-            <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-              긴급 제어
-            </h2>
-            <KillSwitchButton onSuccess={onKill} fullWidth />
-          </section>
+          <Panel title="긴급 제어">
+            <div className="p-4">
+              <KillSwitchButton onSuccess={onKill} fullWidth />
+            </div>
+          </Panel>
 
-          <section className="bg-panel border border-border rounded-lg p-4 space-y-2">
-            <h2 className="text-xs font-mono font-semibold text-white tracking-wider">
-              최근 시그널
-            </h2>
-            {logs.filter((l) => l.event_type === "signal").length === 0 ? (
-              <p className="text-xs text-muted font-mono">대기 중...</p>
-            ) : (
-              logs
-                .filter((l) => l.event_type === "signal")
-                .slice(0, 8)
-                .map((l) => {
-                  const p = l.payload as {
-                    side?: string;
-                    symbol?: string;
-                    price?: number;
-                  } | null;
-                  return (
-                    <div
-                      key={l._key}
-                      className={`flex items-center justify-between text-xs font-mono px-2 py-1 rounded ${
-                        p?.side === "BUY"
-                          ? "text-positive bg-positive/5"
-                          : "text-negative bg-negative/5"
-                      }`}
-                    >
-                      <span>
-                        {p?.side === "BUY" ? "▲" : "▼"} {p?.symbol}
-                      </span>
-                      <span>{p?.price?.toLocaleString()}</span>
-                    </div>
-                  );
-                })
-            )}
-          </section>
+          <Panel title="최근 시그널">
+            <div className="p-4 space-y-2">
+              {logs.filter((l) => l.event_type === "signal").length === 0 ? (
+                <p className="text-xs text-muted font-mono">대기 중...</p>
+              ) : (
+                logs
+                  .filter((l) => l.event_type === "signal")
+                  .slice(0, 8)
+                  .map((l) => {
+                    const p = l.payload as {
+                      side?: string;
+                      symbol?: string;
+                      price?: number;
+                    } | null;
+                    return (
+                      <div
+                        key={l._key}
+                        className={`flex items-center justify-between text-xs font-mono px-2 py-1 rounded ${
+                          p?.side === "BUY"
+                            ? "text-positive bg-positive/5"
+                            : "text-negative bg-negative/5"
+                        }`}
+                      >
+                        <span>
+                          {p?.side === "BUY" ? "▲" : "▼"} {p?.symbol}
+                        </span>
+                        <span>{p?.price?.toLocaleString()}</span>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </Panel>
         </div>
       </div>
     </>

@@ -16,6 +16,7 @@ const CONFIRM_MESSAGE: Record<ToggleAction, string> = {
   resume: "봇을 재개하겠습니까?",
 };
 
+/** Panel 안에 들어가는 본문만 렌더링 — 헤더는 상위 Panel이 담당 */
 export function ControlPanel({ status, onAction }: Props) {
   const [loading, setLoading] = useState<ToggleAction | null>(null);
   const [pending, setPending] = useState<ToggleAction | null>(null);
@@ -52,11 +53,7 @@ export function ControlPanel({ status, onAction }: Props) {
   }
 
   return (
-    <section className="bg-panel border border-border rounded-lg p-4 space-y-4">
-      <h2 className="text-sm font-semibold text-white font-mono tracking-wider">
-        봇 제어
-      </h2>
-
+    <div className="p-4 space-y-4">
       <div className="flex gap-3 flex-wrap">
         <button
           onClick={() => setPending("pause")}
@@ -110,6 +107,6 @@ export function ControlPanel({ status, onAction }: Props) {
           ⚠️ 실전투자 환경 — 주문이 실제 계좌에 영향을 미칩니다
         </p>
       )}
-    </section>
+    </div>
   );
 }

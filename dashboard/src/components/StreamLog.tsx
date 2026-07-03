@@ -19,52 +19,50 @@ function colorFor(eventType: string): string {
 
 interface Props {
   logs: LogEntry[];
-  connected: boolean;
 }
 
-export function StreamLog({ logs, connected }: Props) {
+/** Panel 안에 들어가는 본문만 렌더링 — 헤더/연결상태 배지는 상위 Panel(headerExtra)이 담당 */
+export function StreamLog({ logs }: Props) {
   return (
-    <section className="bg-panel border border-border rounded-lg overflow-hidden flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
-        <h2 className="text-sm font-semibold text-white font-mono tracking-wider">
-          실시간 이벤트
-        </h2>
-        <span className="flex items-center gap-1.5 text-xs font-mono text-muted">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-positive animate-pulse" : "bg-negative"}`}
-          />
-          {connected ? "연결됨" : "재연결 중..."}
-        </span>
-      </div>
-
-      <div className="overflow-y-auto max-h-80 p-2 space-y-0.5">
-        {logs.length === 0 ? (
-          <p className="px-2 py-4 text-muted text-xs font-mono text-center">
-            이벤트 대기 중...
-          </p>
-        ) : (
-          logs.map((log) => (
-            <div
-              key={log._key}
-              className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-mono"
+    <div className="overflow-y-auto max-h-80 p-2 space-y-0.5">
+      {logs.length === 0 ? (
+        <p className="px-2 py-4 text-muted text-xs font-mono text-center">
+          이벤트 대기 중...
+        </p>
+      ) : (
+        logs.map((log) => (
+          <div
+            key={log._key}
+            className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-mono"
+          >
+            <span className="text-muted flex-shrink-0 w-20 truncate">
+              {new Date(log.timestamp).toLocaleTimeString("ko-KR")}
+            </span>
+            <span
+              className={`flex-shrink-0 w-28 truncate font-semibold ${colorFor(log.event_type)}`}
             >
-              <span className="text-muted flex-shrink-0 w-20 truncate">
-                {new Date(log.timestamp).toLocaleTimeString("ko-KR")}
-              </span>
-              <span
-                className={`flex-shrink-0 w-28 truncate font-semibold ${colorFor(log.event_type)}`}
-              >
-                {log.event_type}
-              </span>
-              <span className="text-muted truncate">
-                {typeof log.payload === "object"
-                  ? JSON.stringify(log.payload)
-                  : String(log.payload)}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
+              {log.event_type}
+            </span>
+            <span className="text-muted truncate">
+              {typeof log.payload === "object"
+                ? JSON.stringify(log.payload)
+                : String(log.payload)}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** StreamLog Panel 헤더에 붙는 연결상태 배지 (headerExtra로 전달) */
+export function StreamConnectionBadge({ connected }: { connected: boolean }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-mono text-muted">
+      <span
+        className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-positive animate-pulse" : "bg-negative"}`}
+      />
+      {connected ? "연결됨" : "재연결 중..."}
+    </span>
   );
 }

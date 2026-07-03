@@ -1,33 +1,15 @@
+import { fmtPrice } from "../lib/format";
 import type { PositionItem } from "../api/types";
-
-function fmtPrice(n: number, market: string): string {
-  if (market === "overseas")
-    return (
-      "$" +
-      n.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    );
-  return n.toLocaleString("ko-KR") + "원";
-}
 
 interface Props {
   positions: PositionItem[];
-  total: number;
   error?: string | null;
 }
 
-export function PositionsTable({ positions, total, error }: Props) {
+/** Panel 안에 들어가는 본문만 렌더링 — 헤더/카운트는 상위 Panel이 담당 */
+export function PositionsTable({ positions, error }: Props) {
   return (
-    <section className="bg-panel border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-white font-mono tracking-wider">
-          포지션
-        </h2>
-        <span className="text-xs text-muted font-mono">{total}건</span>
-      </div>
-
+    <>
       {error && (
         <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
           {error}
@@ -79,6 +61,6 @@ export function PositionsTable({ positions, total, error }: Props) {
           </table>
         </div>
       )}
-    </section>
+    </>
   );
 }

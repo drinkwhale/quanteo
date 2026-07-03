@@ -2,20 +2,13 @@ import type { FillItem } from "../api/types";
 
 interface Props {
   fills: FillItem[];
-  total: number;
   error?: string | null;
 }
 
-export function FillsTable({ fills, total, error }: Props) {
+/** Panel 안에 들어가는 본문만 렌더링 — 헤더/카운트는 상위 Panel이 담당 */
+export function FillsTable({ fills, error }: Props) {
   return (
-    <section className="bg-panel border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-white font-mono tracking-wider">
-          체결내역
-        </h2>
-        <span className="text-xs text-muted font-mono">{total}건</span>
-      </div>
-
+    <>
       {error && (
         <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
           {error}
@@ -75,6 +68,6 @@ export function FillsTable({ fills, total, error }: Props) {
           </table>
         </div>
       )}
-    </section>
+    </>
   );
 }
