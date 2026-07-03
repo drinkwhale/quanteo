@@ -46,12 +46,17 @@ class BotStatus(BaseModel):
 
 
 class PositionItem(BaseModel):
-    """보유 포지션 1개."""
+    """보유 포지션 1개.
+
+    qty는 Decimal — 해외주식(미국)은 Toss에서 소수점 단위 매매(fractional
+    investing)를 지원해 정수가 아닐 수 있다. (봇이 직접 내는 주문 수량인
+    OrderItem.qty는 항상 정수라 int를 유지한다.)
+    """
 
     symbol: str
     market: str
     env: str
-    qty: int
+    qty: Decimal
     avg_price: Decimal
     book_value: Decimal
     opened_at: str

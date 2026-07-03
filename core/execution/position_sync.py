@@ -22,7 +22,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from core.adapters.models import BalanceInfo
 from core.events.bus import EventBus
@@ -30,6 +30,12 @@ from core.events.types import Event, EventType
 from core.store.db import StateStore
 
 logger = logging.getLogger(__name__)
+
+# 이 횟수만큼 연속으로 동기화가 실패하면 그냥 조용히 재시도만 하지 않고
+# EventType.ERROR를 발행해 대시보드에 노출한다 (silent staleness 방지).
+_CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 3
+
+PositionChange = Literal["opened", "updated", "closed"]
 
 
 class _BalanceRestClient(Protocol):
@@ -43,10 +49,10 @@ class PositionUpdate:
     symbol: str
     market: str
     env: str
-    qty: int
+    qty: float
     avg_price: float
     book_value: float
-    change: str  # "opened" | "updated" | "closed"
+    change: PositionChange
 
 
 class PositionSyncFeed:
@@ -75,6 +81,11 @@ class PositionSyncFeed:
         self._poll_interval = poll_interval
         self._bus = bus
         self._stop_event = asyncio.Event()
+        # sync_once()가 백그라운드 루프와 (미래의) 수동 새로고침 API 양쪽에서
+        # 동시에 호출돼도 SELECT(이전 상태 조회) → INSERT/UPDATE 사이에
+        # 경쟁 상태가 생기지 않도록 직렬화한다.
+        self._sync_lock = asyncio.Lock()
+        self._consecutive_failures = 0
 
     async def run(self) -> None:
         """동기화 루프 실행 — stop()이 호출될 때까지 지속."""
@@ -84,8 +95,26 @@ class PositionSyncFeed:
         while not self._stop_event.is_set():
             try:
                 await self.sync_once()
+                self._consecutive_failures = 0
             except Exception as exc:
-                logger.warning("포지션 동기화 실패 (다음 주기에 재시도): %s", exc)
+                self._consecutive_failures += 1
+                logger.warning(
+                    "포지션 동기화 실패 (%d회 연속, 다음 주기에 재시도): %s",
+                    self._consecutive_failures,
+                    exc,
+                    exc_info=True,
+                )
+                if self._consecutive_failures == _CONSECUTIVE_FAILURE_ALERT_THRESHOLD and self._bus is not None:
+                    await self._bus.publish(
+                        Event(
+                            type=EventType.ERROR,
+                            payload={
+                                "source": "position-sync",
+                                "message": f"포지션 동기화가 {self._consecutive_failures}회 연속 실패했습니다: {exc}",
+                            },
+                            source="position-sync",
+                        )
+                    )
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)
                 break  # stop_event 수신 시 종료
@@ -102,7 +131,12 @@ class PositionSyncFeed:
         """실계좌 잔고를 1회 조회해 로컬 positions 테이블에 반영한다.
 
         변경(신규/수량·평균단가 변동/청산)이 감지되면 POSITION_UPDATED를 발행한다.
+        동시 호출 시에도 안전하도록 내부적으로 직렬화된다 (self._sync_lock).
         """
+        async with self._sync_lock:
+            await self._sync_once_locked()
+
+    async def _sync_once_locked(self) -> None:
         balance = await self._rest.get_balance()
         now = datetime.now(UTC).isoformat()
         live_symbols = {item.symbol for item in balance.items}
@@ -114,6 +148,7 @@ class PositionSyncFeed:
         before = {row["symbol"]: (row["market"], row["qty"], row["avg_price"]) for row in before_rows}
 
         changes: list[PositionUpdate] = []
+        change_type: PositionChange
 
         for item in balance.items:
             await self._store.conn.execute(
@@ -131,9 +166,9 @@ class PositionSyncFeed:
 
             prev = before.get(item.symbol)
             if prev is None:
-                change = "opened"
+                change_type = "opened"
             elif prev[1] != item.qty or prev[2] != item.avg_price:
-                change = "updated"
+                change_type = "updated"
             else:
                 continue  # 변화 없음 — 이벤트 발행 안 함
             changes.append(
@@ -144,7 +179,7 @@ class PositionSyncFeed:
                     qty=item.qty,
                     avg_price=item.avg_price,
                     book_value=item.qty * item.avg_price,
-                    change=change,
+                    change=change_type,
                 )
             )
 
@@ -157,7 +192,7 @@ class PositionSyncFeed:
             )
             changes.append(
                 PositionUpdate(
-                    symbol=symbol, market=market, env=self._env, qty=0, avg_price=0.0, book_value=0.0, change="closed"
+                    symbol=symbol, market=market, env=self._env, qty=0.0, avg_price=0.0, book_value=0.0, change="closed"
                 )
             )
 

@@ -65,6 +65,34 @@ def test_positions_with_data(client_with_position):
     assert data["total"] == 1
     item = data["items"][0]
     assert item["symbol"] == "005930"
-    assert item["qty"] == 10
+    assert float(item["qty"]) == 10
     assert float(item["avg_price"]) == 75000.0
     assert float(item["book_value"]) == 750000.0
+
+
+@pytest.fixture
+async def client_with_fractional_position(tmp_path):
+    """해외주식은 Toss 소수점 매매(fractional investing)로 정수가 아닌 수량을 가질 수 있다."""
+    store = StateStore(db_path=str(tmp_path / "test.db"))
+    await store.open()
+    now = datetime.now(UTC).isoformat()
+    await store.conn.execute(
+        "INSERT INTO positions (symbol, market, env, qty, avg_price, opened_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("AAPL", "overseas", "vps", 10.5, 155.3, now, now),
+    )
+    await store.conn.commit()
+
+    bus = EventBus()
+    risk = RiskManager(bus=bus)
+    container = AppContainer(store=store, risk=risk, bus=bus, env="vps", market="overseas")
+    client = TestClient(create_app(container))
+    yield client
+    await store.close()
+
+
+def test_positions_with_fractional_qty(client_with_fractional_position):
+    res = client_with_fractional_position.get("/positions")
+    assert res.status_code == 200
+    item = res.json()["items"][0]
+    assert float(item["qty"]) == 10.5

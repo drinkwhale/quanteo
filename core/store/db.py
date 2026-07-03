@@ -29,12 +29,15 @@ _DEFAULT_DB_PATH = Path.home() / "quanteo" / "data" / "quanteo.db"
 
 @dataclass(frozen=True)
 class PositionSnapshot:
-    """재시작 복구용 포지션 스냅샷."""
+    """재시작 복구용 포지션 스냅샷.
+
+    qty는 float — 해외주식은 소수점 단위 보유(fractional investing)가 가능하다.
+    """
 
     symbol: str
     market: str
     env: str
-    qty: int
+    qty: float
     avg_price: float
     opened_at: str
 

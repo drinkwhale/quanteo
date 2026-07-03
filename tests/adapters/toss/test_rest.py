@@ -190,8 +190,8 @@ async def test_get_balance_returns_balance_info():
     assert balance.items[0].eval_amount == 750000.0
     assert balance.items[0].profit_loss == 50000.0
     assert balance.items[0].market == Market.DOMESTIC
-    assert balance.total_eval_amount == 750000.0
-    assert balance.total_profit_loss == 50000.0
+    assert balance.total_eval_amount_krw == 750000.0
+    assert balance.total_profit_loss_krw == 50000.0
     # holdings 응답에는 예수금이 없다 — 별도 API 연동 전까지 0 고정
     assert balance.deposit == 0.0
 
@@ -256,6 +256,80 @@ async def test_get_balance_maps_us_market_country_to_overseas():
 
     balance = await client.get_balance()
     assert balance.items[0].market == Market.OVERSEAS
+
+
+@pytest.mark.asyncio
+async def test_get_balance_supports_fractional_quantity_for_overseas_stock():
+    """미국 주식은 Toss 소수점 매매(fractional investing)로 정수가 아닌 수량이 나올 수 있다."""
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": [{"accountSeq": 1}]
+    }))
+    client = _make_client(http)
+    await client.initialize()
+
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": {
+            "totalPurchaseAmount": {"krw": "0", "usd": "155.3"},
+            "marketValue": {"amount": {"krw": "0", "usd": "178.5"}, "amountAfterCost": {"krw": "0", "usd": "178.5"}},
+            "profitLoss": {
+                "amount": {"krw": "0", "usd": "23.2"},
+                "amountAfterCost": {"krw": "0", "usd": "23.2"},
+                "rate": "0.1494",
+                "rateAfterCost": "0.1494",
+            },
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": "0"}, "rate": "0"},
+            "items": [
+                _holding_item("AAPL", "Apple", "10.5", "155.3", "178.5", "1785", "232", "0.1494", country="US"),
+            ],
+        }
+    }))
+
+    # 이전엔 int(value)로 파싱해서 "10.5" 같은 소수점 수량에 RuntimeError가 났다.
+    balance = await client.get_balance()
+    assert balance.items[0].qty == 10.5
+
+
+@pytest.mark.asyncio
+async def test_get_balance_defaults_to_zero_when_nested_fields_missing():
+    """marketValue/profitLoss 내부 필드(amount/rate)가 없어도 크래시 없이 0으로 처리한다."""
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": [{"accountSeq": 1}]
+    }))
+    client = _make_client(http)
+    await client.initialize()
+
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": {
+            # top-level marketValue/profitLoss 자체가 스펙과 다르게 통째로 비어있음
+            "totalPurchaseAmount": {"krw": "0", "usd": None},
+            "marketValue": {},
+            "profitLoss": {},
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": None}, "rate": "0"},
+            "items": [
+                {
+                    "symbol": "005930",
+                    "name": "삼성전자",
+                    "marketCountry": "KR",
+                    "currency": "KRW",
+                    "quantity": "10",
+                    "lastPrice": "75000",
+                    "averagePurchasePrice": "70000",
+                    # marketValue/profitLoss 필드 자체가 응답에서 통째로 빠짐
+                },
+            ],
+        }
+    }))
+
+    balance = await client.get_balance()
+
+    assert len(balance.items) == 1
+    assert balance.items[0].eval_amount == 0.0
+    assert balance.items[0].profit_loss == 0.0
+    assert balance.items[0].profit_loss_rate == 0.0
+    assert balance.total_eval_amount_krw == 0.0
+    assert balance.total_profit_loss_krw == 0.0
 
 
 # ---------------------------------------------------------------------------

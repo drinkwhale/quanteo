@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS positions (
     symbol      TEXT    NOT NULL,
     market      TEXT    NOT NULL CHECK(market IN ('domestic', 'overseas')),
     env         TEXT    NOT NULL DEFAULT 'prod',
-    qty         INTEGER NOT NULL DEFAULT 0,
+    -- REAL: 해외주식(미국)은 Toss에서 소수점 단위 매매(fractional investing)를
+    -- 지원해 정수가 아닐 수 있다. SQLite는 컬럼 타입과 무관하게 REAL 값을
+    -- 그대로 저장하므로(type affinity), 기존 DB에도 안전하게 적용된다.
+    qty         REAL    NOT NULL DEFAULT 0.0,
     avg_price   REAL    NOT NULL DEFAULT 0.0,
     opened_at   TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL,

@@ -220,7 +220,7 @@ async def _log_persisted_state(store: StateStore) -> None:
             logger.info("♻️  재시작 복구 — 오픈 포지션 %d개:", len(positions))
             for pos in positions:
                 logger.info(
-                    "  · %s %s | qty=%d avg_price=%.2f",
+                    "  · %s %s | qty=%s avg_price=%.2f",
                     pos.market,
                     pos.symbol,
                     pos.qty,
