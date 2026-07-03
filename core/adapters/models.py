@@ -40,6 +40,7 @@ class BalanceItem:
     eval_amount: float
     profit_loss: float
     profit_loss_rate: float
+    market: Market
 
 
 @dataclass

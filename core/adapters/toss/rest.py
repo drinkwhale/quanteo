@@ -264,6 +264,12 @@ class TossRestClient:
 
         GET /api/v1/holdings (X-Tossinvest-Account 헤더 필요)
 
+        실제 응답 스펙(specs/tossinvest/asset.json #HoldingsOverview)은
+        marketValue/profitLoss가 통화별 중첩 객체이고, 요약 필드는 "summary"로
+        감싸져 있지 않고 top-level(totalPurchaseAmount/marketValue/profitLoss)에
+        바로 존재한다. total_* 필드는 KRW 기준 합산만 반영한다 (USD 보유분은
+        원화 환산 없이는 단순 합산할 수 없어 items 레벨에서 종목별로 확인한다).
+
         Args:
             symbol: 특정 종목 필터. None이면 전체 잔고.
         """
@@ -278,25 +284,31 @@ class TossRestClient:
             qty = _safe_int(row.get("quantity", 0), "quantity")
             if qty == 0:
                 continue
+            market_value = row.get("marketValue") or {}
+            profit_loss = row.get("profitLoss") or {}
+            country = row.get("marketCountry", "KR")
             items.append(
                 BalanceItem(
                     symbol=row.get("symbol", ""),
                     symbol_name=row.get("name", ""),
                     qty=qty,
                     avg_price=_safe_float(row.get("averagePurchasePrice", 0), "averagePurchasePrice"),
-                    current_price=_safe_float(row.get("currentPrice", 0), "currentPrice"),
-                    eval_amount=_safe_float(row.get("marketValue", 0), "marketValue"),
-                    profit_loss=_safe_float(row.get("unrealizedGainLoss", 0), "unrealizedGainLoss"),
-                    profit_loss_rate=_safe_float(row.get("unrealizedGainLossRate", 0), "unrealizedGainLossRate"),
+                    current_price=_safe_float(row.get("lastPrice", 0), "lastPrice"),
+                    eval_amount=_safe_float(market_value.get("amount", 0), "marketValue.amount"),
+                    profit_loss=_safe_float(profit_loss.get("amount", 0), "profitLoss.amount"),
+                    profit_loss_rate=_safe_float(profit_loss.get("rate", 0), "profitLoss.rate"),
+                    market=Market.OVERSEAS if country == "US" else Market.DOMESTIC,
                 )
             )
 
-        summary = result.get("summary", {})
+        total_market_value = (result.get("marketValue") or {}).get("amount") or {}
+        total_profit_loss = (result.get("profitLoss") or {}).get("amount") or {}
         return BalanceInfo(
             items=items,
-            total_eval_amount=_safe_float(summary.get("totalMarketValue", 0), "totalMarketValue"),
-            total_profit_loss=_safe_float(summary.get("totalUnrealizedGainLoss", 0), "totalUnrealizedGainLoss"),
-            deposit=_safe_float(summary.get("cashBalance", 0), "cashBalance"),
+            total_eval_amount=_safe_float(total_market_value.get("krw", 0), "marketValue.amount.krw"),
+            total_profit_loss=_safe_float(total_profit_loss.get("krw", 0), "profitLoss.amount.krw"),
+            # holdings 응답에는 예수금(deposit)이 없다 — 별도 계좌 잔고 API 연동 전까지는 0 고정.
+            deposit=0.0,
         )
 
     # ------------------------------------------------------------------

@@ -20,6 +20,7 @@ import asyncio
 import logging
 import signal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 
@@ -27,10 +28,14 @@ from core.api.app import create_app
 from core.api.deps import AppContainer
 from core.config.settings import Market, load_settings
 from core.events.bus import EventBus
+from core.execution.position_sync import PositionSyncFeed
 from core.notifier.factory import make_notifier
 from core.notifier.wiring import wire_notifier
 from core.risk.manager import RiskConfig, RiskManager
 from core.store.db import StateStore
+
+if TYPE_CHECKING:
+    from core.adapters.toss.rest import TossRestClient
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +121,10 @@ async def run(
 
     wire_notifier(bus, notifier)
 
+    # Toss 브로커 초기화 — 읽기 전용 조회(잔고·체결)는 --with-trading과 무관하게
+    # 항상 필요하므로, 트레이딩 모듈 시작 여부와 별개로 미리 구성한다.
+    rest_client = await _init_broker(settings, with_trading)
+
     # InfoSystem 조립 (enabled 확인)
     info_system = None
     if with_info and settings.info.enabled:
@@ -132,6 +141,7 @@ async def run(
         bus=bus,
         env="prod",
         market=settings.market.value,
+        broker=rest_client,
     )
     fastapi_app = create_app(container)
 
@@ -172,7 +182,11 @@ async def run(
             tg.create_task(_serve_api(), name="control-api")
 
             if with_trading:
-                _start_trading_tasks(tg, settings, bus, risk, store)
+                _start_trading_tasks(tg, rest_client, bus, risk, store)
+
+            if rest_client is not None:
+                position_sync = PositionSyncFeed(rest_client=rest_client, store=store, env=container.env)
+                tg.create_task(position_sync.run(), name="position-sync")
 
             if info_system is not None:
                 tg.create_task(info_system.start(), name="info-system")
@@ -237,34 +251,69 @@ async def _log_persisted_state(store: StateStore) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Toss 브로커 초기화 (읽기 전용 조회는 --with-trading과 무관하게 필요)
+# ---------------------------------------------------------------------------
+
+
+async def _init_broker(settings: object, with_trading: bool) -> TossRestClient | None:
+    """Toss REST 클라이언트를 초기화한다.
+
+    포지션/체결 조회 같은 읽기 전용 API는 실전 주문 게이트(--with-trading)와
+    무관하게 항상 쓸 수 있어야 하므로, 트레이딩 시작 여부와 별개로 여기서
+    미리 초기화한다.
+
+    with_trading=True인데 초기화가 실패하면 실전 주문을 낼 수 없으므로 예외를
+    던져 부팅을 중단한다. with_trading=False인 경우엔 자격증명 미비/네트워크
+    오류가 있어도 포지션 동기화·체결 조회 없이 Control API는 계속 띄운다
+    (개발/검수 편의).
+    """
+    from core.adapters.toss.auth import TossAuth
+    from core.adapters.toss.rest import TossRestClient
+
+    creds = getattr(settings, "credentials", None)
+    if creds is None:
+        msg = "quanteo.yaml에 Toss 자격증명이 없습니다."
+        if with_trading:
+            raise RuntimeError(f"트레이딩 모듈 초기화 실패 — 실전 주문 불가: {msg}")
+        logger.warning("%s 포지션 동기화·체결 조회 없이 시작합니다.", msg)
+        return None
+
+    try:
+        rest_client = TossRestClient(TossAuth(creds))
+        await rest_client.initialize()
+        return rest_client
+    except Exception as exc:
+        if with_trading:
+            logger.error("Toss 브로커 초기화 실패: %s", exc, exc_info=True)
+            raise RuntimeError(f"트레이딩 모듈 초기화 실패 — 실전 주문 불가: {exc}") from exc
+        logger.warning("Toss 브로커 초기화 실패 — 포지션 동기화·체결 조회 없이 시작합니다: %s", exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # 트레이딩 태스크
 # ---------------------------------------------------------------------------
 
 
 def _start_trading_tasks(
     tg: asyncio.TaskGroup,
-    settings: object,
+    rest_client: object,
     bus: EventBus,
     risk: RiskManager,
     store: StateStore,
 ) -> None:
-    """Toss 어댑터 조립 (REST 폴링 피드)."""
+    """MarketData/Strategy/Executor를 조립한다.
+
+    rest_client는 run()에서 _init_broker()로 이미 initialize()까지 끝낸
+    인스턴스를 그대로 재사용한다 (읽기 전용 포지션 동기화와 별도 인스턴스를
+    만들지 않기 위함).
+    """
     try:
-        from core.adapters.toss.auth import TossAuth
-        from core.adapters.toss.rest import TossRestClient
         from core.execution.executor import OrderExecutor
         from core.marketdata.feed import MarketDataFeed
         from core.strategy.engine import StrategyEngine
 
-        creds = getattr(settings, "credentials", None)
-        if creds is None:
-            raise ValueError("quanteo.yaml에 toss 자격증명이 없습니다.")
-
-        auth = TossAuth(creds)
-        rest_client = TossRestClient(auth)
-
-        async def _init_and_run() -> None:
-            await rest_client.initialize()
+        async def _run_trading() -> None:
             feed = MarketDataFeed(rest_client=rest_client, poll_interval=2.0)
             engine = StrategyEngine(bus=bus)
             OrderExecutor(rest_client=rest_client, store=store, bus=bus)
@@ -274,7 +323,7 @@ def _start_trading_tasks(
                 inner_tg.create_task(feed.run(), name="toss-market-data-feed")
                 inner_tg.create_task(engine.run(), name="strategy-engine")
 
-        tg.create_task(_init_and_run(), name="toss-trading")
+        tg.create_task(_run_trading(), name="toss-trading")
 
     except Exception as exc:
         logger.error("Toss 트레이딩 모듈 시작 실패: %s", exc, exc_info=True)

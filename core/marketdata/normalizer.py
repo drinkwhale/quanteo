@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 
 from core.adapters.models import BalanceInfo, BalanceItem
 from core.adapters.toss.models import Fill, TossCandle
+from core.config.settings import Market
 from core.marketdata.models import Candle, Tick
 
 logger = logging.getLogger(__name__)
@@ -107,29 +108,38 @@ def normalize_toss_candle(symbol: str, result: dict, interval: str = "1d") -> Ca
 
 
 def normalize_toss_holdings(result: dict) -> BalanceInfo:
-    """Toss /api/v1/holdings result를 BalanceInfo로 변환한다."""
+    """Toss /api/v1/holdings result를 BalanceInfo로 변환한다.
+
+    marketValue/profitLoss는 통화별 중첩 객체이며 요약 필드는 top-level에
+    바로 존재한다 (specs/tossinvest/asset.json #HoldingsOverview 참고).
+    """
     items: list[BalanceItem] = []
     for row in result.get("items", []):
         qty = int(row.get("quantity", 0))
         if qty == 0:
             continue
+        market_value = row.get("marketValue") or {}
+        profit_loss = row.get("profitLoss") or {}
+        country = row.get("marketCountry", "KR")
         items.append(
             BalanceItem(
                 symbol=row.get("symbol", ""),
                 symbol_name=row.get("name", ""),
                 qty=qty,
                 avg_price=float(row.get("averagePurchasePrice", 0)),
-                current_price=float(row.get("currentPrice", 0)),
-                eval_amount=float(row.get("marketValue", 0)),
-                profit_loss=float(row.get("unrealizedGainLoss", 0)),
-                profit_loss_rate=float(row.get("unrealizedGainLossRate", 0)),
+                current_price=float(row.get("lastPrice", 0)),
+                eval_amount=float(market_value.get("amount", 0)),
+                profit_loss=float(profit_loss.get("amount", 0)),
+                profit_loss_rate=float(profit_loss.get("rate", 0)),
+                market=Market.OVERSEAS if country == "US" else Market.DOMESTIC,
             )
         )
 
-    summary = result.get("summary", {})
+    total_market_value = (result.get("marketValue") or {}).get("amount") or {}
+    total_profit_loss = (result.get("profitLoss") or {}).get("amount") or {}
     return BalanceInfo(
         items=items,
-        total_eval_amount=float(summary.get("totalMarketValue", 0)),
-        total_profit_loss=float(summary.get("totalUnrealizedGainLoss", 0)),
-        deposit=float(summary.get("cashBalance", 0)),
+        total_eval_amount=float(total_market_value.get("krw", 0)),
+        total_profit_loss=float(total_profit_loss.get("krw", 0)),
+        deposit=0.0,
     )
