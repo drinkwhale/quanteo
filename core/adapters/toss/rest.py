@@ -72,6 +72,29 @@ def _safe_int(value: Any, field: str) -> int:
     except (TypeError, ValueError) as exc:
         raise RuntimeError(f"Toss API 비정상 정수 값 ({field}={value!r})") from exc
 
+
+def _safe_nested_dict(row: dict[str, Any], key: str) -> dict[str, Any]:
+    """중첩 객체 필드를 꺼낸다. 없거나 dict가 아니면 경고를 남기고 빈 dict를 반환한다.
+
+    스펙상(specs/tossinvest/asset.json) 필수 필드지만, 응답이 스펙과 어긋나는
+    경우를 대비해 예외를 던지지 않고 방어적으로 처리한다 — 대신 조용히 0으로
+    떨어뜨리지 않도록 반드시 로그를 남긴다.
+    """
+    value = row.get(key)
+    if not isinstance(value, dict):
+        logger.warning("Toss holdings 응답에 %s 필드가 없거나 형식이 다릅니다 (값=%r)", key, value)
+        return {}
+    return value
+
+
+def _safe_get(container: dict[str, Any], key: str, field_label: str) -> Any:
+    """중첩 dict에서 값을 꺼낸다. 키가 없으면 경고를 남기고 0을 반환한다."""
+    if key not in container:
+        logger.warning("Toss holdings 응답에 %s.%s 필드가 없습니다 — 0으로 처리합니다.", field_label, key)
+        return 0
+    return container[key]
+
+
 # Rate Limit: Toss 공식 가이드 기준값 (보수적 적용)
 _MARKET_DATA_THROTTLER_CONFIG = ThrottlerConfig(calls_per_second=5.0)
 _ORDER_THROTTLER_CONFIG = ThrottlerConfig(calls_per_second=2.0)
@@ -264,6 +287,12 @@ class TossRestClient:
 
         GET /api/v1/holdings (X-Tossinvest-Account 헤더 필요)
 
+        실제 응답 스펙(specs/tossinvest/asset.json #HoldingsOverview)은
+        marketValue/profitLoss가 통화별 중첩 객체이고, 요약 필드는 "summary"로
+        감싸져 있지 않고 top-level(totalPurchaseAmount/marketValue/profitLoss)에
+        바로 존재한다. total_* 필드는 KRW 기준 합산만 반영한다 (USD 보유분은
+        원화 환산 없이는 단순 합산할 수 없어 items 레벨에서 종목별로 확인한다).
+
         Args:
             symbol: 특정 종목 필터. None이면 전체 잔고.
         """
@@ -275,28 +304,40 @@ class TossRestClient:
         for row in holding_items:
             if symbol and row.get("symbol") != symbol:
                 continue
-            qty = _safe_int(row.get("quantity", 0), "quantity")
+            # 소수점 단위 매매(fractional investing)를 지원하는 해외주식은 정수가
+            # 아닐 수 있어 float로 파싱한다 (예: "10.5").
+            qty = _safe_float(row.get("quantity", 0), "quantity")
             if qty == 0:
                 continue
+            market_value = _safe_nested_dict(row, "marketValue")
+            profit_loss = _safe_nested_dict(row, "profitLoss")
+            country = row.get("marketCountry", "KR")
             items.append(
                 BalanceItem(
                     symbol=row.get("symbol", ""),
                     symbol_name=row.get("name", ""),
                     qty=qty,
                     avg_price=_safe_float(row.get("averagePurchasePrice", 0), "averagePurchasePrice"),
-                    current_price=_safe_float(row.get("currentPrice", 0), "currentPrice"),
-                    eval_amount=_safe_float(row.get("marketValue", 0), "marketValue"),
-                    profit_loss=_safe_float(row.get("unrealizedGainLoss", 0), "unrealizedGainLoss"),
-                    profit_loss_rate=_safe_float(row.get("unrealizedGainLossRate", 0), "unrealizedGainLossRate"),
+                    current_price=_safe_float(row.get("lastPrice", 0), "lastPrice"),
+                    eval_amount=_safe_float(_safe_get(market_value, "amount", "marketValue"), "marketValue.amount"),
+                    profit_loss=_safe_float(_safe_get(profit_loss, "amount", "profitLoss"), "profitLoss.amount"),
+                    profit_loss_rate=_safe_float(_safe_get(profit_loss, "rate", "profitLoss"), "profitLoss.rate"),
+                    market=Market.OVERSEAS if country == "US" else Market.DOMESTIC,
                 )
             )
 
-        summary = result.get("summary", {})
+        total_market_value = _safe_get(_safe_nested_dict(result, "marketValue"), "amount", "marketValue") or {}
+        total_profit_loss = _safe_get(_safe_nested_dict(result, "profitLoss"), "amount", "profitLoss") or {}
         return BalanceInfo(
             items=items,
-            total_eval_amount=_safe_float(summary.get("totalMarketValue", 0), "totalMarketValue"),
-            total_profit_loss=_safe_float(summary.get("totalUnrealizedGainLoss", 0), "totalUnrealizedGainLoss"),
-            deposit=_safe_float(summary.get("cashBalance", 0), "cashBalance"),
+            total_eval_amount_krw=_safe_float(
+                _safe_get(total_market_value, "krw", "marketValue.amount"), "marketValue.amount.krw"
+            ),
+            total_profit_loss_krw=_safe_float(
+                _safe_get(total_profit_loss, "krw", "profitLoss.amount"), "profitLoss.amount.krw"
+            ),
+            # holdings 응답에는 예수금(deposit)이 없다 — 별도 계좌 잔고 API 연동 전까지는 0 고정.
+            deposit=0.0,
         )
 
     # ------------------------------------------------------------------

@@ -7,17 +7,15 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
-from core.adapters.models import BalanceInfo, BalanceItem
-from core.adapters.toss.models import Fill, TossCandle
+from core.adapters.toss.models import Fill
 from core.marketdata.models import Candle, Tick
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "normalize_toss_price",
-    "normalize_toss_holdings",
     "normalize_toss_trade",
     "normalize_toss_candle",
 ]
@@ -103,33 +101,4 @@ def normalize_toss_candle(symbol: str, result: dict, interval: str = "1d") -> Ca
         timestamp=timestamp,
         market=market,
         interval=interval,
-    )
-
-
-def normalize_toss_holdings(result: dict) -> BalanceInfo:
-    """Toss /api/v1/holdings result를 BalanceInfo로 변환한다."""
-    items: list[BalanceItem] = []
-    for row in result.get("items", []):
-        qty = int(row.get("quantity", 0))
-        if qty == 0:
-            continue
-        items.append(
-            BalanceItem(
-                symbol=row.get("symbol", ""),
-                symbol_name=row.get("name", ""),
-                qty=qty,
-                avg_price=float(row.get("averagePurchasePrice", 0)),
-                current_price=float(row.get("currentPrice", 0)),
-                eval_amount=float(row.get("marketValue", 0)),
-                profit_loss=float(row.get("unrealizedGainLoss", 0)),
-                profit_loss_rate=float(row.get("unrealizedGainLossRate", 0)),
-            )
-        )
-
-    summary = result.get("summary", {})
-    return BalanceInfo(
-        items=items,
-        total_eval_amount=float(summary.get("totalMarketValue", 0)),
-        total_profit_loss=float(summary.get("totalUnrealizedGainLoss", 0)),
-        deposit=float(summary.get("cashBalance", 0)),
     )

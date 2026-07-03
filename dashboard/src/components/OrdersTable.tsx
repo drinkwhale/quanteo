@@ -15,12 +15,12 @@ const CANCELLABLE_STATUSES = new Set(["pending", "submitted", "open"]);
 
 interface Props {
   orders: OrderItem[];
-  total: number;
   error?: string | null;
   onRefetch?: () => void;
 }
 
-export function OrdersTable({ orders, total, error, onRefetch }: Props) {
+/** Panel 안에 들어가는 본문만 렌더링 — 헤더/카운트는 상위 Panel이 담당 */
+export function OrdersTable({ orders, error, onRefetch }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null); // order_id being actioned
 
@@ -38,14 +38,7 @@ export function OrdersTable({ orders, total, error, onRefetch }: Props) {
   }
 
   return (
-    <section className="bg-panel border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-white font-mono tracking-wider">
-          주문내역
-        </h2>
-        <span className="text-xs text-muted font-mono">{total}건</span>
-      </div>
-
+    <>
       {(error || actionError) && (
         <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
           {error ?? actionError}
@@ -123,6 +116,6 @@ export function OrdersTable({ orders, total, error, onRefetch }: Props) {
           </table>
         </div>
       )}
-    </section>
+    </>
   );
 }

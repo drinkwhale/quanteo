@@ -42,7 +42,7 @@ class MockTossRestClient:
         )
 
     async def get_balance(self, symbol: str | None = None) -> BalanceInfo:
-        return BalanceInfo(items=[], total_eval_amount=0.0, total_profit_loss=0.0, deposit=10_000_000.0)
+        return BalanceInfo(items=[], total_eval_amount_krw=0.0, total_profit_loss_krw=0.0, deposit=10_000_000.0)
 
     async def place_order(self, order: Order) -> OrderAck:
         self.submitted_orders.append(order)

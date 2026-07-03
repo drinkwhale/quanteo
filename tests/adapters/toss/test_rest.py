@@ -125,6 +125,36 @@ async def test_get_price_raises_when_empty_result():
 # ---------------------------------------------------------------------------
 
 
+def _holding_item(
+    symbol: str,
+    name: str,
+    qty: str,
+    avg_price: str,
+    last_price: str,
+    market_value: str,
+    profit_loss: str,
+    profit_loss_rate: str,
+    country: str = "KR",
+) -> dict:
+    """specs/tossinvest/asset.json #HoldingsItem 형태의 mock 항목 (실제 API 응답 shape)."""
+    return {
+        "symbol": symbol,
+        "name": name,
+        "marketCountry": country,
+        "currency": "KRW" if country == "KR" else "USD",
+        "quantity": qty,
+        "lastPrice": last_price,
+        "averagePurchasePrice": avg_price,
+        "marketValue": {"purchaseAmount": avg_price, "amount": market_value, "amountAfterCost": market_value},
+        "profitLoss": {
+            "amount": profit_loss,
+            "amountAfterCost": profit_loss,
+            "rate": profit_loss_rate,
+            "rateAfterCost": profit_loss_rate,
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_balance_returns_balance_info():
     http = AsyncMock()
@@ -136,23 +166,18 @@ async def test_get_balance_returns_balance_info():
 
     http.request = AsyncMock(return_value=_mock_resp(200, {
         "result": {
-            "items": [
-                {
-                    "symbol": "005930",
-                    "name": "삼성전자",
-                    "quantity": "10",
-                    "averagePurchasePrice": "70000",
-                    "currentPrice": "75000",
-                    "marketValue": "750000",
-                    "unrealizedGainLoss": "50000",
-                    "unrealizedGainLossRate": "7.14",
-                }
-            ],
-            "summary": {
-                "totalMarketValue": "750000",
-                "totalUnrealizedGainLoss": "50000",
-                "cashBalance": "1000000",
+            "totalPurchaseAmount": {"krw": "700000", "usd": None},
+            "marketValue": {"amount": {"krw": "750000", "usd": None}, "amountAfterCost": {"krw": "750000", "usd": None}},
+            "profitLoss": {
+                "amount": {"krw": "50000", "usd": None},
+                "amountAfterCost": {"krw": "50000", "usd": None},
+                "rate": "0.0714",
+                "rateAfterCost": "0.0714",
             },
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": None}, "rate": "0"},
+            "items": [
+                _holding_item("005930", "삼성전자", "10", "70000", "75000", "750000", "50000", "0.0714"),
+            ],
         }
     }))
 
@@ -161,7 +186,14 @@ async def test_get_balance_returns_balance_info():
     assert len(balance.items) == 1
     assert balance.items[0].symbol == "005930"
     assert balance.items[0].qty == 10
-    assert balance.deposit == 1_000_000.0
+    assert balance.items[0].current_price == 75000.0
+    assert balance.items[0].eval_amount == 750000.0
+    assert balance.items[0].profit_loss == 50000.0
+    assert balance.items[0].market == Market.DOMESTIC
+    assert balance.total_eval_amount_krw == 750000.0
+    assert balance.total_profit_loss_krw == 50000.0
+    # holdings 응답에는 예수금이 없다 — 별도 API 연동 전까지 0 고정
+    assert balance.deposit == 0.0
 
 
 @pytest.mark.asyncio
@@ -175,21 +207,129 @@ async def test_get_balance_filters_by_symbol():
 
     http.request = AsyncMock(return_value=_mock_resp(200, {
         "result": {
+            "totalPurchaseAmount": {"krw": "0", "usd": None},
+            "marketValue": {"amount": {"krw": "0", "usd": None}, "amountAfterCost": {"krw": "0", "usd": None}},
+            "profitLoss": {
+                "amount": {"krw": "0", "usd": None},
+                "amountAfterCost": {"krw": "0", "usd": None},
+                "rate": "0",
+                "rateAfterCost": "0",
+            },
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": None}, "rate": "0"},
             "items": [
-                {"symbol": "005930", "name": "삼성전자", "quantity": "10",
-                 "averagePurchasePrice": "70000", "currentPrice": "75000",
-                 "marketValue": "750000", "unrealizedGainLoss": "0", "unrealizedGainLossRate": "0"},
-                {"symbol": "000660", "name": "SK하이닉스", "quantity": "5",
-                 "averagePurchasePrice": "100000", "currentPrice": "110000",
-                 "marketValue": "550000", "unrealizedGainLoss": "0", "unrealizedGainLossRate": "0"},
+                _holding_item("005930", "삼성전자", "10", "70000", "75000", "750000", "0", "0"),
+                _holding_item("000660", "SK하이닉스", "5", "100000", "110000", "550000", "0", "0"),
             ],
-            "summary": {"totalMarketValue": "0", "totalUnrealizedGainLoss": "0", "cashBalance": "0"},
         }
     }))
 
     balance = await client.get_balance(symbol="005930")
     assert len(balance.items) == 1
     assert balance.items[0].symbol == "005930"
+
+
+@pytest.mark.asyncio
+async def test_get_balance_maps_us_market_country_to_overseas():
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": [{"accountSeq": 1}]
+    }))
+    client = _make_client(http)
+    await client.initialize()
+
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": {
+            "totalPurchaseAmount": {"krw": "0", "usd": "1553"},
+            "marketValue": {"amount": {"krw": "0", "usd": "1785"}, "amountAfterCost": {"krw": "0", "usd": "1771.43"}},
+            "profitLoss": {
+                "amount": {"krw": "0", "usd": "232"},
+                "amountAfterCost": {"krw": "0", "usd": "218.43"},
+                "rate": "0.1494",
+                "rateAfterCost": "0.1406",
+            },
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": "25"}, "rate": "0.0141"},
+            "items": [
+                _holding_item("AAPL", "Apple", "10", "155.3", "178.5", "1785", "232", "0.1494", country="US"),
+            ],
+        }
+    }))
+
+    balance = await client.get_balance()
+    assert balance.items[0].market == Market.OVERSEAS
+
+
+@pytest.mark.asyncio
+async def test_get_balance_supports_fractional_quantity_for_overseas_stock():
+    """미국 주식은 Toss 소수점 매매(fractional investing)로 정수가 아닌 수량이 나올 수 있다."""
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": [{"accountSeq": 1}]
+    }))
+    client = _make_client(http)
+    await client.initialize()
+
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": {
+            "totalPurchaseAmount": {"krw": "0", "usd": "155.3"},
+            "marketValue": {"amount": {"krw": "0", "usd": "178.5"}, "amountAfterCost": {"krw": "0", "usd": "178.5"}},
+            "profitLoss": {
+                "amount": {"krw": "0", "usd": "23.2"},
+                "amountAfterCost": {"krw": "0", "usd": "23.2"},
+                "rate": "0.1494",
+                "rateAfterCost": "0.1494",
+            },
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": "0"}, "rate": "0"},
+            "items": [
+                _holding_item("AAPL", "Apple", "10.5", "155.3", "178.5", "1785", "232", "0.1494", country="US"),
+            ],
+        }
+    }))
+
+    # 이전엔 int(value)로 파싱해서 "10.5" 같은 소수점 수량에 RuntimeError가 났다.
+    balance = await client.get_balance()
+    assert balance.items[0].qty == 10.5
+
+
+@pytest.mark.asyncio
+async def test_get_balance_defaults_to_zero_when_nested_fields_missing():
+    """marketValue/profitLoss 내부 필드(amount/rate)가 없어도 크래시 없이 0으로 처리한다."""
+    http = AsyncMock()
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": [{"accountSeq": 1}]
+    }))
+    client = _make_client(http)
+    await client.initialize()
+
+    http.request = AsyncMock(return_value=_mock_resp(200, {
+        "result": {
+            # top-level marketValue/profitLoss 자체가 스펙과 다르게 통째로 비어있음
+            "totalPurchaseAmount": {"krw": "0", "usd": None},
+            "marketValue": {},
+            "profitLoss": {},
+            "dailyProfitLoss": {"amount": {"krw": "0", "usd": None}, "rate": "0"},
+            "items": [
+                {
+                    "symbol": "005930",
+                    "name": "삼성전자",
+                    "marketCountry": "KR",
+                    "currency": "KRW",
+                    "quantity": "10",
+                    "lastPrice": "75000",
+                    "averagePurchasePrice": "70000",
+                    # marketValue/profitLoss 필드 자체가 응답에서 통째로 빠짐
+                },
+            ],
+        }
+    }))
+
+    balance = await client.get_balance()
+
+    assert len(balance.items) == 1
+    assert balance.items[0].eval_amount == 0.0
+    assert balance.items[0].profit_loss == 0.0
+    assert balance.items[0].profit_loss_rate == 0.0
+    assert balance.total_eval_amount_krw == 0.0
+    assert balance.total_profit_loss_krw == 0.0
 
 
 # ---------------------------------------------------------------------------
