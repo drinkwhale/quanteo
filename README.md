@@ -36,7 +36,9 @@ Toss증권 Open API 기반 주식 자동매매 봇.
 
 ---
 
-## 구현 현황 (Phase 1~9 완료)
+## 구현 현황 (Phase 1~14 완료)
+
+> 상세 모듈·의존성·엔드포인트 현황은 [PROJECT_INDEX.md](PROJECT_INDEX.md) 참고.
 
 | Phase     | 내용                             | Tasks     | 상태    |
 | --------- | -------------------------------- | --------- | ------- |
@@ -50,6 +52,11 @@ Toss증권 Open API 기반 주식 자동매매 봇.
 | Phase 7   | 안전 & 운영 (Rate Limit·Docker)  | T029~T032 | ✅ 완료 |
 | Phase 8   | Toss증권 어댑터 마이그레이션     | T039~T048 | ✅ 완료 |
 | Phase 9   | Toss증권 어댑터 운영 완성        | T049~T056 | ✅ 완료 |
+| Phase 10  | 정보 수집·알람 서브시스템        | T057~T068 | ✅ 완료 |
+| Phase 11  | CCI 지표·멀티 타임프레임 판정    | T069~T072 | ✅ 완료 |
+| Phase 12  | 박병창 매매기법 전략 플러그인    | T073~T076 | ✅ 완료 |
+| Phase 13  | 백테스트 프레임워크              | T077~T083 | ✅ 완료 |
+| Phase 14  | 프론트엔드 디자인 시스템 정비    | T084~T092 | ✅ 완료 |
 
 ---
 
@@ -83,7 +90,10 @@ quanteo/
 │   │   ├── base.py              # Strategy Protocol + Signal / MarketContext 타입
 │   │   ├── engine.py            # 플러그인 로드·지표 갱신·시그널 생성 루프
 │   │   ├── harness.py           # 전략 경량 검증 하니스 (과거 캔들 재현)
-│   │   └── plugins/             # 규칙 기반 전략 플러그인 (이동평균 교차 등)
+│   │   ├── timeframe_judge.py   # 멀티 타임프레임 방향 판정
+│   │   ├── indicators/          # CCI·이동평균·헤드앤숄더 패턴 지표
+│   │   └── plugins/             # 규칙 기반 전략 플러그인 (이동평균 교차·박병창 매매기법 등)
+│   ├── backtest/                # 백테스트 엔진·메트릭·Walk-Forward 검증
 │   ├── risk/
 │   │   ├── models.py            # Order / Position / Rejection / HaltLevel 타입
 │   │   └── manager.py           # 한도 가드·손절·익절·킬스위치 게이트키퍼
@@ -107,15 +117,18 @@ quanteo/
 │           ├── control.py       # POST /control/pause|resume|kill
 │           ├── stream.py        # WS /stream
 │           ├── market.py        # GET /market-status, GET /risk-metrics
-│           └── trades.py        # GET /trades
-├── dashboard/                   # TypeScript 대시보드 (React + Vite + Tailwind)
+│           ├── trades.py        # GET /trades
+│           └── backtest.py      # POST /backtest/run, GET /backtest/status|results
+├── info/                        # 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)
+├── dashboard/                   # TypeScript 대시보드 (React + Vite + Tailwind + shadcn/ui)
 │   └── src/
 │       ├── components/          # StatusBar / PositionsTable / OrdersTable / FillsTable / ControlPanel / StreamLog
-│       ├── hooks/               # useStatus / usePositions / useOrders / useFills / useStream
-│       └── api/                 # Control API 클라이언트 + 타입
+│       ├── hooks/                # useStatus / usePositions / useOrders / useFills / useStream
+│       ├── pages/                # Strategy.tsx — CCI·신뢰도 게이지·백테스트 UI
+│       └── api/                  # Control API 클라이언트 + 타입
 ├── scripts/
 │   └── send_balance.py          # 잔고 조회 후 Telegram 전송 일회성 스크립트
-├── tests/                       # pytest (291 cases)
+├── tests/                       # pytest (644 cases)
 ├── specs/                       # 아키텍처 설계서 + Task 목록 + Toss OpenAPI JSON 스펙
 ├── Dockerfile
 ├── docker-compose.yml
@@ -209,20 +222,23 @@ docker compose logs -f quanteo-core
 
 기동 후 `http://localhost:8000/docs` 에서 OpenAPI 문서를 확인할 수 있다.
 
-| 메서드 | 엔드포인트            | 설명                                   |
-| ------ | --------------------- | -------------------------------------- |
-| `GET`  | `/status`             | 봇 상태 (환경·리스크 레벨·일일 주문수) |
-| `GET`  | `/positions`          | 보유 포지션 목록                       |
-| `GET`  | `/orders`             | 주문 내역                              |
-| `POST` | `/orders/{id}/cancel` | 주문 취소                              |
-| `POST` | `/orders/{id}/modify` | 주문 정정                              |
-| `GET`  | `/trades`             | 체결 내역 조회                         |
-| `GET`  | `/market-status`      | 국내·해외 개장 여부 + 캘린더           |
-| `GET`  | `/risk-metrics`       | 리스크 지표 (halt_level·buying_power)  |
-| `POST` | `/control/pause`      | 신규 시그널 처리 일시정지              |
-| `POST` | `/control/resume`     | 일시정지 해제                          |
-| `POST` | `/control/kill`       | 킬스위치 — 모든 신규 주문 차단         |
-| `WS`   | `/stream`             | 시세·시그널·체결·로그 실시간 스트림    |
+| 메서드 | 엔드포인트                   | 설명                                    |
+| ------ | ---------------------------- | --------------------------------------- |
+| `GET`  | `/status`                    | 봇 상태 (환경·리스크 레벨·일일 주문수)  |
+| `GET`  | `/positions`                 | 보유 포지션 목록                        |
+| `GET`  | `/orders`                    | 주문 내역                               |
+| `POST` | `/orders/{id}/cancel`        | 주문 취소                               |
+| `POST` | `/orders/{id}/modify`        | 주문 정정                               |
+| `GET`  | `/trades`                    | 체결 내역 조회                          |
+| `GET`  | `/market-status`             | 국내·해외 개장 여부 + 캘린더            |
+| `GET`  | `/risk-metrics`              | 리스크 지표 (halt_level·buying_power)   |
+| `POST` | `/control/pause`             | 신규 시그널 처리 일시정지               |
+| `POST` | `/control/resume`            | 일시정지 해제                           |
+| `POST` | `/control/kill`              | 킬스위치 — 모든 신규 주문 차단          |
+| `WS`   | `/stream`                    | 시세·시그널·체결·로그 실시간 스트림     |
+| `POST` | `/backtest/run`              | 백테스트 비동기 실행 → run_id 반환      |
+| `GET`  | `/backtest/status/{run_id}`  | 백테스트 실행 상태 조회                 |
+| `GET`  | `/backtest/results/{run_id}` | 백테스트 결과 조회 (메트릭·에쿼티 커브) |
 
 ---
 
@@ -316,6 +332,7 @@ class MyStrategy:
 
 ## 설계 문서
 
+- [`PROJECT_INDEX.md`](PROJECT_INDEX.md) — 프로젝트 전체 현황 요약 (구조·의존성·엔드포인트)
 - [`specs/2026-06-18-quanteo-architecture.md`](specs/2026-06-18-quanteo-architecture.md) — 아키텍처 설계서 (단일 진실 공급원)
 - [`specs/tasks.md`](specs/tasks.md) — Phase·Task 단위 구현 작업 목록
 - [`specs/tossinvest/`](specs/tossinvest/) — Toss증권 Open API JSON 스펙
