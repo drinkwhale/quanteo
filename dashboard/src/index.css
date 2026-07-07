@@ -5,7 +5,9 @@
 
 @layer base {
   :root {
-    /* The Silent Exchange — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md) */
+    /* The Silent Exchange — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
+       타이포그래피는 Pretendard 단일 패밀리 — 토스 HTS 무드에 맞춘 클린 산세리프,
+       숫자 정렬은 tabular-nums 유틸리티로 담당(모노스페이스 대체). */
     --color-space-black: #0f1117;
     --color-midnight-panel: #1a1d27;
     --color-structural-line: #2a2d3a;
@@ -54,12 +56,12 @@
   }
 
   html {
-    @apply font-mono;
+    @apply font-sans;
   }
 
   body {
     -webkit-font-smoothing: antialiased;
-    @apply bg-background text-foreground font-mono;
+    @apply bg-background text-foreground font-sans;
   }
 
   ::-webkit-scrollbar {

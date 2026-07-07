@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, GripVertical } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 type Props = {
@@ -30,8 +30,12 @@ export function Panel({
       className={`bg-panel border border-border rounded-lg overflow-hidden ${className}`}
     >
       <div
-        className={`flex items-center gap-2 px-4 py-3 ${collapsed ? "" : "border-b border-border"}`}
+        className={`flex items-center gap-1.5 px-3 py-2.5 ${collapsed ? "" : "border-b border-border"}`}
       >
+        <GripVertical
+          aria-hidden="true"
+          className="w-3.5 h-3.5 flex-shrink-0 text-muted/50 cursor-grab"
+        />
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
@@ -45,11 +49,11 @@ export function Panel({
               collapsed ? "-rotate-90" : ""
             }`}
           />
-          <h2 className="text-sm font-semibold text-white font-mono tracking-wider truncate">
+          <h2 className="text-sm font-semibold text-white tracking-tight truncate">
             {title}
           </h2>
           {badge !== undefined && (
-            <span className="text-xs text-muted font-mono flex-shrink-0">
+            <span className="text-xs text-muted flex-shrink-0 tabular-nums">
               {badge}
             </span>
           )}

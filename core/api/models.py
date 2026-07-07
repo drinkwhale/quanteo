@@ -34,8 +34,8 @@ class BotStatus(BaseModel):
 
     running: bool
     halt_level: str  # "none" | "reduce" | "pause" | "kill"
-    env: str         # "prod" (Toss는 항상 실전, 모의투자 환경 없음)
-    market: str      # "domestic" | "overseas"
+    env: str  # "prod" (Toss는 항상 실전, 모의투자 환경 없음)
+    market: str  # "domestic" | "overseas"
     uptime_seconds: float
     started_at: datetime | None = None
 
@@ -83,7 +83,7 @@ class OrderItem(BaseModel):
     symbol: str
     market: str
     env: str
-    side: str   # "BUY" | "SELL"
+    side: str  # "BUY" | "SELL"
     order_type: str  # "LIMIT" | "MARKET"
     qty: int
     price: Decimal
@@ -172,6 +172,81 @@ class MarketStatus(BaseModel):
     """국내·해외 마켓 개장 상태 응답."""
 
     markets: list[MarketDayStatus]
+
+
+# ---------------------------------------------------------------------------
+# /stock-names
+# ---------------------------------------------------------------------------
+
+
+class StockNameItem(BaseModel):
+    """종목 심볼 → 종목명 매핑 단일 항목."""
+
+    symbol: str
+    name: str
+    market: str
+
+
+class StockNameList(BaseModel):
+    """종목명 조회 응답. 대시보드가 심볼 코드 대신 종목명을 표시하는 데 쓴다."""
+
+    items: list[StockNameItem]
+
+
+# ---------------------------------------------------------------------------
+# /indices — 주요 지수 시세 (Toss API 미지원, 외부 소스 조회)
+# ---------------------------------------------------------------------------
+
+
+class IndexQuoteItem(BaseModel):
+    """지수 시세 1건. change_rate는 비율(fraction) — 표시 시 프론트에서 *100."""
+
+    key: str
+    label: str
+    price: float
+    change: float
+    change_rate: float
+    currency: str
+
+
+class IndexQuoteResponse(BaseModel):
+    """주요 지수 시세 응답."""
+
+    items: list[IndexQuoteItem]
+
+
+# ---------------------------------------------------------------------------
+# /balance — 실계좌 평가금액·평가손익 (계좌 요약 카드용)
+# ---------------------------------------------------------------------------
+
+
+class BalanceItem(BaseModel):
+    """보유 종목 1개의 평가 정보. Toss holdings 응답을 그대로 반영한다."""
+
+    symbol: str
+    symbol_name: str
+    qty: Decimal
+    avg_price: Decimal
+    current_price: Decimal
+    eval_amount: Decimal
+    profit_loss: Decimal
+    profit_loss_rate: float
+    market: str  # "domestic" | "overseas"
+
+
+class BalanceInfo(BaseModel):
+    """계좌 전체 잔고 응답.
+
+    total_eval_amount_krw/total_profit_loss_krw는 KRW 보유분만 합산한 값이다
+    (Toss holdings 응답이 통화별로 분리되어 있어 원화 환산 없이는 USD 보유분과
+    단순 합산할 수 없다). deposit(예수금)은 holdings 응답에 없어 항상 0 —
+    별도 계좌 잔고 API 연동 전까지는 화면에서 노출하지 않는다.
+    """
+
+    items: list[BalanceItem]
+    total_eval_amount_krw: Decimal
+    total_profit_loss_krw: Decimal
+    deposit: Decimal
 
 
 # ---------------------------------------------------------------------------

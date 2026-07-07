@@ -14,23 +14,26 @@ colors:
   ink-white: "#f1f5f9"
 typography:
   display:
-    fontFamily: "JetBrains Mono, Fira Code, monospace"
+    fontFamily: "Pretendard, -apple-system, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 600
     lineHeight: 1.5
-    letterSpacing: "0.05em"
+    letterSpacing: "-0.01em"
   body:
-    fontFamily: "JetBrains Mono, Fira Code, monospace"
+    fontFamily: "Pretendard, -apple-system, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: "normal"
   label:
-    fontFamily: "JetBrains Mono, Fira Code, monospace"
+    fontFamily: "Pretendard, -apple-system, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: 1.4
     letterSpacing: "normal"
+  numeric:
+    fontFeatureSettings: "tabular-nums"
+    note: "가격·수량·시각 등 정렬이 필요한 숫자는 폰트 교체 대신 tabular-nums로 정렬한다"
 rounded:
   sm: "4px"
   md: "8px"
@@ -85,16 +88,17 @@ components:
 
 Quanteo 대시보드는 시장의 소음 속에서 침묵의 교환이 이루어지는 공간이다. 봇이 돌아가는 동안 운용자는 한 화면에서 모든 것을 읽어낸다 — 포지션, 주문, 체결, 전략 실행 흐름까지. 화면은 말하지 않는다. 그러나 상태가 달라지면 바로 안다. 그것이 이 시스템의 역할이다.
 
-배경은 심우주 검정(#0f1117). 데이터는 어둠 속에서 부상한다. JetBrains Mono 단일 패밀리가 숫자, 기호, 레이블 모두를 같은 그리드 위에 정렬한다. Signal Blue는 클릭 가능하고 제어 가능한 것에만 쓴다 — 나머지는 위계 속에 침묵한다. 색상은 장식이 아니라 신호다.
+배경은 심우주 검정(#0f1117). 데이터는 어둠 속에서 부상한다. Pretendard 단일 패밀리가 숫자, 기호, 한글 레이블 모두를 같은 리듬 위에 정렬한다 — 토스증권 HTS(PC 트레이딩 터미널)가 실제로 쓰는 정제된 산세리프 무드를 참조했다. 숫자 정렬은 폰트가 아니라 tabular-nums로 담당한다. Signal Blue는 클릭 가능하고 제어 가능한 것에만 쓴다 — 나머지는 위계 속에 침묵한다. 색상은 장식이 아니라 신호다.
 
-이 시스템은 소비자 투자 앱(Trading212, Robinhood)의 게임화 미학을 명시적으로 거부한다. 밝은 배경, 원형 진척 그래프, 그라데이션 강조, 균일한 카드 그리드는 이 공간에 없다. 일반 SaaS 어드민 템플릿의 무색무취한 사이드바 레이아웃도 아니다. 운용자가 장중에 쓰는 도구는 시장의 전문성을 반영해야 한다.
+이 시스템은 소비자 투자 앱(Trading212, Robinhood)의 게임화 미학을 명시적으로 거부한다. 밝은 배경, 원형 진척 그래프, 그라데이션 강조, 균일한 카드 그리드는 이 공간에 없다. 일반 SaaS 어드민 템플릿의 무색무취한 사이드바 레이아웃도 아니다. 운용자가 장중에 쓰는 도구는 시장의 전문성을 반영해야 한다 — 토스증권 HTS처럼 밀도 높은 멀티패널, 얇은 헤어라인, 조작 가능해 보이는 패널 크롬(드래그 핸들)으로.
 
 **Key Characteristics:**
 
-- 모노스페이스 타이포그래피 일원화 — 단일 폰트 패밀리, 크기/굵기/색상으로만 위계
+- 산세리프 타이포그래피 일원화 — Pretendard 단일 폰트 패밀리, 크기/굵기/색상으로만 위계. 숫자는 tabular-nums로 정렬
 - 그림자 없음, 깊이는 배경 레이어링(space-black → midnight-panel)
 - 상태 색상은 항상 레이블과 함께 — 색상 단독 의존 금지 (WCAG 1.4.1)
 - 모든 핵심 제어는 현재 화면에서 — 탐색을 위한 탐색 없음
+- 패널 헤더에 드래그 핸들 아이콘 — 실제 재배치 기능은 없지만 "조작 가능한 워크스테이션" 무드를 전달하는 장식적 어포던스
 
 ## 2. Colors: The Operational Palette
 
@@ -128,18 +132,19 @@ Quanteo 대시보드는 시장의 소음 속에서 침묵의 교환이 이루어
 
 ## 3. Typography
 
-**All Roles Font:** JetBrains Mono, Fira Code, monospace
+**All Roles Font:** Pretendard, -apple-system, system-ui, sans-serif
 
-**Character:** 단일 모노스페이스 패밀리가 전부를 담당한다. 숫자, 기호, 한글 레이블, 영문 식별자가 모두 같은 그리드 위에 정렬된다. 타이포그래피 혼합은 없다 — 대신 크기, 굵기, 색조로 위계를 만든다. 이것은 결함이 아니라 의도다: 이 대시보드는 터미널에서 왔다.
+**Character:** 단일 산세리프 패밀리가 전부를 담당한다. 숫자, 기호, 한글 레이블, 영문 식별자가 모두 같은 리듬 위에 정렬된다. 타이포그래피 혼합은 없다 — 대신 크기, 굵기, 색조로 위계를 만든다. 모노스페이스 대신 클린 산세리프를 택한 이유: 이 대시보드가 참조하는 무드는 해커 터미널이 아니라 토스증권 HTS — 정제된 금융 소프트웨어의 신뢰감이다. 숫자 정렬이 필요한 곳(가격·수량·시각)은 `tabular-nums` 유틸리티로 해결한다.
 
 ### Hierarchy
 
-- **Display** (600 weight, 0.875rem, line-height 1.5, letter-spacing 0.05em): 섹션 패널 헤더. 전체 화면에서 레이블 역할. `text-sm font-semibold tracking-wider text-white`
+- **Display** (600 weight, 0.875rem, line-height 1.5, letter-spacing -0.01em): 섹션 패널 헤더. 전체 화면에서 레이블 역할. `text-sm font-semibold tracking-tight text-white`
 - **Body** (400 weight, 0.875rem, line-height 1.5): 테이블 행 데이터, 피드백 메시지. 기본 읽기 단위.
 - **Label** (400 weight, 0.75rem, line-height 1.4): 테이블 컬럼 헤더, 시각 정보, 건수. 데이터의 주석.
-- **Data Emphasis** (600 weight, 0.875rem, ink-white): 종목 코드, 핵심 수치. 행 내에서 시선을 끄는 값.
+- **Data Emphasis** (600 weight, 0.875rem, ink-white, tabular-nums): 종목 코드, 핵심 수치. 행 내에서 시선을 끄는 값.
+- **Hero Numeric** (700 weight, 1.25rem, accent 또는 ink-white, tabular-nums): 계좌 요약의 총 매입금액처럼 카드 안에서 가장 먼저 읽혀야 하는 숫자.
 
-**The One Family Rule.** 폰트 패밀리를 추가하지 않는다. JetBrains Mono 단일 패밀리가 이 시스템의 정체성이다. 새로운 영역에 다른 폰트가 필요하다고 느껴지면, 폰트를 바꾸기 전에 굵기와 크기로 먼저 시도한다.
+**The One Family Rule.** 폰트 패밀리를 추가하지 않는다. Pretendard 단일 패밀리가 이 시스템의 정체성이다. 새로운 영역에 다른 폰트가 필요하다고 느껴지면, 폰트를 바꾸기 전에 굵기와 크기로 먼저 시도한다. 숫자 정렬이 필요하다고 느껴지면 모노스페이스로 되돌아가지 말고 `tabular-nums`를 먼저 시도한다.
 
 ## 4. Elevation
 
@@ -168,7 +173,7 @@ Space Black(`#0f1117`) → Midnight Panel(`#1a1d27`) 두 레이어가 전부다.
 - **Corner Style:** 8px (rounded-lg in Tailwind)
 - **Background:** Midnight Panel (#1a1d27)
 - **Border:** 1px solid Structural Line (#2a2d3a)
-- **Header Pattern:** px-4 py-3, 하단 보더, 섹션명(display weight, ink-white) + 건수(label, ghost-gray) 좌우 배치
+- **Header Pattern:** px-3 py-2.5, 하단 보더, 드래그 핸들 아이콘(ghost-gray, 장식용) + 섹션명(display weight, ink-white) + 건수(label, ghost-gray, tabular-nums) 좌우 배치
 - **Nested Cards Prohibited:** 패널 안에 패널 없음.
 
 ### Data Tables
@@ -206,7 +211,7 @@ Space Black(`#0f1117`) → Midnight Panel(`#1a1d27`) 두 레이어가 전부다.
 - **Do** positive/negative 상태는 색상과 텍스트 레이블을 반드시 함께 제공한다 (WCAG 1.4.1).
 - **Do** 제어 버튼의 색상 언어를 일관되게 유지한다: Pause = caution-amber, Resume = live-green, Kill = alert-red.
 - **Do** 새 섹션 컨테이너는 `bg-panel border border-border rounded-lg` 패턴을 따른다.
-- **Do** 타이포그래피는 JetBrains Mono 내에서 크기·굵기·색상으로만 위계를 만든다.
+- **Do** 타이포그래피는 Pretendard 내에서 크기·굵기·색상으로만 위계를 만들고, 숫자는 `tabular-nums`로 정렬한다.
 - **Do** 빈 상태는 ghost-gray 텍스트로 명시한다 ("보유 포지션 없음" 등). 빈 화면을 남기지 않는다.
 - **Do** 실전(prod) 환경 표시는 alert-red로, 명시적 경고 문구와 함께 항상 노출한다.
 - **Do** Kill 버튼은 시각적·구조적으로 다른 제어 버튼과 분리한다 (`ml-auto` 또는 별도 영역).
@@ -218,7 +223,7 @@ Space Black(`#0f1117`) → Midnight Panel(`#1a1d27`) 두 레이어가 전부다.
 - **Don't** `box-shadow`를 사용한다. 깊이는 배경 틴트 차이로만 표현한다.
 - **Don't** `border-left` 1px 초과 컬러 스트라이프를 카드나 항목 강조에 사용한다.
 - **Don't** `background-clip: text` 그라데이션 텍스트를 사용한다.
-- **Don't** JetBrains Mono 외의 폰트 패밀리를 도입한다. 다른 폰트가 필요하다고 느껴지면 굵기와 크기를 먼저 조정한다.
+- **Don't** Pretendard 외의 폰트 패밀리를 도입한다. 다른 폰트가 필요하다고 느껴지면 굵기와 크기를 먼저 조정한다.
 - **Don't** Signal Blue를 배경 장식, 그라데이션, 비인터랙티브 요소에 사용한다.
 - **Don't** 색상만으로 positive/negative를 전달한다. 레이블이나 아이콘이 항상 동반해야 한다.
 - **Don't** Bloomberg 터미널의 정보 과밀을 복제한다. 밀도는 참고하되, 가독성 임계점은 지킨다.

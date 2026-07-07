@@ -21,7 +21,14 @@ describe("StrategyPage 킬스위치 확인 다이얼로그", () => {
     const user = userEvent.setup();
     const onKill = vi.fn();
 
-    render(<StrategyPage logs={[]} positions={[]} onKill={onKill} />);
+    render(
+      <StrategyPage
+        logs={[]}
+        positions={[]}
+        stockNames={new Map()}
+        onKill={onKill}
+      />,
+    );
 
     const dialog = document.querySelector("dialog") as HTMLDialogElement;
     expect(dialog.hasAttribute("open")).toBe(false);
@@ -38,7 +45,14 @@ describe("StrategyPage 킬스위치 확인 다이얼로그", () => {
   it("ESC(cancel 이벤트) → dialog 닫힘 + kill API 미호출", async () => {
     const user = userEvent.setup();
 
-    render(<StrategyPage logs={[]} positions={[]} onKill={vi.fn()} />);
+    render(
+      <StrategyPage
+        logs={[]}
+        positions={[]}
+        stockNames={new Map()}
+        onKill={vi.fn()}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: "킬스위치" }));
 

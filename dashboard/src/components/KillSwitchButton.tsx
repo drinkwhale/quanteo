@@ -43,7 +43,7 @@ export function KillSwitchButton({ onSuccess, disabled, fullWidth }: Props) {
         type="button"
         onClick={() => setConfirmOpen(true)}
         disabled={disabled || loading || done}
-        className={`${fullWidth ? "w-full" : ""} py-2 px-4 rounded bg-negative/10 text-negative border border-negative/30 text-sm font-mono font-semibold
+        className={`${fullWidth ? "w-full" : ""} py-2 px-4 rounded bg-negative/10 text-negative border border-negative/30 text-sm font-sans font-semibold
                    hover:bg-negative/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
                    focus-visible:outline-negative`}
       >
@@ -51,7 +51,7 @@ export function KillSwitchButton({ onSuccess, disabled, fullWidth }: Props) {
       </button>
 
       {error && (
-        <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
+        <p className="text-xs font-sans text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
           {error}
         </p>
       )}

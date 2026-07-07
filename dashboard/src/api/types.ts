@@ -97,3 +97,48 @@ export interface OrderModifyResponse {
   order_id: string;
   message: string;
 }
+
+// 종목명 조회 — 심볼 코드 대신 종목명 표시용 (영업일 단위 갱신, 세션당 1회 캐시)
+export interface StockNameItem {
+  symbol: string;
+  name: string;
+  market: string;
+}
+
+export interface StockNameList {
+  items: StockNameItem[];
+}
+
+// 계좌 요약 — 실계좌 평가금액·평가손익 (Toss holdings 그대로 반영)
+export interface BalanceItem {
+  symbol: string;
+  symbol_name: string;
+  qty: number;
+  avg_price: number;
+  current_price: number;
+  eval_amount: number;
+  profit_loss: number;
+  profit_loss_rate: number;
+  market: string;
+}
+
+export interface BalanceInfo {
+  items: BalanceItem[];
+  total_eval_amount_krw: number;
+  total_profit_loss_krw: number;
+  deposit: number;
+}
+
+// 주요 지수 시세 — Toss API 미지원, 외부 소스(Yahoo Finance) 조회
+export interface IndexQuoteItem {
+  key: string;
+  label: string;
+  price: number;
+  change: number;
+  change_rate: number;
+  currency: string;
+}
+
+export interface IndexQuoteResponse {
+  items: IndexQuoteItem[];
+}
