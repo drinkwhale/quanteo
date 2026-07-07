@@ -224,7 +224,7 @@ class BalanceItem(BaseModel):
     """보유 종목 1개의 평가 정보. Toss holdings 응답을 그대로 반영한다.
 
     profit_loss/profit_loss_rate는 매입가 대비 누적 손익(평가금액 기준)이고,
-    day_change/day_change_rate는 전일 종가 대비 당일 등락(현재가 기준)이다 —
+    day_change/day_change_rate는 오늘 시가 대비 당일 등락(현재가 기준)이다 —
     두 축이 서로 다른데 대시보드가 이를 혼동해 보여주던 버그를 고치며 추가한
     필드. day_change*는 캔들 조회 실패 시 null일 수 있다(가짜 값 대신 결측 표시).
     """

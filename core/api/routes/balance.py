@@ -22,12 +22,15 @@ _KST = ZoneInfo("Asia/Seoul")
 async def _fetch_day_change(
     broker: object, symbol: str, current_price: float
 ) -> tuple[Decimal, float] | None:
-    """전일 종가 대비 당일 등락(금액, 비율)을 계산한다.
+    """오늘 시가 대비 당일 등락(금액, 비율)을 계산한다.
 
-    Toss holdings/현재가 API는 전일 종가를 직접 주지 않아, 일봉 캔들 2개를
-    가져와 "오늘 날짜(KST)가 아닌 가장 최근 봉"을 전일 종가로 쓴다. 캔들 조회가
-    실패하거나 데이터가 없으면 None — 호출부가 이걸 매입가 기준 수익률로
-    잘못 대체하지 않고 결측으로 표시해야 한다(이번에 고친 버그의 재발 방지).
+    현재가 조회(GET /api/v1/prices)는 lastPrice만 주고 openPrice는 항상 0으로
+    떨어진다(실제 응답 확인함 — 스펙 예시가 문서적 축약이 아니라 실제 응답
+    그대로였다). 그래서 일봉 캔들에서 "오늘 날짜(KST)에 해당하는 봉"을 찾아 그
+    openPrice를 오늘 시가로 쓴다. get_candles의 반환 순서가 최신·과거 어느
+    쪽인지 문서와 실제 응답이 어긋나 있어(문서: 오래된→최신, 실측: 최신→오래된)
+    인덱스로 추정하지 않고 날짜를 직접 비교한다. 오늘 봉이 아직 없거나(개장
+    전) 조회 실패 시 None — 매입가 기준 수익률로 조용히 대체하지 않는다.
     """
     try:
         candles = await broker.get_candles(symbol, interval="1d", count=2)  # type: ignore[attr-defined]
@@ -35,19 +38,19 @@ async def _fetch_day_change(
         logger.warning("당일 등락 계산용 캔들 조회 실패: %s", symbol, exc_info=True)
         return None
 
-    if not candles:
-        return None
-
     today_kst = datetime.now(_KST).date()
-    prior_days = [c for c in candles if c.timestamp.astimezone(_KST).date() != today_kst]
-    prev_close = float((prior_days[-1] if prior_days else candles[0]).close_price)
-    if not prev_close:
+    today_candle = next(
+        (c for c in candles if c.timestamp.astimezone(_KST).date() == today_kst), None
+    )
+    if today_candle is None:
         return None
 
-    # adapter의 BalanceItem.current_price는 float, 캔들 종가는 Decimal이라 여기서
-    # float으로 맞춘 뒤 응답 모델(Decimal 필드)에 넣을 때만 다시 Decimal로 감싼다.
-    change = float(current_price) - prev_close
-    return Decimal(str(change)), change / prev_close
+    open_price = float(today_candle.open_price)
+    if not open_price:
+        return None
+
+    change = float(current_price) - open_price
+    return Decimal(str(change)), change / open_price
 
 
 @router.get("/balance", response_model=BalanceInfo, summary="계좌 평가금액·평가손익 조회")
@@ -59,7 +62,7 @@ async def get_balance(container: ContainerDep) -> BalanceInfo:
     Toss 브로커가 주입된 경우에만 조회 가능(읽기 전용 GET이라 --with-trading
     트레이딩 게이트와 무관하게 항상 호출 가능).
 
-    보유 종목별로 전일 종가 대비 당일 등락도 함께 계산해서 내려준다(day_change*).
+    보유 종목별로 오늘 시가 대비 당일 등락도 함께 계산해서 내려준다(day_change*).
     """
     broker = container.broker
     if broker is None:

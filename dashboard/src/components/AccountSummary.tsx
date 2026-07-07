@@ -156,7 +156,7 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
                       : fmtPrice(item.eval_amount, item.market)}
                   </div>
                   {/*
-                    "현재가" 모드는 전일 종가 대비 당일 등락(day_change*)을 보여줘야
+                    "현재가" 모드는 오늘 시가 대비 당일 등락(day_change*)을 보여줘야
                     한다 — 매입가 기준 누적 수익률(profit_loss_rate)과는 다른 축이라
                     잘못 섞어 쓰면 "평가금액 모드랑 같은 숫자가 나온다"는 버그가 된다.
                     day_change*는 캔들 조회가 실패하면 null이니, 그 경우 profit_loss로

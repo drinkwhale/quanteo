@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,28 +19,34 @@ from core.events.bus import EventBus
 from core.risk.manager import RiskManager
 from core.store.db import StateStore
 
-# 실제 "오늘"과 절대 겹치지 않도록 과거로 고정 — day_change 계산이 날짜 비교에
-# 의존하므로, 테스트 실행 시점과 무관하게 항상 "전일 종가 아님" 취급되면 안 된다.
-_PAST_CANDLES = [
-    TossCandle(
-        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
-        open_price=Decimal("73000"),
-        high_price=Decimal("74500"),
-        low_price=Decimal("72800"),
-        close_price=Decimal("74000"),
-        volume=1_000_000,
-        currency="KRW",
-    ),
-    TossCandle(
-        timestamp=datetime(2026, 1, 2, tzinfo=UTC),
-        open_price=Decimal("74000"),
-        high_price=Decimal("75500"),
-        low_price=Decimal("73800"),
-        close_price=Decimal("74800"),
-        volume=1_100_000,
-        currency="KRW",
-    ),
-]
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _make_candles_with_today_open(open_price: str) -> list[TossCandle]:
+    """day_change 계산이 "KST 오늘 날짜의 캔들"을 날짜로 찾아 쓰므로, 테스트
+    실행 시점과 무관하게 항상 맞도록 실제 오늘 날짜로 캔들을 만든다."""
+    today = datetime.now(_KST)
+    yesterday = today - timedelta(days=1)
+    return [
+        TossCandle(
+            timestamp=yesterday,
+            open_price=Decimal("74000"),
+            high_price=Decimal("74500"),
+            low_price=Decimal("73800"),
+            close_price=Decimal("74200"),
+            volume=1_000_000,
+            currency="KRW",
+        ),
+        TossCandle(
+            timestamp=today,
+            open_price=Decimal(open_price),
+            high_price=Decimal("75200"),
+            low_price=Decimal("74400"),
+            close_price=Decimal("75000"),
+            volume=1_200_000,
+            currency="KRW",
+        ),
+    ]
 
 
 @pytest.fixture
@@ -73,7 +80,7 @@ def broker_mock():
             deposit=0.0,
         )
     )
-    broker.get_candles = AsyncMock(return_value=_PAST_CANDLES)
+    broker.get_candles = AsyncMock(return_value=_make_candles_with_today_open("74600"))
     return broker
 
 
@@ -119,18 +126,29 @@ def test_balance_item_fields(client_with_broker):
     assert item["market"] == "domestic"
 
 
-def test_balance_day_change_computed_from_candles(client_with_broker):
+def test_balance_day_change_computed_from_todays_open(client_with_broker):
     """day_change*는 profit_loss_rate(매입가 기준)와 다른 값이어야 한다 — 이번에 고친 버그."""
     data = client_with_broker.get("/balance").json()
     item = data["items"][0]
-    # current_price=75000, 전일 종가(가장 최근 비-오늘 캔들)=74800
-    assert float(item["day_change"]) == 200.0
-    assert item["day_change_rate"] == pytest.approx(200 / 74800)
+    # current_price=75000, 오늘 캔들의 open_price=74600
+    assert float(item["day_change"]) == 400.0
+    assert item["day_change_rate"] == pytest.approx(400 / 74600)
     assert item["day_change_rate"] != pytest.approx(item["profit_loss_rate"])
 
 
 def test_balance_day_change_null_when_candles_fail(container_with_broker, broker_mock):
     broker_mock.get_candles = AsyncMock(side_effect=RuntimeError("candle fetch failed"))
+    client = TestClient(create_app(container_with_broker))
+    data = client.get("/balance").json()
+    item = data["items"][0]
+    assert item["day_change"] is None
+    assert item["day_change_rate"] is None
+
+
+def test_balance_day_change_null_when_no_candle_for_today(container_with_broker, broker_mock):
+    """오늘 날짜의 캔들이 아직 없으면(개장 전 등) day_change는 결측이어야 한다."""
+    yesterday_only = _make_candles_with_today_open("74600")[:1]
+    broker_mock.get_candles = AsyncMock(return_value=yesterday_only)
     client = TestClient(create_app(container_with_broker))
     data = client.get("/balance").json()
     item = data["items"][0]

@@ -110,7 +110,7 @@ export interface StockNameList {
 }
 
 // 계좌 요약 — 실계좌 평가금액·평가손익 (Toss holdings 그대로 반영)
-// profit_loss(_rate)는 매입가 기준 누적 손익, day_change(_rate)는 전일 종가
+// profit_loss(_rate)는 매입가 기준 누적 손익, day_change(_rate)는 오늘 시가
 // 기준 당일 등락 — 서로 다른 축이니 섞어 쓰지 말 것(과거에 이 버그가 있었음).
 export interface BalanceItem {
   symbol: string;
