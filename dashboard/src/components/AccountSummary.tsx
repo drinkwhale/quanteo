@@ -38,6 +38,43 @@ function sortItems(items: BalanceItem[], key: SortKey): BalanceItem[] {
 }
 
 /**
+ * "현재가" 모드는 오늘 시가 대비 당일 등락(day_change)을, "평가금액" 모드는
+ * 매입가 기준 누적 수익률(profit_loss_rate)을 보여준다 — 서로 다른 축이라
+ * 잘못 섞어 쓰면 "두 모드가 같은 숫자로 나온다"는 버그가 된다(과거에 실제
+ * 있었던 버그). day_change는 캔들 조회가 실패하면 null이니, 그 경우
+ * profit_loss로 조용히 대체하지 않고 결측을 그대로 보여준다.
+ */
+function PnlDelta({
+  item,
+  displayMode,
+}: {
+  item: BalanceItem;
+  displayMode: DisplayMode;
+}) {
+  if (displayMode === "eval") {
+    return (
+      <div
+        className={`text-xs tabular-nums ${pnlColorClass(item.profit_loss)}`}
+      >
+        {fmtPnl(item.profit_loss, item.profit_loss_rate, item.market)}
+      </div>
+    );
+  }
+
+  if (!item.day_change) {
+    return <div className="text-xs text-muted">당일 등락 조회 실패</div>;
+  }
+
+  return (
+    <div
+      className={`text-xs tabular-nums ${pnlColorClass(item.day_change.amount)}`}
+    >
+      {fmtPnl(item.day_change.amount, item.day_change.rate, item.market)}
+    </div>
+  );
+}
+
+/**
  * 계좌 요약 — Toss 앱 "내 투자" 카드 레이아웃을 그대로 반영.
  * 예수금(원화·달러 현금)은 Toss holdings 응답에 포함되지 않아 항상 0으로만
  * 잡힌다 — 가짜 수치를 보여주지 않기 위해 이 카드에는 넣지 않았다.
@@ -155,41 +192,7 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
                       ? fmtPrice(item.current_price, item.market)
                       : fmtPrice(item.eval_amount, item.market)}
                   </div>
-                  {/*
-                    "현재가" 모드는 오늘 시가 대비 당일 등락(day_change*)을 보여줘야
-                    한다 — 매입가 기준 누적 수익률(profit_loss_rate)과는 다른 축이라
-                    잘못 섞어 쓰면 "평가금액 모드랑 같은 숫자가 나온다"는 버그가 된다.
-                    day_change*는 캔들 조회가 실패하면 null이니, 그 경우 profit_loss로
-                    조용히 대체하지 않고 결측을 그대로 보여준다.
-                  */}
-                  {displayMode === "current" ? (
-                    item.day_change !== null &&
-                    item.day_change_rate !== null ? (
-                      <div
-                        className={`text-xs tabular-nums ${pnlColorClass(item.day_change)}`}
-                      >
-                        {fmtPnl(
-                          item.day_change,
-                          item.day_change_rate,
-                          item.market,
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted">
-                        당일 등락 조회 실패
-                      </div>
-                    )
-                  ) : (
-                    <div
-                      className={`text-xs tabular-nums ${pnlColorClass(item.profit_loss)}`}
-                    >
-                      {fmtPnl(
-                        item.profit_loss,
-                        item.profit_loss_rate,
-                        item.market,
-                      )}
-                    </div>
-                  )}
+                  <PnlDelta item={item} displayMode={displayMode} />
                 </div>
               </li>
             ))}

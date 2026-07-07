@@ -109,8 +109,16 @@ export interface StockNameList {
   items: StockNameItem[];
 }
 
+// 오늘 시가 대비 당일 등락. amount/rate는 항상 함께 있거나 함께 없다(캔들
+// 조회 실패 시 전체가 null) — 그 불변식을 표현하려고 독립된 nullable 필드
+// 두 개 대신 하나의 nullable 하위 타입으로 감쌌다.
+export interface DayChange {
+  amount: number;
+  rate: number;
+}
+
 // 계좌 요약 — 실계좌 평가금액·평가손익 (Toss holdings 그대로 반영)
-// profit_loss(_rate)는 매입가 기준 누적 손익, day_change(_rate)는 오늘 시가
+// profit_loss(_rate)는 매입가 기준 누적 손익, day_change는 오늘 시가
 // 기준 당일 등락 — 서로 다른 축이니 섞어 쓰지 말 것(과거에 이 버그가 있었음).
 export interface BalanceItem {
   symbol: string;
@@ -121,8 +129,7 @@ export interface BalanceItem {
   eval_amount: number;
   profit_loss: number;
   profit_loss_rate: number;
-  day_change: number | null;
-  day_change_rate: number | null;
+  day_change: DayChange | null;
   market: string;
 }
 
