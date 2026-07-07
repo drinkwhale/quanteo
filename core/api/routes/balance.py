@@ -2,15 +2,75 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import date, datetime
+from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 
 from core.api.deps import ContainerDep
-from core.api.models import BalanceInfo, BalanceItem
+from core.api.models import BalanceInfo, BalanceItem, DayChange
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_KST = ZoneInfo("Asia/Seoul")
+
+
+def _candle_date_kst(candle: object) -> date:
+    """캔들 타임스탬프를 KST 날짜로 변환한다.
+
+    국내 종목은 이 변환이 맞다고 실측으로 확인했다. 해외(미국) 종목은 Toss가
+    캔들 타임스탬프를 어느 시간대로 내려주는지 실측 데이터가 없다 — 지금
+    보유 종목에 해외 주식이 없어 검증하지 못했다. 해외 종목을 매수하게 되면
+    _fetch_day_change가 실제로 "오늘"을 정확히 구분하는지 반드시 재검증할 것
+    (개장 전 새벽 시간대에 하루 어긋날 가능성 있음).
+    """
+    return candle.timestamp.astimezone(_KST).date()  # type: ignore[attr-defined]
+
+
+async def _fetch_day_change(broker: object, symbol: str, current_price: float) -> DayChange | None:
+    """오늘 시가 대비 당일 등락을 계산한다.
+
+    현재가 조회(GET /api/v1/prices)는 lastPrice만 주고 openPrice는 항상 0으로
+    떨어진다(실제 응답 확인함 — 스펙 예시가 문서적 축약이 아니라 실제 응답
+    그대로였다). 그래서 일봉 캔들에서 "오늘 날짜(KST)에 해당하는 봉"을 찾아 그
+    openPrice를 오늘 시가로 쓴다. get_candles의 반환 순서가 최신·과거 어느
+    쪽인지 문서와 실제 응답이 어긋나 있어(문서: 오래된→최신, 실측: 최신→오래된)
+    인덱스로 추정하지 않고 날짜를 직접 비교한다.
+
+    None을 반환하는 세 가지 경우를 로그 레벨로 구분한다 — 다 같은 "실패"가
+    아니다:
+    - 캔들 조회 자체가 예외를 던짐 → warning (API 이상, 조사 대상)
+    - 오늘 날짜의 캔들이 아직 없음 → debug (개장 전·휴장일 등 정상 상태)
+    - 오늘 캔들은 있는데 openPrice가 0/falsy → warning (데이터 이상, 조사 대상)
+    매입가 기준 수익률로 조용히 대체하지 않고 항상 None으로 결측을 알린다.
+    """
+    try:
+        candles = await broker.get_candles(symbol, interval="1d", count=2)  # type: ignore[attr-defined]
+    except Exception:
+        logger.warning("당일 등락 계산용 캔들 조회 실패: %s", symbol, exc_info=True)
+        return None
+
+    today_kst = datetime.now(_KST).date()
+    today_candle = next((c for c in candles if _candle_date_kst(c) == today_kst), None)
+    if today_candle is None:
+        logger.debug("오늘 날짜의 캔들 없음(개장 전 또는 휴장일 가능): %s", symbol)
+        return None
+
+    open_price = float(today_candle.open_price)
+    if not open_price:
+        logger.warning(
+            "오늘 캔들의 open_price가 비정상(0 또는 falsy): symbol=%s, open_price=%r",
+            symbol,
+            today_candle.open_price,
+        )
+        return None
+
+    change = float(current_price) - open_price
+    return DayChange(amount=Decimal(str(change)), rate=change / open_price)
 
 
 @router.get("/balance", response_model=BalanceInfo, summary="계좌 평가금액·평가손익 조회")
@@ -21,6 +81,8 @@ async def get_balance(container: ContainerDep) -> BalanceInfo:
     Toss holdings API를 그대로 반영해 현재가·평가금액·평가손익까지 담고 있다.
     Toss 브로커가 주입된 경우에만 조회 가능(읽기 전용 GET이라 --with-trading
     트레이딩 게이트와 무관하게 항상 호출 가능).
+
+    보유 종목별로 오늘 시가 대비 당일 등락도 함께 계산해서 내려준다(day_change).
     """
     broker = container.broker
     if broker is None:
@@ -35,6 +97,10 @@ async def get_balance(container: ContainerDep) -> BalanceInfo:
         logger.exception("계좌 잔고 조회 실패")
         raise HTTPException(status_code=502, detail="계좌 잔고 조회에 실패했습니다.") from exc
 
+    day_changes = await asyncio.gather(
+        *(_fetch_day_change(broker, item.symbol, item.current_price) for item in balance.items)
+    )
+
     return BalanceInfo(
         items=[
             BalanceItem(
@@ -46,9 +112,10 @@ async def get_balance(container: ContainerDep) -> BalanceInfo:
                 eval_amount=item.eval_amount,
                 profit_loss=item.profit_loss,
                 profit_loss_rate=item.profit_loss_rate,
+                day_change=day_change,
                 market=item.market,
             )
-            for item in balance.items
+            for item, day_change in zip(balance.items, day_changes, strict=True)
         ],
         total_eval_amount_krw=balance.total_eval_amount_krw,
         total_profit_loss_krw=balance.total_profit_loss_krw,
