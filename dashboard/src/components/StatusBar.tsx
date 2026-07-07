@@ -29,7 +29,7 @@ interface Props {
 export function StatusBar({ status, streamConnected }: Props) {
   if (!status) {
     return (
-      <div className="sticky top-0 z-[var(--z-sticky)] flex items-center gap-3 px-4 py-2 bg-panel border-b border-border text-muted text-sm font-mono">
+      <div className="sticky top-0 z-[var(--z-sticky)] flex items-center gap-3 px-4 py-2 bg-panel border-b border-border text-muted text-sm font-sans">
         <span className="animate-pulse">연결 중...</span>
       </div>
     );
@@ -40,7 +40,7 @@ export function StatusBar({ status, streamConnected }: Props) {
     HALT_LABEL[status.halt_level] ?? status.halt_level.toUpperCase();
 
   return (
-    <div className="sticky top-0 z-[var(--z-sticky)] flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-6 px-4 py-2 bg-panel border-b border-border text-sm font-mono">
+    <div className="sticky top-0 z-[var(--z-sticky)] flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-6 px-4 py-2 bg-panel border-b border-border text-sm font-sans">
       <span className="font-semibold text-white tracking-wider whitespace-nowrap">
         quanteo
       </span>
@@ -66,7 +66,9 @@ export function StatusBar({ status, streamConnected }: Props) {
 
       <span className="text-muted whitespace-nowrap hidden md:inline">
         UPTIME:{" "}
-        <span className="text-white">{fmtUptime(status.uptime_seconds)}</span>
+        <span className="text-white tabular-nums">
+          {fmtUptime(status.uptime_seconds)}
+        </span>
       </span>
 
       <span className="ml-auto flex-shrink-0 flex items-center gap-1.5 text-muted whitespace-nowrap">

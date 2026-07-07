@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import type { OrderItem } from "../api/types";
+import { StockCell } from "./StockCell";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-warning",
@@ -17,10 +18,11 @@ interface Props {
   orders: OrderItem[];
   error?: string | null;
   onRefetch?: () => void;
+  stockNames: Map<string, string>;
 }
 
 /** Panel 안에 들어가는 본문만 렌더링 — 헤더/카운트는 상위 Panel이 담당 */
-export function OrdersTable({ orders, error, onRefetch }: Props) {
+export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null); // order_id being actioned
 
@@ -40,18 +42,18 @@ export function OrdersTable({ orders, error, onRefetch }: Props) {
   return (
     <>
       {(error || actionError) && (
-        <p className="px-4 py-2 text-negative text-xs font-mono border-b border-border bg-negative/5">
+        <p className="px-4 py-2 text-negative text-xs font-sans border-b border-border bg-negative/5">
           {error ?? actionError}
         </p>
       )}
 
       {orders.length === 0 ? (
-        <p className="px-4 py-6 text-muted text-sm font-mono text-center">
+        <p className="px-4 py-6 text-muted text-sm font-sans text-center">
           주문 내역 없음
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm font-mono">
+          <table className="w-full text-sm font-sans">
             <thead>
               <tr className="text-muted text-xs border-b border-border">
                 <th className="px-4 py-2 text-left">종목</th>
@@ -75,18 +77,18 @@ export function OrdersTable({ orders, error, onRefetch }: Props) {
                     key={o.client_order_id}
                     className="border-b border-border last:border-0 hover:bg-surface transition-colors"
                   >
-                    <td className="px-4 py-2 text-white font-semibold">
-                      {o.symbol}
+                    <td className="px-4 py-2">
+                      <StockCell symbol={o.symbol} names={stockNames} />
                     </td>
                     <td
                       className={`px-4 py-2 font-semibold ${o.side === "BUY" ? "text-positive" : "text-negative"}`}
                     >
                       {o.side === "BUY" ? "BUY" : "SELL"}
                     </td>
-                    <td className="px-4 py-2 text-right text-white">
+                    <td className="px-4 py-2 text-right text-white tabular-nums">
                       {o.qty.toLocaleString()}
                     </td>
-                    <td className="px-4 py-2 text-right text-white">
+                    <td className="px-4 py-2 text-right text-white tabular-nums">
                       {o.price.toLocaleString("ko-KR")}
                     </td>
                     <td
@@ -103,7 +105,7 @@ export function OrdersTable({ orders, error, onRefetch }: Props) {
                           type="button"
                           disabled={isLoading}
                           onClick={() => handleCancel(brokerId)}
-                          className="text-xs px-2 py-1 rounded border border-negative/50 text-negative hover:bg-negative/10 disabled:opacity-40 transition-colors font-mono"
+                          className="text-xs px-2 py-1 rounded border border-negative/50 text-negative hover:bg-negative/10 disabled:opacity-40 transition-colors font-sans"
                         >
                           {isLoading ? "취소중…" : "취소"}
                         </button>

@@ -88,7 +88,7 @@ export function ConfirmDialog({
       className="bg-panel border border-border rounded-lg p-0 text-white backdrop:bg-black/60
                  animate-[fadeIn_0.15s_ease-out] motion-reduce:animate-none open:motion-reduce:opacity-100"
     >
-      <div className="w-80 max-w-[90vw] p-4 space-y-4 font-mono">
+      <div className="w-80 max-w-[90vw] p-4 space-y-4 font-sans">
         <h2
           id="confirm-dialog-title"
           className="text-sm font-semibold tracking-wider"

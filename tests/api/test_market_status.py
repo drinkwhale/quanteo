@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from core.api.app import create_app
-from core.api.deps import AppContainer
 from core.adapters.toss.models import (
     BuyingPowerInfo,
     Fill,
     KrMarketCalendar,
     KrMarketDay,
+    StockInfo,
     UsMarketCalendar,
     UsMarketDay,
 )
+from core.api.app import create_app
+from core.api.deps import AppContainer
 from core.events.bus import EventBus
 from core.risk.manager import RiskManager
 from core.store.db import StateStore
-
 
 # ---------------------------------------------------------------------------
 # 픽스처
@@ -65,16 +65,32 @@ def broker_mock():
     broker.get_buying_power = AsyncMock(
         return_value=BuyingPowerInfo(currency="KRW", cash_buying_power=Decimal("3500000"))
     )
-    broker.get_trades = AsyncMock(return_value=[
-        Fill(
-            symbol="005930",
-            price=Decimal("72000"),
-            volume=10,
-            timestamp=datetime(2026, 6, 29, 10, 30, 0, tzinfo=UTC),
-            currency="KRW",
-            side="BUY",
-        )
-    ])
+    broker.get_trades = AsyncMock(
+        return_value=[
+            Fill(
+                symbol="005930",
+                price=Decimal("72000"),
+                volume=10,
+                timestamp=datetime(2026, 6, 29, 10, 30, 0, tzinfo=UTC),
+                currency="KRW",
+                side="BUY",
+            )
+        ]
+    )
+    broker.get_stocks = AsyncMock(
+        return_value=[
+            StockInfo(
+                symbol="005930",
+                name="삼성전자",
+                english_name="SamsungElec",
+                market="KOSPI",
+                status="ACTIVE",
+                currency="KRW",
+                isin_code="KR7005930003",
+                is_common_share=True,
+            )
+        ]
+    )
     return broker
 
 
@@ -133,6 +149,34 @@ def test_market_status_kr_is_open(client_with_broker):
 
 def test_market_status_503_without_broker(client_no_broker):
     res = client_no_broker.get("/market-status")
+    assert res.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# /stock-names
+# ---------------------------------------------------------------------------
+
+
+def test_stock_names_returns_200_with_broker(client_with_broker):
+    res = client_with_broker.get("/stock-names", params={"symbols": "005930"})
+    assert res.status_code == 200
+
+
+def test_stock_names_maps_symbol_to_name(client_with_broker):
+    data = client_with_broker.get("/stock-names", params={"symbols": "005930"}).json()
+    item = data["items"][0]
+    assert item["symbol"] == "005930"
+    assert item["name"] == "삼성전자"
+    assert item["market"] == "KOSPI"
+
+
+def test_stock_names_empty_symbols_returns_empty_list(client_with_broker):
+    data = client_with_broker.get("/stock-names", params={"symbols": ""}).json()
+    assert data["items"] == []
+
+
+def test_stock_names_503_without_broker(client_no_broker):
+    res = client_no_broker.get("/stock-names", params={"symbols": "005930"})
     assert res.status_code == 503
 
 

@@ -61,22 +61,22 @@ function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-muted">
+                  <span className="text-xs font-sans text-muted">
                     {tf.label}
                   </span>
                   {tf.cross === "golden" && (
-                    <span className="text-[10px] font-mono text-positive">
+                    <span className="text-[10px] font-sans text-positive">
                       GC
                     </span>
                   )}
                   {tf.cross === "dead" && (
-                    <span className="text-[10px] font-mono text-negative">
+                    <span className="text-[10px] font-sans text-negative">
                       DC
                     </span>
                   )}
                 </div>
                 <div
-                  className={`text-sm font-mono font-bold ${
+                  className={`text-sm font-sans font-bold tabular-nums ${
                     tf.signal === "buy"
                       ? "text-positive"
                       : tf.signal === "sell"
@@ -86,14 +86,14 @@ function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
                 >
                   {tf.value !== null ? tf.value.toFixed(1) : "—"}
                 </div>
-                <div className="text-[10px] font-mono text-muted capitalize">
+                <div className="text-[10px] font-sans text-muted capitalize">
                   {tf.signal}
                 </div>
               </div>
             );
           })}
         </div>
-        <p className="text-[10px] text-muted font-mono">
+        <p className="text-[10px] text-muted font-sans">
           * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
         </p>
       </div>
@@ -161,13 +161,15 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
     <Panel title="신뢰도 스코어">
       <div className="p-4 space-y-3">
         <div className="flex items-end gap-2 flex-wrap">
-          <span className={`text-3xl font-mono font-bold ${color}`}>
+          <span
+            className={`text-3xl font-sans font-bold tabular-nums tracking-tight ${color}`}
+          >
             {score !== null ? score : "—"}
           </span>
-          <span className="text-muted font-mono text-sm mb-1">/ 8</span>
+          <span className="text-muted font-sans text-sm mb-1">/ 8</span>
           {status && (
             <span
-              className={`ml-auto text-[10px] font-mono font-semibold px-2 py-1 rounded border ${status.badge}`}
+              className={`ml-auto text-[10px] font-sans font-semibold px-2 py-1 rounded border ${status.badge}`}
             >
               {status.label}
             </span>
@@ -193,7 +195,7 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
             {Object.entries(breakdown).map(([key, passed]) => (
               <li
                 key={key}
-                className="flex items-center gap-2 text-xs font-mono"
+                className="flex items-center gap-2 text-xs font-sans"
               >
                 <span
                   aria-hidden="true"
@@ -210,7 +212,7 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
           </ul>
         )}
         {Object.keys(breakdown).length === 0 && (
-          <p className="text-[10px] text-muted font-mono">
+          <p className="text-[10px] text-muted font-sans">
             * 스코어 데이터 대기 중
           </p>
         )}
@@ -223,7 +225,13 @@ function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
 // 서브 컴포넌트: 포지션 진행 바
 // ============================================================================
 
-function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
+function PositionProgressBars({
+  positions,
+  stockNames,
+}: {
+  positions: PositionItem[];
+  stockNames: Map<string, string>;
+}) {
   // 분할 매수 스텝: 1차 30%, 2차 50%, 3차 20% (스펙 기준 예시)
   const STEPS = [
     { label: "1차", pct: 30 },
@@ -234,7 +242,7 @@ function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
   if (positions.length === 0) {
     return (
       <Panel title="포지션 현황">
-        <p className="p-4 text-xs text-muted font-mono">보유 포지션 없음</p>
+        <p className="p-4 text-xs text-muted font-sans">보유 포지션 없음</p>
       </Panel>
     );
   }
@@ -244,9 +252,13 @@ function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
       <div className="p-4 space-y-3">
         {positions.slice(0, 5).map((pos) => (
           <div key={pos.symbol} className="space-y-1">
-            <div className="flex justify-between text-xs font-mono">
-              <span className="text-white">{pos.symbol}</span>
-              <span className="text-muted">{pos.qty.toLocaleString()}주</span>
+            <div className="flex justify-between text-xs font-sans">
+              <span className="text-white truncate">
+                {stockNames.get(pos.symbol) ?? pos.symbol}
+              </span>
+              <span className="text-muted flex-shrink-0 tabular-nums">
+                {pos.qty.toLocaleString()}주
+              </span>
             </div>
             <div className="flex gap-0.5 h-2">
               {STEPS.map((step, i) => (
@@ -266,7 +278,7 @@ function PositionProgressBars({ positions }: { positions: PositionItem[] }) {
                 />
               ))}
             </div>
-            <div className="flex gap-2 text-[10px] font-mono text-muted">
+            <div className="flex gap-2 text-[10px] font-sans text-muted">
               {STEPS.map((s) => (
                 <span key={s.label}>
                   {s.label} {s.pct}%
@@ -347,31 +359,31 @@ function BacktestPanel() {
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-3 gap-2">
           <div className="space-y-1">
-            <label className="text-[10px] font-mono text-muted">종목코드</label>
+            <label className="text-[10px] font-sans text-muted">종목코드</label>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
               placeholder="005930"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-mono text-muted">시작일</label>
+            <label className="text-[10px] font-sans text-muted">시작일</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-mono text-muted">종료일</label>
+            <label className="text-[10px] font-sans text-muted">종료일</label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-mono text-white focus:border-accent"
+              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
             />
           </div>
         </div>
@@ -380,20 +392,20 @@ function BacktestPanel() {
           type="button"
           onClick={run}
           disabled={running || !symbol}
-          className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-mono font-semibold
+          className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-sans font-semibold
                    hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {running ? (statusMsg ?? "실행 중...") : "백테스트 실행"}
         </button>
 
         {error && (
-          <p className="text-xs font-mono text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
+          <p className="text-xs font-sans text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
             {error}
           </p>
         )}
 
         {result && (
-          <dl className="text-xs font-mono">
+          <dl className="text-xs font-sans">
             {(
               [
                 {
@@ -463,7 +475,13 @@ function BacktestPanel() {
 // 서브 컴포넌트: 시그널 토스트
 // ============================================================================
 
-function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
+function SignalToasts({
+  toasts,
+  stockNames,
+}: {
+  toasts: SignalToast[];
+  stockNames: Map<string, string>;
+}) {
   if (toasts.length === 0) return null;
 
   return (
@@ -471,7 +489,7 @@ function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border text-xs font-mono
+          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border text-xs font-sans
                       animate-[fadeIn_0.2s_ease-out] motion-reduce:animate-none motion-reduce:opacity-100 ${
                         t.side === "BUY"
                           ? "bg-positive/10 border-positive/60 text-positive"
@@ -482,7 +500,8 @@ function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
             {t.side === "BUY" ? "▲ 매수 시그널" : "▼ 매도 시그널"}
           </div>
           <div className="text-white">
-            {t.symbol} @ {t.price.toLocaleString()}
+            {stockNames.get(t.symbol) ?? t.symbol} @{" "}
+            <span className="tabular-nums">{t.price.toLocaleString()}</span>
           </div>
           <div className="text-muted truncate">{t.reason}</div>
         </div>
@@ -498,6 +517,7 @@ function SignalToasts({ toasts }: { toasts: SignalToast[] }) {
 interface Props {
   logs: LogEntry[];
   positions: PositionItem[];
+  stockNames: Map<string, string>;
   onKill: () => void;
 }
 
@@ -510,7 +530,7 @@ const PLACEHOLDER_CCI: CciTimeframe[] = [
 
 const TOAST_TTL = 8_000;
 
-export function StrategyPage({ logs, positions, onKill }: Props) {
+export function StrategyPage({ logs, positions, stockNames, onKill }: Props) {
   const [toasts, setToasts] = useState<SignalToast[]>([]);
   const toastKeyRef = useRef(0);
   const seenRef = useRef(new Set<string>());
@@ -594,13 +614,13 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
 
   return (
     <>
-      <SignalToasts toasts={toasts} />
+      <SignalToasts toasts={toasts} stockNames={stockNames} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* 왼쪽: CCI + 포지션 */}
         <div className="space-y-4">
           <CciPanel timeframes={cciFrames} />
-          <PositionProgressBars positions={positions} />
+          <PositionProgressBars positions={positions} stockNames={stockNames} />
         </div>
 
         {/* 가운데: 신뢰도 + 백테스트 */}
@@ -620,7 +640,7 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
           <Panel title="최근 시그널">
             <div className="p-4 space-y-2">
               {logs.filter((l) => l.event_type === "signal").length === 0 ? (
-                <p className="text-xs text-muted font-mono">대기 중...</p>
+                <p className="text-xs text-muted font-sans">대기 중...</p>
               ) : (
                 logs
                   .filter((l) => l.event_type === "signal")
@@ -634,16 +654,21 @@ export function StrategyPage({ logs, positions, onKill }: Props) {
                     return (
                       <div
                         key={l._key}
-                        className={`flex items-center justify-between text-xs font-mono px-2 py-1 rounded ${
+                        className={`flex items-center justify-between text-xs font-sans px-2 py-1 rounded ${
                           p?.side === "BUY"
                             ? "text-positive bg-positive/5"
                             : "text-negative bg-negative/5"
                         }`}
                       >
-                        <span>
-                          {p?.side === "BUY" ? "▲" : "▼"} {p?.symbol}
+                        <span className="truncate">
+                          {p?.side === "BUY" ? "▲" : "▼"}{" "}
+                          {p?.symbol
+                            ? (stockNames.get(p.symbol) ?? p.symbol)
+                            : ""}
                         </span>
-                        <span>{p?.price?.toLocaleString()}</span>
+                        <span className="tabular-nums flex-shrink-0">
+                          {p?.price?.toLocaleString()}
+                        </span>
                       </div>
                     );
                   })

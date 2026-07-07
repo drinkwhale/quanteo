@@ -1,17 +1,26 @@
-"""GET /market-status, GET /risk-metrics — 마켓 상태 및 Risk 지표 조회."""
+"""GET /market-status, GET /stock-names, GET /risk-metrics — 마켓·종목·Risk 지표 조회."""
 
 from __future__ import annotations
 
 import logging
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from core.api.deps import ContainerDep
-from core.api.models import MarketDayStatus, MarketStatus, RiskMetrics
+from core.api.models import (
+    MarketDayStatus,
+    MarketStatus,
+    RiskMetrics,
+    StockNameItem,
+    StockNameList,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Toss Stock Info API 제약: 콤마 구분 최대 200건 (specs/tossinvest/stock-info.json)
+MAX_STOCK_SYMBOLS = 200
 
 
 @router.get("/market-status", response_model=MarketStatus, summary="마켓 개장 상태 조회")
@@ -63,6 +72,47 @@ async def get_market_status(container: ContainerDep) -> MarketStatus:
         markets.append(MarketDayStatus(market="US", is_open=False, today_date="", is_stale=True))
 
     return MarketStatus(markets=markets)
+
+
+@router.get("/stock-names", response_model=StockNameList, summary="종목명 조회")
+async def get_stock_names(
+    container: ContainerDep,
+    symbols: str = Query(..., description="콤마로 구분된 종목 심볼 목록 (예: 005930,AAPL)"),
+) -> StockNameList:
+    """종목 심볼에 대응하는 한글 종목명을 조회한다.
+
+    Toss 브로커가 주입된 경우에만 조회 가능. 종목 참조 정보는 영업일 단위로
+    갱신되므로 화면·세션 진입 시점에 한 번만 호출해 클라이언트에서 캐시해
+    사용하기를 권장한다(짧은 주기 폴링 금지).
+    """
+    broker = container.broker
+    if broker is None:
+        raise HTTPException(
+            status_code=503,
+            detail="브로커 어댑터가 초기화되지 않았습니다. Toss 환경에서만 종목명을 조회할 수 있습니다.",
+        )
+
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        return StockNameList(items=[])
+
+    if len(symbol_list) > MAX_STOCK_SYMBOLS:
+        logger.warning(
+            "종목명 조회 요청이 최대 건수(%d)를 초과해 %d건으로 잘랐습니다.",
+            MAX_STOCK_SYMBOLS,
+            MAX_STOCK_SYMBOLS,
+        )
+        symbol_list = symbol_list[:MAX_STOCK_SYMBOLS]
+
+    try:
+        stocks = await broker.get_stocks(symbol_list)
+    except Exception as exc:
+        logger.exception("종목명 조회 실패")
+        raise HTTPException(status_code=502, detail="종목명 조회에 실패했습니다.") from exc
+
+    return StockNameList(
+        items=[StockNameItem(symbol=s.symbol, name=s.name, market=s.market) for s in stocks]
+    )
 
 
 @router.get("/risk-metrics", response_model=RiskMetrics, summary="Risk 지표 조회")

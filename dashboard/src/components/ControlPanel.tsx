@@ -58,7 +58,7 @@ export function ControlPanel({ status, onAction }: Props) {
         <button
           onClick={() => setPending("pause")}
           disabled={isPaused || isKilled || loading !== null}
-          className="px-4 py-2 rounded bg-warning/10 text-warning border border-warning/30 text-sm font-mono font-semibold
+          className="px-4 py-2 rounded bg-warning/10 text-warning border border-warning/30 text-sm font-sans font-semibold
                      hover:bg-warning/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
                      focus-visible:outline-warning"
         >
@@ -68,7 +68,7 @@ export function ControlPanel({ status, onAction }: Props) {
         <button
           onClick={() => setPending("resume")}
           disabled={(!isPaused && !isKilled) || loading !== null}
-          className="px-4 py-2 rounded bg-positive/10 text-positive border border-positive/30 text-sm font-mono font-semibold
+          className="px-4 py-2 rounded bg-positive/10 text-positive border border-positive/30 text-sm font-sans font-semibold
                      hover:bg-positive/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors
                      focus-visible:outline-positive"
         >
@@ -92,7 +92,7 @@ export function ControlPanel({ status, onAction }: Props) {
 
       {feedback && (
         <p
-          className={`text-xs font-mono px-3 py-2 rounded border ${
+          className={`text-xs font-sans px-3 py-2 rounded border ${
             feedback.ok
               ? "text-positive bg-positive/5 border-positive/20"
               : "text-negative bg-negative/5 border-negative/20"
@@ -103,7 +103,7 @@ export function ControlPanel({ status, onAction }: Props) {
       )}
 
       {status?.env === "prod" && (
-        <p className="text-xs font-mono text-negative border border-negative/30 bg-negative/5 px-3 py-2 rounded">
+        <p className="text-xs font-sans text-negative border border-negative/30 bg-negative/5 px-3 py-2 rounded">
           ⚠️ 실전투자 환경 — 주문이 실제 계좌에 영향을 미칩니다
         </p>
       )}
