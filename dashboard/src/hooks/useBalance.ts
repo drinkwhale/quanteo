@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { BalanceInfo } from "../api/types";
 
-export function useBalance(intervalMs = 5000) {
+export function useBalance(intervalMs = 2000) {
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);

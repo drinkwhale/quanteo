@@ -25,7 +25,7 @@ export default function App() {
     balance,
     error: balanceError,
     lastUpdated: balanceUpdatedAt,
-  } = useBalance(5000);
+  } = useBalance(2000);
   const { indices, error: indicesError } = useIndices(30000);
   const {
     orders,
