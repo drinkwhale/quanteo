@@ -185,6 +185,12 @@ class StateStore:
     ) -> None:
         """주문 상태를 갱신한다 (OrderExecutor·OrderSyncFeed 공용).
 
+        호출 패턴이 둘로 나뉜다:
+        - OrderExecutor: place_order() 직후 broker_order_id를 처음 채우면서
+          'submitted'/'rejected'로 전이 (broker_order_id 전달).
+        - OrderSyncFeed: 이미 broker_order_id가 채워진 주문의 상태만 브로커
+          조회 결과로 갱신 (broker_order_id 생략, 기존 값 유지).
+
         Args:
             client_order_id: 대상 주문의 클라이언트 ID.
             status: 새 상태값.

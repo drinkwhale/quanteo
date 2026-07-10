@@ -138,7 +138,7 @@ class OrderExecutor:
             ack = await self._rest.place_order(order)
         except Exception as exc:
             logger.error("주문 전송 실패: %s (client_id=%s)", exc, order.client_order_id)
-            await self._update_status(order.client_order_id, "rejected", broker_order_id=None)
+            await self._store.update_order_status(order.client_order_id, "rejected")
             self._bus.publish_nowait(
                 Event(
                     type=EventType.ORDER_REJECTED,
@@ -149,7 +149,7 @@ class OrderExecutor:
             raise
 
         # DB 상태 업데이트 (submitted)
-        await self._update_status(order.client_order_id, "submitted", broker_order_id=ack.broker_order_id)
+        await self._store.update_order_status(order.client_order_id, "submitted", ack.broker_order_id)
 
         # Event Bus 발행
         self._bus.publish_nowait(
@@ -221,7 +221,7 @@ class OrderExecutor:
             total_filled: int = (await cursor.fetchone())[0]
 
         new_status = "filled" if total_filled >= row["qty"] else "partial"
-        await self._update_status(client_order_id, new_status, broker_order_id=None)
+        await self._store.update_order_status(client_order_id, new_status)
 
         self._bus.publish_nowait(
             Event(
@@ -258,22 +258,3 @@ class OrderExecutor:
                 return None
             return dict(row)
 
-    async def _update_status(
-        self,
-        client_order_id: str,
-        status: str,
-        broker_order_id: str | None,
-    ) -> None:
-        """주문 상태를 업데이트한다."""
-        now = datetime.now(UTC).isoformat()
-        if broker_order_id is not None:
-            await self._store.conn.execute(
-                "UPDATE orders SET status = ?, broker_order_id = ?, updated_at = ? WHERE client_order_id = ?",
-                (status, broker_order_id, now, client_order_id),
-            )
-        else:
-            await self._store.conn.execute(
-                "UPDATE orders SET status = ?, updated_at = ? WHERE client_order_id = ?",
-                (status, now, client_order_id),
-            )
-        await self._store.conn.commit()

@@ -30,6 +30,9 @@ _CONSECUTIVE_FAILURE_ALERT_THRESHOLD = 3
 # OPEN 그룹(PENDING/PARTIAL_FILLED/PENDING_CANCEL/PENDING_REPLACE)과
 # CANCEL_REJECTED/REPLACE_REJECTED는 여기 없음 — 로컬 상태를 그대로 둔다
 # (아직 종료되지 않았거나, 판단이 애매한 상태를 함부로 확정 짓지 않기 위함).
+# REPLACED는 "정정 주문이 접수되며 원주문을 대체"하는 상태라, 원주문 관점에서는
+# 더 이상 유효하지 않으므로 cancelled로 매핑한다 (정정된 새 주문은 별도
+# client_order_id로 다시 submit()되어 이 매핑과 무관하게 추적된다).
 _CLOSED_STATUS_MAP: dict[str, str] = {
     "FILLED": "filled",
     "CANCELED": "cancelled",
@@ -145,10 +148,32 @@ class OrderSyncFeed:
 
             new_status = _CLOSED_STATUS_MAP.get(toss_order.status)
             if new_status is None:
-                # 여전히 OPEN 그룹이거나 판단이 애매한 상태 — 그대로 둔다.
+                # 여전히 OPEN 그룹이거나 CANCEL_REJECTED/REPLACE_REJECTED처럼
+                # 판단이 애매한 상태 — 로컬 상태는 그대로 두되, 다음 사이클에도
+                # 계속 재조회되도록 pending 목록에 남긴다. 조용히 넘어가면
+                # "정상적으로 아직 열려 있는 주문"과 "예상 못 한 상태를 만난 것"을
+                # 로그에서 구분할 수 없으므로 가시성만 남긴다.
+                logger.debug(
+                    "주문 미확정 상태 유지 (client_order_id=%s, broker_status=%s)",
+                    order.client_order_id,
+                    toss_order.status,
+                )
                 continue
 
-            await self._store.update_order_status(order.client_order_id, new_status)
+            try:
+                await self._store.update_order_status(order.client_order_id, new_status)
+            except Exception as exc:
+                # DB 갱신 실패는 이 주문만 스킵 — 나머지 주문 처리를 막지 않는다
+                # (get_order() 실패와 동일한 부분 실패 격리 원칙).
+                logger.error(
+                    "주문 상태 DB 갱신 실패 (client_order_id=%s, new_status=%s): %s",
+                    order.client_order_id,
+                    new_status,
+                    exc,
+                    exc_info=True,
+                )
+                continue
+
             logger.info(
                 "주문 상태 갱신: %s %s → %s (broker_status=%s)",
                 order.symbol,
@@ -157,8 +182,21 @@ class OrderSyncFeed:
                 toss_order.status,
             )
 
-            if self._bus is not None:
-                event_type = _EVENT_TYPE_MAP[new_status]
+            if self._bus is None:
+                continue
+
+            event_type = _EVENT_TYPE_MAP.get(new_status)
+            if event_type is None:
+                # DB 상태는 이미 반영됐으므로 이벤트 발행 실패로 재시도할
+                # 필요는 없다 — _CLOSED_STATUS_MAP과 _EVENT_TYPE_MAP의 키가
+                # 어긋난 경우를 대비한 안전망 (정상 흐름에서는 발생하지 않음).
+                logger.error(
+                    "이벤트 타입 매핑 누락 (status=%s) — DB는 갱신됐으나 이벤트 미발행",
+                    new_status,
+                )
+                continue
+
+            try:
                 self._bus.publish_nowait(
                     Event(
                         type=event_type,
@@ -170,4 +208,11 @@ class OrderSyncFeed:
                         },
                         source="order-sync",
                     )
+                )
+            except Exception as exc:
+                logger.error(
+                    "주문 상태 이벤트 발행 실패 (client_order_id=%s): %s",
+                    order.client_order_id,
+                    exc,
+                    exc_info=True,
                 )

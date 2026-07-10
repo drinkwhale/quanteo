@@ -128,3 +128,54 @@ async def test_cancel_pending_tasks_cancels_only_undone_tasks() -> None:
     # done_task는 이미 끝났으므로 취소 요청이 영향을 주지 않아야 함
     assert done_task.done()
     assert not done_task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_real_taskgroup_exits_after_stop_even_with_hookless_task() -> None:
+    """실제 asyncio.TaskGroup으로 원래 버그 시나리오를 재현하는 통합 테스트.
+
+    core/app.py의 run()이 실제로 하는 일을 축소 재현한다:
+    - position_sync 같은 "stop() 훅이 있는" 무한 루프 태스크
+    - toss-trading(feed/engine) 같은 "stop() 훅이 없는" 무한 루프 태스크
+    - _wait_stop() 같은 조정 태스크: stop_event를 기다렸다가 _shutdown() 호출 후
+      _cancel_pending_tasks()로 나머지를 정리
+
+    수정 전 코드였다면 이 테스트는 타임아웃으로 실패했을 것이다 (TaskGroup이
+    hookless 태스크가 끝나길 무한정 기다리므로).
+    """
+    stop_event = asyncio.Event()
+    position_sync = _FakeStoppable()
+    tasks: list[asyncio.Task] = []
+
+    async def _position_sync_loop() -> None:
+        while not position_sync.stop_called:
+            await asyncio.sleep(0.01)
+            if position_sync.stop_called:
+                return
+        return
+
+    async def _hookless_trading_loop() -> None:
+        # 자체 stop() 훅이 없는 태스크 — 강제 취소로만 끝난다.
+        await asyncio.sleep(3600)
+
+    async def _wait_stop() -> None:
+        await stop_event.wait()
+        await _shutdown(_FakeStoppable(), _FakeStoppable(), _FakeStore(), position_sync=position_sync)
+        _cancel_pending_tasks(tasks)
+
+    async def _run_group() -> None:
+        async with asyncio.TaskGroup() as tg:
+            tasks.append(tg.create_task(_position_sync_loop(), name="position-sync"))
+            tasks.append(tg.create_task(_hookless_trading_loop(), name="toss-trading"))
+            tg.create_task(_wait_stop(), name="shutdown-watcher")
+            await asyncio.sleep(0.02)
+            stop_event.set()
+
+    # contextlib.suppress는 except*(exception group) 문법을 지원하지 않아 여기서는
+    # try/except*를 그대로 사용한다.
+    try:  # noqa: SIM105
+        await asyncio.wait_for(_run_group(), timeout=2.0)
+    except* asyncio.CancelledError:
+        pass  # 취소된 hookless 태스크의 CancelledError는 정상 종료의 일부
+
+    assert position_sync.stop_called

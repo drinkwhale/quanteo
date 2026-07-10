@@ -170,9 +170,14 @@ async def run(
         logger.info("Control API 시작: http://%s:%d", api_host, api_port)
         await uvicorn_server.serve()
 
-    # TaskGroup은 그룹 내 모든 태스크가 끝나야 빠져나간다. position-sync·트레이딩
-    # 폴링 루프처럼 자체적으로 끝나지 않는 태스크는 _wait_stop()이 정상 반환되는
-    # 것만으로는 멈추지 않는다 — 명시적으로 취소해야 한다 (아래 tasks 리스트).
+    # asyncio.TaskGroup.__aexit__()은 그룹 내 모든 자식 태스크가 끝날 때까지
+    # 블로킹한다 — 한 태스크가 예외로 죽으면 나머지를 취소하지만, 태스크가
+    # 그냥 "정상적으로 반환"되는 것만으로는 형제 태스크를 취소하지 않는다.
+    # 즉 _wait_stop()이 자기 할 일(컴포넌트별 stop() 호출)을 마치고 조용히
+    # 반환해도, position-sync·트레이딩 폴링 루프처럼 자체적으로 끝나지 않는
+    # 태스크는 계속 돌고 TaskGroup 전체가 멈추지 않는다 (SIGTERM을 줘도 프로세스가
+    # 안 죽던 실제 버그의 원인) — 그래서 아래 tasks 리스트에 명시적으로 등록해
+    # _cancel_pending_tasks()로 강제 취소한다.
     tasks: list[asyncio.Task] = []
     position_sync: PositionSyncFeed | None = None
     order_sync: OrderSyncFeed | None = None

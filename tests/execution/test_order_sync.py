@@ -9,12 +9,14 @@ Toss는 WebSocket 체결 통지가 없어 REST 폴링으로 직접 확인해야 
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 
+import core.execution.order_sync as order_sync_module
 from core.events.bus import EventBus
 from core.events.types import EventType
 from core.execution.order_sync import OrderSyncFeed
@@ -197,3 +199,88 @@ async def test_sync_once_ignores_orders_without_broker_order_id(store) -> None:
 
     assert rest.calls == []
     assert await _status_of(store, "c8") == "pending"
+
+
+@pytest.mark.asyncio
+async def test_sync_once_isolates_db_update_failure_from_other_orders(store, monkeypatch) -> None:
+    """update_order_status() 실패가 나머지 주문 처리를 막지 않아야 한다 (부분 실패 격리)."""
+    await _insert_order(store, "c9", "toss-9")
+    await _insert_order(store, "c10", "toss-10")
+    rest = _FakeRestClient(
+        {
+            "toss-9": _FakeTossOrder("toss-9", "FILLED", 1, _FakeExecution(1, Decimal("75000"))),
+            "toss-10": _FakeTossOrder("toss-10", "FILLED", 1, _FakeExecution(1, Decimal("75000"))),
+        }
+    )
+    feed = OrderSyncFeed(rest_client=rest, store=store, env="prod")
+
+    original_update = store.update_order_status
+    call_count = 0
+
+    async def _flaky_update(client_order_id: str, status: str, broker_order_id: str | None = None) -> None:
+        nonlocal call_count
+        call_count += 1
+        if client_order_id == "c9":
+            raise RuntimeError("DB 갱신 실패")
+        await original_update(client_order_id, status, broker_order_id)
+
+    monkeypatch.setattr(store, "update_order_status", _flaky_update)
+
+    await feed.sync_once()
+
+    assert await _status_of(store, "c9") == "submitted"  # 갱신 실패 — 그대로
+    assert await _status_of(store, "c10") == "filled"  # 나머지는 정상 처리
+    assert call_count == 2  # 둘 다 시도는 됨
+
+
+@pytest.mark.asyncio
+async def test_sync_once_logs_unmapped_status_without_crashing(store, caplog) -> None:
+    """CANCEL_REJECTED처럼 매핑에 없는 상태는 로컬 상태를 유지하되 로그로는 남긴다."""
+    await _insert_order(store, "c11", "toss-11")
+    rest = _FakeRestClient(
+        {"toss-11": _FakeTossOrder("toss-11", "CANCEL_REJECTED", 1, _FakeExecution(0, None))}
+    )
+    feed = OrderSyncFeed(rest_client=rest, store=store, env="prod")
+
+    with caplog.at_level("DEBUG", logger="core.execution.order_sync"):
+        await feed.sync_once()
+
+    assert await _status_of(store, "c11") == "submitted"
+    assert any("CANCEL_REJECTED" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_sync_once_still_updates_db_when_event_type_mapping_missing(store, monkeypatch) -> None:
+    """_CLOSED_STATUS_MAP과 _EVENT_TYPE_MAP의 키가 어긋나도 DB 갱신은 성공해야 한다."""
+    await _insert_order(store, "c12", "toss-12")
+    rest = _FakeRestClient(
+        {"toss-12": _FakeTossOrder("toss-12", "FILLED", 1, _FakeExecution(1, Decimal("75000")))}
+    )
+    bus = EventBus()
+    published = []
+    bus.publish_nowait = lambda event: published.append(event)  # type: ignore[method-assign]
+    feed = OrderSyncFeed(rest_client=rest, store=store, env="prod", bus=bus)
+
+    # 의도적으로 매핑 불일치 상황을 재현 — "filled"에 대한 이벤트 타입이 없음.
+    monkeypatch.setattr(order_sync_module, "_EVENT_TYPE_MAP", {})
+
+    await feed.sync_once()
+
+    assert await _status_of(store, "c12") == "filled"  # DB 갱신은 이벤트와 무관하게 성공
+    assert published == []  # 이벤트는 발행되지 않음 (조용히 스킵, 크래시 없음)
+
+
+@pytest.mark.asyncio
+async def test_run_loop_exits_promptly_after_stop(store) -> None:
+    """run()의 무한 루프가 stop() 호출 후 실제로 종료돼야 한다 (SIGTERM 행 버그 회귀)."""
+    rest = _FakeRestClient({})
+    feed = OrderSyncFeed(rest_client=rest, store=store, env="prod", poll_interval=3600.0)
+
+    task = asyncio.create_task(feed.run())
+    await asyncio.sleep(0.05)  # run()이 sync_once() 1회를 돌고 대기 상태로 들어갈 시간
+    assert not task.done()
+
+    await feed.stop()
+    await asyncio.wait_for(task, timeout=2.0)  # 타임아웃 시 실패 — 루프가 안 끝났다는 뜻
+
+    assert task.done()
