@@ -28,6 +28,7 @@ from core.api.app import create_app
 from core.api.deps import AppContainer
 from core.config.settings import Market, load_settings
 from core.events.bus import EventBus
+from core.execution.order_sync import OrderSyncFeed
 from core.execution.position_sync import PositionSyncFeed
 from core.notifier.factory import make_notifier
 from core.notifier.wiring import wire_notifier
@@ -174,12 +175,20 @@ async def run(
     # 것만으로는 멈추지 않는다 — 명시적으로 취소해야 한다 (아래 tasks 리스트).
     tasks: list[asyncio.Task] = []
     position_sync: PositionSyncFeed | None = None
+    order_sync: OrderSyncFeed | None = None
 
     async def _wait_stop() -> None:
         await stop_event.wait()
         logger.info("정상 종료 시작...")
         uvicorn_server.should_exit = True
-        await _shutdown(bus, notifier, store, info_system=info_system, position_sync=position_sync)
+        await _shutdown(
+            bus,
+            notifier,
+            store,
+            info_system=info_system,
+            position_sync=position_sync,
+            order_sync=order_sync,
+        )
         _cancel_pending_tasks(tasks)
 
     try:
@@ -196,6 +205,14 @@ async def run(
                     rest_client=rest_client, store=store, env=container.env, bus=bus
                 )
                 tasks.append(tg.create_task(position_sync.run(), name="position-sync"))
+
+                # 주문 상태 동기화는 실제로 주문을 낼 때만 의미가 있다
+                # (--with-trading 없으면 orders 테이블에 신규 레코드가 생기지 않음).
+                if with_trading:
+                    order_sync = OrderSyncFeed(
+                        rest_client=rest_client, store=store, env=container.env, bus=bus
+                    )
+                    tasks.append(tg.create_task(order_sync.run(), name="order-sync"))
 
             if info_system is not None:
                 tasks.append(tg.create_task(info_system.start(), name="info-system"))
@@ -355,8 +372,9 @@ async def _shutdown(
     store: StateStore,
     info_system: object | None = None,
     position_sync: object | None = None,
+    order_sync: object | None = None,
 ) -> None:
-    """Event Bus → Notifier → PositionSync → InfoSystem → StateStore 순으로 정상 종료한다."""
+    """Event Bus → Notifier → PositionSync → OrderSync → InfoSystem → StateStore 순으로 정상 종료한다."""
     for name, obj in [("EventBus", bus), ("Notifier", notifier)]:
         try:
             await obj.stop()  # type: ignore[union-attr]
@@ -368,6 +386,12 @@ async def _shutdown(
             await position_sync.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("PositionSync 종료 오류: %s", exc)
+
+    if order_sync is not None:
+        try:
+            await order_sync.stop()  # type: ignore[union-attr]
+        except Exception as exc:
+            logger.error("OrderSync 종료 오류: %s", exc)
 
     if info_system is not None:
         try:

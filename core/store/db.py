@@ -11,6 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -54,6 +55,7 @@ class PendingOrder:
     qty: int
     status: str
     created_at: str
+    broker_order_id: str | None = None
 
 
 class StateStore:
@@ -170,9 +172,36 @@ class StateStore:
                 qty=int(row["qty"]),
                 status=row["status"],
                 created_at=row["created_at"],
+                broker_order_id=row["broker_order_id"],
             )
             for row in rows
         ]
+
+    async def update_order_status(
+        self,
+        client_order_id: str,
+        status: str,
+        broker_order_id: str | None = None,
+    ) -> None:
+        """주문 상태를 갱신한다 (OrderExecutor·OrderSyncFeed 공용).
+
+        Args:
+            client_order_id: 대상 주문의 클라이언트 ID.
+            status: 새 상태값.
+            broker_order_id: 갱신할 브로커 주문 ID. None이면 기존 값 유지.
+        """
+        now = datetime.now(UTC).isoformat()
+        if broker_order_id is not None:
+            await self.conn.execute(
+                "UPDATE orders SET status = ?, broker_order_id = ?, updated_at = ? WHERE client_order_id = ?",
+                (status, broker_order_id, now, client_order_id),
+            )
+        else:
+            await self.conn.execute(
+                "UPDATE orders SET status = ?, updated_at = ? WHERE client_order_id = ?",
+                (status, now, client_order_id),
+            )
+        await self.conn.commit()
 
     async def __aenter__(self) -> StateStore:
         await self.open()

@@ -57,6 +57,17 @@ async def test_shutdown_stops_position_sync_when_provided() -> None:
 
 
 @pytest.mark.asyncio
+async def test_shutdown_stops_order_sync_when_provided() -> None:
+    bus = _FakeStoppable()
+    notifier = _FakeStoppable()
+    order_sync = _FakeStoppable()
+
+    await _shutdown(bus, notifier, _FakeStore(), order_sync=order_sync)
+
+    assert order_sync.stop_called
+
+
+@pytest.mark.asyncio
 async def test_shutdown_stops_info_system_when_provided() -> None:
     bus = _FakeStoppable()
     notifier = _FakeStoppable()
