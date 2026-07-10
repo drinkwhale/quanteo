@@ -38,7 +38,7 @@ function sortItems(items: BalanceItem[], key: SortKey): BalanceItem[] {
 }
 
 /**
- * "현재가" 모드는 오늘 시가 대비 당일 등락(day_change)을, "평가금액" 모드는
+ * "현재가" 모드는 전일 종가 대비 당일 등락(day_change)을, "평가금액" 모드는
  * 매입가 기준 누적 수익률(profit_loss_rate)을 보여준다 — 서로 다른 축이라
  * 잘못 섞어 쓰면 "두 모드가 같은 숫자로 나온다"는 버그가 된다(과거에 실제
  * 있었던 버그). day_change는 캔들 조회가 실패하면 null이니, 그 경우
