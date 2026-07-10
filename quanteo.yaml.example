@@ -65,3 +65,28 @@ info:
   # info 전용 Telegram chat_id (비어 있으면 위 telegram.chat_id 사용)
   telegram:
     chat_id: ""
+
+# ──────────────────────────────────────────────────────
+# KIS(한국투자증권) Open Trading API — 자격증명 자리만 마련
+# ⚠️ 아직 core/config/settings.py의 Settings 모델·어댑터에 연결되지 않음.
+#    Phase 8-9에서 "KIS 완전 제거, Toss 단일 브로커" 결정을 내린 바 있어,
+#    실제로 코드에서 쓰려면(시세 대조용이든 재통합이든) 먼저 별도 설계·승인이
+#    필요하다. 지금은 값만 보관하는 자리.
+# 발급: https://apiportal.koreainvestment.com → 개발자 등록 → 앱 발급
+# (open-trading-api의 kis_devlp.yaml과 동일한 필드 구성)
+# ──────────────────────────────────────────────────────
+kis:
+  app_key: "your-kis-app-key"
+  app_secret: "your-kis-app-secret"
+  paper_app_key: "your-kis-paper-app-key"
+  paper_app_secret: "your-kis-paper-app-secret"
+  hts_id: "your-hts-id"
+  acct_stock: "00000000"        # 실전 증권계좌 (앞 8자리)
+  acct_future: "00000000"       # 실전 선물옵션계좌 (앞 8자리)
+  paper_acct_stock: "00000000"  # 모의투자 증권계좌 (앞 8자리)
+  paper_acct_future: "00000000" # 모의투자 선물옵션계좌 (앞 8자리)
+  acct_product_code: "01"       # 계좌번호 뒤 2자리(상품코드)
+  prod_url: "https://openapi.koreainvestment.com:9443"
+  vps_url: "https://openapivts.koreainvestment.com:29443"
+  ops_ws_url: "ws://ops.koreainvestment.com:21000"
+  vops_ws_url: "ws://ops.koreainvestment.com:31000"
