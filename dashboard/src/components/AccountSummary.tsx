@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { BalanceInfo, BalanceItem } from "../api/types";
-import { calcSellFees } from "../lib/fees";
+import { calcSellFees, type SellFeeResult } from "../lib/fees";
 import { fmtPnl, fmtPrice, pnlColorClass, toNumber } from "../lib/format";
 
 interface Props {
@@ -44,20 +44,26 @@ function sortItems(items: BalanceItem[], key: SortKey): BalanceItem[] {
  * 잘못 섞어 쓰면 "두 모드가 같은 숫자로 나온다"는 버그가 된다(과거에 실제
  * 있었던 버그). day_change는 캔들 조회가 실패하면 null이니, 그 경우
  * profit_loss로 조용히 대체하지 않고 결측을 그대로 보여준다.
+ *
+ * feeAdjusted가 주어지면(평가금액 모드 + 수수료·세금 포함 토글 ON + 국내 종목)
+ * 매도 시뮬레이션 기준 손익·수익률로 대체한다 — 화면에 보이는 평가금액이
+ * 수수료 차감분이면 그 아래 손익도 같은 기준이어야 숫자가 앞뒤로 맞는다.
  */
 function PnlDelta({
   item,
   displayMode,
+  feeAdjusted,
 }: {
   item: BalanceItem;
   displayMode: DisplayMode;
+  feeAdjusted?: { profitLoss: number; rate: number } | null;
 }) {
   if (displayMode === "eval") {
+    const profitLoss = feeAdjusted ? feeAdjusted.profitLoss : item.profit_loss;
+    const rate = feeAdjusted ? feeAdjusted.rate : item.profit_loss_rate;
     return (
-      <div
-        className={`text-xs tabular-nums ${pnlColorClass(item.profit_loss)}`}
-      >
-        {fmtPnl(item.profit_loss, item.profit_loss_rate, item.market)}
+      <div className={`text-xs tabular-nums ${pnlColorClass(profitLoss)}`}>
+        {fmtPnl(profitLoss, rate, item.market)}
       </div>
     );
   }
@@ -73,6 +79,22 @@ function PnlDelta({
       {fmtPnl(item.day_change.amount, item.day_change.rate, item.market)}
     </div>
   );
+}
+
+/**
+ * 매도 수수료·세금을 반영한 손익·수익률을 계산한다.
+ * costBasis(매입원가)는 item.eval_amount - item.profit_loss로 역산한다 —
+ * 백엔드가 avg_price*qty를 그대로 안 내려주는 경우가 있어 손익 기준으로
+ * 역산하는 편이 항상 정확하다(총합 카드의 costBasis 계산과 동일한 방식).
+ */
+function computeFeeAdjustedPnl(
+  item: BalanceItem,
+  fees: SellFeeResult,
+): { profitLoss: number; rate: number } {
+  const profitLoss = toNumber(item.profit_loss) - fees.commission - fees.tax;
+  const costBasis = toNumber(item.eval_amount) - toNumber(item.profit_loss);
+  const rate = costBasis !== 0 ? profitLoss / costBasis : 0;
+  return { profitLoss, rate };
 }
 
 /** 거래수수료·제세금을 분리 표기한다 — 하나로 합쳐 보여주면 사용자가 각 항목의
@@ -124,8 +146,12 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
   const totalEval = toNumber(balance.total_eval_amount_krw);
   const totalPnl = toNumber(balance.total_profit_loss_krw);
   const costBasis = totalEval - totalPnl;
-  // fmtPnl이 100을 곱해 표시하므로 여기서는 순수 비율(fraction)로 둔다.
-  const totalRate = costBasis !== 0 ? totalPnl / costBasis : 0;
+
+  // "현재가" 모드에서는 토글 버튼 자체가 숨겨져 있으니(아래 JSX 참고)
+  // includeFees가 true로 남아 있어도 실제로 적용하면 안 된다 — 그러지 않으면
+  // 모드를 바꿔도 총합 숫자가 수수료 반영 상태로 붙박여 있고 끌 방법도
+  // 없어지는 상태가 된다(과거에 실제 있었던 버그).
+  const effectiveIncludeFees = displayMode === "eval" && includeFees;
 
   // 총 수수료·세금은 국내 종목분만 합산한다 — total_eval_amount_krw는
   // 국내·해외 통합값이라 해외 종목에 KRX 요율을 적용하면 안 되기 때문.
@@ -133,9 +159,17 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
     .filter((item) => item.market === "domestic")
     .reduce((sum, item) => sum + toNumber(item.eval_amount), 0);
   const totalFees = calcSellFees(domesticEval);
-  const displayTotalEval = includeFees
+  const displayTotalEval = effectiveIncludeFees
     ? totalEval - totalFees.commission - totalFees.tax
     : totalEval;
+  // 수수료를 평가금액에서만 빼고 손익은 그대로 두면 "평가금액은 줄었는데
+  // 수익률은 그대로"인 앞뒤 안 맞는 화면이 된다 — 손익도 같은 수수료만큼
+  // 줄이고 수익률을 그 기준으로 다시 계산한다.
+  const displayTotalPnl = effectiveIncludeFees
+    ? totalPnl - totalFees.commission - totalFees.tax
+    : totalPnl;
+  // fmtPnl이 100을 곱해 표시하므로 여기서는 순수 비율(fraction)로 둔다.
+  const displayTotalRate = costBasis !== 0 ? displayTotalPnl / costBasis : 0;
 
   return (
     <div className="p-4 space-y-4">
@@ -156,11 +190,11 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
           {fmtPrice(displayTotalEval, "domestic")}
         </div>
         <div
-          className={`text-sm font-semibold tabular-nums mt-0.5 ${pnlColorClass(totalPnl)}`}
+          className={`text-sm font-semibold tabular-nums mt-0.5 ${pnlColorClass(displayTotalPnl)}`}
         >
-          {fmtPnl(totalPnl, totalRate, "domestic")}
+          {fmtPnl(displayTotalPnl, displayTotalRate, "domestic")}
         </div>
-        {includeFees && domesticEval > 0 && (
+        {effectiveIncludeFees && domesticEval > 0 && (
           <FeeBreakdown
             commission={totalFees.commission}
             tax={totalFees.tax}
@@ -226,11 +260,12 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
           <ul className="space-y-3">
             {sorted.map((item) => {
               const showItemFees =
-                displayMode === "eval" &&
-                includeFees &&
-                item.market === "domestic";
+                effectiveIncludeFees && item.market === "domestic";
               const itemFees = showItemFees
                 ? calcSellFees(toNumber(item.eval_amount))
+                : null;
+              const feeAdjustedPnl = itemFees
+                ? computeFeeAdjustedPnl(item, itemFees)
                 : null;
 
               return (
@@ -258,7 +293,11 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
                             item.market,
                           )}
                     </div>
-                    <PnlDelta item={item} displayMode={displayMode} />
+                    <PnlDelta
+                      item={item}
+                      displayMode={displayMode}
+                      feeAdjusted={feeAdjustedPnl}
+                    />
                     {itemFees && (
                       <FeeBreakdown
                         commission={itemFees.commission}
