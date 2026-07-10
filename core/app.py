@@ -169,29 +169,36 @@ async def run(
         logger.info("Control API 시작: http://%s:%d", api_host, api_port)
         await uvicorn_server.serve()
 
+    # TaskGroup은 그룹 내 모든 태스크가 끝나야 빠져나간다. position-sync·트레이딩
+    # 폴링 루프처럼 자체적으로 끝나지 않는 태스크는 _wait_stop()이 정상 반환되는
+    # 것만으로는 멈추지 않는다 — 명시적으로 취소해야 한다 (아래 tasks 리스트).
+    tasks: list[asyncio.Task] = []
+    position_sync: PositionSyncFeed | None = None
+
     async def _wait_stop() -> None:
         await stop_event.wait()
         logger.info("정상 종료 시작...")
         uvicorn_server.should_exit = True
-        await _shutdown(bus, notifier, store, info_system=info_system)
+        await _shutdown(bus, notifier, store, info_system=info_system, position_sync=position_sync)
+        _cancel_pending_tasks(tasks)
 
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(bus.start(), name="event-bus")
-            tg.create_task(notifier.run(), name="notifier")
-            tg.create_task(_serve_api(), name="control-api")
+            tasks.append(tg.create_task(bus.start(), name="event-bus"))
+            tasks.append(tg.create_task(notifier.run(), name="notifier"))
+            tasks.append(tg.create_task(_serve_api(), name="control-api"))
 
             if with_trading:
-                _start_trading_tasks(tg, rest_client, bus, risk, store)
+                _start_trading_tasks(tg, rest_client, bus, risk, store, tasks)
 
             if rest_client is not None:
                 position_sync = PositionSyncFeed(
                     rest_client=rest_client, store=store, env=container.env, bus=bus
                 )
-                tg.create_task(position_sync.run(), name="position-sync")
+                tasks.append(tg.create_task(position_sync.run(), name="position-sync"))
 
             if info_system is not None:
-                tg.create_task(info_system.start(), name="info-system")
+                tasks.append(tg.create_task(info_system.start(), name="info-system"))
 
             tg.create_task(_wait_stop(), name="shutdown-watcher")
 
@@ -303,12 +310,17 @@ def _start_trading_tasks(
     bus: EventBus,
     risk: RiskManager,
     store: StateStore,
+    tasks: list[asyncio.Task],
 ) -> None:
     """MarketData/Strategy/Executor를 조립한다.
 
     rest_client는 run()에서 _init_broker()로 이미 initialize()까지 끝낸
     인스턴스를 그대로 재사용한다 (읽기 전용 포지션 동기화와 별도 인스턴스를
     만들지 않기 위함).
+
+    Args:
+        tasks: run()의 잔여 태스크 취소 목록. feed/engine은 자체 stop() 훅이
+               없으므로 이 리스트에 등록해 종료 시 명시적으로 취소한다.
     """
     try:
         from core.execution.executor import OrderExecutor
@@ -325,7 +337,7 @@ def _start_trading_tasks(
                 inner_tg.create_task(feed.run(), name="toss-market-data-feed")
                 inner_tg.create_task(engine.run(), name="strategy-engine")
 
-        tg.create_task(_run_trading(), name="toss-trading")
+        tasks.append(tg.create_task(_run_trading(), name="toss-trading"))
 
     except Exception as exc:
         logger.error("Toss 트레이딩 모듈 시작 실패: %s", exc, exc_info=True)
@@ -342,19 +354,38 @@ async def _shutdown(
     notifier: object,
     store: StateStore,
     info_system: object | None = None,
+    position_sync: object | None = None,
 ) -> None:
-    """Event Bus → Notifier → InfoSystem → StateStore 순으로 정상 종료한다."""
+    """Event Bus → Notifier → PositionSync → InfoSystem → StateStore 순으로 정상 종료한다."""
     for name, obj in [("EventBus", bus), ("Notifier", notifier)]:
         try:
             await obj.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("%s 종료 오류: %s", name, exc)
 
+    if position_sync is not None:
+        try:
+            await position_sync.stop()  # type: ignore[union-attr]
+        except Exception as exc:
+            logger.error("PositionSync 종료 오류: %s", exc)
+
     if info_system is not None:
         try:
             await info_system.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("InfoSystem 종료 오류: %s", exc)
+
+
+def _cancel_pending_tasks(tasks: list[asyncio.Task]) -> None:
+    """TaskGroup 내 아직 끝나지 않은 태스크를 취소한다.
+
+    position-sync/트레이딩 폴링 루프처럼 자체 stop() 훅이 없거나, 훅이 있어도
+    누락될 수 있는 태스크에 대한 안전망. 이게 없으면 TaskGroup이 영원히 빠져
+    나오지 못해 SIGTERM으로도 프로세스가 종료되지 않는다.
+    """
+    for task in tasks:
+        if not task.done():
+            task.cancel()
 
 
 # ---------------------------------------------------------------------------
