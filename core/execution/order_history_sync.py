@@ -159,8 +159,11 @@ class OrderHistorySyncFeed:
                 status="CLOSED", limit=_CLOSED_PAGE_LIMIT
             )
         else:
-            closed_orders = await self._fetch_all_closed_orders()
-            self._closed_history_backfilled = True
+            closed_orders, backfill_completed = await self._fetch_all_closed_orders()
+            # 페이지 상한에 걸려 일부만 받았다면 백필 완료로 표시하면 안 된다 —
+            # 여기서 True로 고정하면 다음 주기부터 최신 페이지만 보게 되어
+            # 남은 오래된 이력을 영영 못 가져온다.
+            self._closed_history_backfilled = backfill_completed
 
         reflected = 0
         for toss_order in (*open_orders, *closed_orders):
@@ -178,11 +181,17 @@ class OrderHistorySyncFeed:
                 )
         return reflected
 
-    async def _fetch_all_closed_orders(self) -> list[TossOrder]:
+    async def _fetch_all_closed_orders(self) -> tuple[list[TossOrder], bool]:
         """CLOSED 그룹 전체를 커서 끝까지 순회해 반환한다 (최초 백필 전용).
 
         _MAX_BACKFILL_PAGES를 넘기면 더 있어도 멈추고 경고를 남긴다 —
-        조용히 잘라내면 "전체 이력을 다 받았다"고 착각하기 쉽다.
+        조용히 잘라내면 "전체 이력을 다 받았다"고 착각하기 쉽다. 호출부가
+        "이번 백필이 실제로 끝까지 갔는지"를 판단할 수 있도록 완료 여부를
+        같이 반환한다 (상한에 걸렸으면 다음 주기에 다시 전체 백필을
+        시도해야 한다 — 최신 페이지만 보는 모드로 넘어가면 안 됨).
+
+        Returns:
+            (주문 목록, 전체 백필 완료 여부) 튜플.
         """
         all_orders: list[TossOrder] = []
         cursor: str | None = None
@@ -193,14 +202,15 @@ class OrderHistorySyncFeed:
             )
             all_orders.extend(page)
             if cursor is None:
-                return all_orders
+                return all_orders, True
 
         logger.warning(
-            "CLOSED 주문 백필이 최대 페이지 수(%d)에 도달해 중단됨 — %d건까지만 반영, 더 오래된 이력은 누락될 수 있음",
+            "CLOSED 주문 백필이 최대 페이지 수(%d)에 도달해 중단됨 — %d건까지만 반영, "
+            "더 오래된 이력은 다음 주기에 다시 전체 백필을 시도함",
             _MAX_BACKFILL_PAGES,
             len(all_orders),
         )
-        return all_orders
+        return all_orders, False
 
     async def _upsert(self, toss_order: TossOrder) -> bool:
         """단건을 로컬 orders 테이블에 반영한다.

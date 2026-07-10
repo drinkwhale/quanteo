@@ -45,14 +45,20 @@ class PositionSnapshot:
 
 @dataclass(frozen=True)
 class PendingOrder:
-    """재시작 복구용 미체결 주문 스냅샷."""
+    """재시작 복구용 미체결 주문 스냅샷.
+
+    qty는 float — orders.qty가 REAL로 바뀌면서 해외주식 fractional
+    investing 주문(OrderHistorySyncFeed가 Toss 앱에서 직접 낸 주문까지
+    반영)도 이 스냅샷에 담길 수 있다. int로 두면 재시작 복구 로그에서
+    소수점 수량이 0으로 잘려 "미체결 주문 없음"처럼 보이는 사고가 난다.
+    """
 
     client_order_id: str
     symbol: str
     market: str
     env: str
     side: str
-    qty: int
+    qty: float
     status: str
     created_at: str
     broker_order_id: str | None = None
@@ -169,7 +175,7 @@ class StateStore:
                 market=row["market"],
                 env=row["env"],
                 side=row["side"],
-                qty=int(row["qty"]),
+                qty=float(row["qty"]),
                 status=row["status"],
                 created_at=row["created_at"],
                 broker_order_id=row["broker_order_id"],

@@ -61,7 +61,9 @@ async def test_insert_and_select_settings(store: StateStore):
     )
     await store.conn.commit()
 
-    async with store.conn.execute("SELECT value FROM settings WHERE key=?", ("kill_switch",)) as cur:
+    async with store.conn.execute(
+        "SELECT value FROM settings WHERE key=?", ("kill_switch",)
+    ) as cur:
         row = await cur.fetchone()
     assert row is not None
     assert row[0] == "false"
@@ -157,7 +159,9 @@ async def test_insert_and_select_fill(store: StateStore):
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         ("ORD-003", "005930", "domestic", "prod", "buy", 10, 75000.0, now, now),
     )
-    async with store.conn.execute("SELECT id FROM orders WHERE client_order_id=?", ("ORD-003",)) as cur:
+    async with store.conn.execute(
+        "SELECT id FROM orders WHERE client_order_id=?", ("ORD-003",)
+    ) as cur:
         order_row = await cur.fetchone()
     order_id = order_row[0]
 
@@ -176,3 +180,85 @@ async def test_insert_and_select_fill(store: StateStore):
     assert row is not None
     assert row[0] == 10
     assert row[1] == 75000.0
+
+
+# ---------------------------------------------------------------------------
+# upsert_broker_order — OrderHistorySyncFeed 전용
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upsert_broker_order_finds_existing_row_by_broker_order_id_only(store: StateStore):
+    """client_order_id가 다시 채워져도(예: Toss가 뒤늦게 clientOrderId를 되돌려줌)
+    broker_order_id만으로 기존 행을 찾아 갱신해야 한다 — 중복 삽입되면 안 된다.
+
+    시나리오: 처음엔 clientOrderId 없이 들어와 toss-native-{orderId}로 저장됐다가,
+    이후 조회에서 진짜 clientOrderId가 붙어 들어와도 여전히 broker_order_id로
+    같은 행을 찾아야 한다(effective_client_id가 바뀌어도 SELECT의 OR 조건이
+    broker_order_id로 커버한다).
+    """
+    await store.upsert_broker_order(
+        broker_order_id="toss-999",
+        client_order_id=None,  # Toss 앱에서 직접 낸 주문 — clientOrderId 없음
+        symbol="005930",
+        market="domestic",
+        side="buy",
+        order_type="limit",
+        qty=10,
+        price=75000.0,
+        status="pending",
+        ordered_at="2026-07-01T00:00:00+00:00",
+    )
+
+    # 두 번째 조회에서는 진짜 clientOrderId가 붙어 들어옴 + 상태도 바뀜
+    await store.upsert_broker_order(
+        broker_order_id="toss-999",
+        client_order_id="real-client-id",
+        symbol="005930",
+        market="domestic",
+        side="buy",
+        order_type="limit",
+        qty=10,
+        price=75000.0,
+        status="filled",
+        ordered_at="2026-07-01T00:00:00+00:00",
+    )
+
+    async with store.conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE broker_order_id = ?", ("toss-999",)
+    ) as cur:
+        (total,) = await cur.fetchone()
+    assert total == 1  # 중복 삽입 안 됨
+
+    async with store.conn.execute(
+        "SELECT client_order_id, status FROM orders WHERE broker_order_id = ?", ("toss-999",)
+    ) as cur:
+        row = await cur.fetchone()
+    # 최초 삽입 시 만든 client_order_id가 식별자로 유지된다 — 매 조회마다
+    # Toss가 다른 clientOrderId를 되돌려줘도 같은 행을 계속 갱신해야 하므로.
+    assert row["client_order_id"] == "toss-native-toss-999"
+    assert row["status"] == "filled"
+
+
+@pytest.mark.asyncio
+async def test_upsert_broker_order_preserves_fractional_qty(store: StateStore):
+    """해외주식 fractional investing 수량이 저장 과정에서 잘리지 않아야 한다."""
+    await store.upsert_broker_order(
+        broker_order_id="toss-frac-1",
+        client_order_id=None,
+        symbol="AAPL",
+        market="overseas",
+        side="sell",
+        order_type="market",
+        qty=0.000151,
+        price=185.5,
+        status="filled",
+        ordered_at="2026-07-10T00:00:00+00:00",
+    )
+
+    async with store.conn.execute(
+        "SELECT qty FROM orders WHERE broker_order_id = ?", ("toss-frac-1",)
+    ) as cur:
+        row = await cur.fetchone()
+
+    assert row["qty"] == pytest.approx(0.000151)

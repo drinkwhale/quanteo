@@ -14,6 +14,7 @@ from decimal import Decimal
 
 import pytest
 
+import core.execution.order_history_sync as order_history_sync_module
 from core.adapters.toss.models import OrderExecution, TossOrder
 from core.execution.order_history_sync import OrderHistorySyncFeed
 from core.store.db import StateStore
@@ -249,3 +250,32 @@ async def test_second_sync_once_only_fetches_latest_closed_page(store) -> None:
     await feed.sync_once()  # 두 번째 호출 — 최신 페이지만
 
     assert rest.calls == ["OPEN", "CLOSED"]
+
+
+@pytest.mark.asyncio
+async def test_backfill_hitting_page_cap_retries_full_backfill_next_cycle(
+    store, monkeypatch
+) -> None:
+    """백필이 _MAX_BACKFILL_PAGES 상한에 걸려 일부만 받았으면, 완료로 표시하면
+    안 된다 — 다음 주기에도 여전히 전체 백필을 다시 시도해야 한다.
+
+    버그였던 동작: 상한에 걸려도 _closed_history_backfilled=True로 고정돼
+    버려서, 대량 거래 계정은 오래된 이력을 영영 못 가져왔다.
+    """
+    monkeypatch.setattr(order_history_sync_module, "_MAX_BACKFILL_PAGES", 2)
+
+    page1 = [_toss_order("toss-800", "FILLED")]
+    page2 = [_toss_order("toss-801", "FILLED")]
+    page3 = [_toss_order("toss-802", "FILLED")]  # 상한(2페이지)을 넘는 3번째 페이지
+    rest = _FakeRestClient(open_orders=[], closed_orders=[page1, page2, page3])
+    feed = OrderHistorySyncFeed(rest_client=rest, store=store)
+
+    await feed.sync_once()  # 상한에 걸려 page3는 못 받음
+
+    assert feed._closed_history_backfilled is False
+    assert await _fetch_order(store, "toss-native-toss-802") is None
+
+    rest.calls.clear()
+    await feed.sync_once()  # 두 번째 호출도 여전히 전체 백필을 재시도해야 함
+
+    assert rest.calls == ["OPEN", "CLOSED", "CLOSED"]

@@ -292,7 +292,7 @@ async def _log_persisted_state(store: StateStore) -> None:
             logger.warning("♻️  재시작 복구 — 미체결 주문 %d개 (수동 확인 필요):", len(orders))
             for ord_ in orders:
                 logger.warning(
-                    "  · %s %s | qty=%d status=%s client_order_id=%s",
+                    "  · %s %s | qty=%s status=%s client_order_id=%s",
                     ord_.side,
                     ord_.symbol,
                     ord_.qty,
