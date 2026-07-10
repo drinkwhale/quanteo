@@ -40,6 +40,24 @@ class TelegramConfig(BaseModel):
     enabled: bool = False
 
 
+class KisSettings(BaseModel):
+    """KIS(한국투자증권) Open API 설정 — 당일 등락(전일 종가) 조회 전용.
+
+    실전 매매 브로커가 아니다 (Phase 8-9에서 KIS 브로커는 완전 제거됨).
+    Toss 캔들 API의 종가 데이터가 실제 시세와 어긋나는 사례가 확인돼,
+    day_change 계산의 전일 종가만 KIS 실시간 시세 조회(stck_sdpr)로
+    대체하기 위한 읽기 전용 용도.
+    """
+
+    app_key: str = ""
+    app_secret: SecretStr = SecretStr("")
+    base_url: str = "https://openapi.koreainvestment.com:9443"
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.app_key and self.app_secret.get_secret_value())
+
+
 class InfoSettings(BaseModel):
     """정보 수집·알람 서브시스템 설정 (Phase 10)."""
 
@@ -59,6 +77,7 @@ class Settings(BaseModel):
     credentials: TossCredentials
     telegram: TelegramConfig = TelegramConfig()
     info: InfoSettings = InfoSettings()
+    kis: KisSettings = KisSettings()
 
 
 _DEFAULT_CONFIG_PATH = Path.home() / "quanteo" / "config" / "quanteo.yaml"
@@ -128,9 +147,17 @@ def load_settings(
         telegram_chat_id=info_raw.get("telegram", {}).get("chat_id", ""),
     )
 
+    kis_raw = raw.get("kis", {})
+    kis = KisSettings(
+        app_key=kis_raw.get("app_key", ""),
+        app_secret=kis_raw.get("app_secret", ""),
+        base_url=kis_raw.get("prod_url", "https://openapi.koreainvestment.com:9443"),
+    )
+
     return Settings(
         market=market,
         credentials=credentials,
         telegram=telegram,
         info=info,
+        kis=kis,
     )
