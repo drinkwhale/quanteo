@@ -28,6 +28,7 @@ from core.api.app import create_app
 from core.api.deps import AppContainer
 from core.config.settings import Market, load_settings
 from core.events.bus import EventBus
+from core.execution.order_history_sync import OrderHistorySyncFeed
 from core.execution.order_sync import OrderSyncFeed
 from core.execution.position_sync import PositionSyncFeed
 from core.notifier.factory import make_notifier
@@ -145,6 +146,7 @@ async def run(
     if with_info and settings.info.enabled:
         try:
             from info.main import InfoSystem
+
             info_system = InfoSystem(settings)
             logger.info("InfoSystem 초기화 완료")
         except Exception as exc:
@@ -196,6 +198,7 @@ async def run(
     tasks: list[asyncio.Task] = []
     position_sync: PositionSyncFeed | None = None
     order_sync: OrderSyncFeed | None = None
+    order_history_sync: OrderHistorySyncFeed | None = None
 
     async def _wait_stop() -> None:
         await stop_event.wait()
@@ -208,6 +211,7 @@ async def run(
             info_system=info_system,
             position_sync=position_sync,
             order_sync=order_sync,
+            order_history_sync=order_history_sync,
         )
         _cancel_pending_tasks(tasks)
 
@@ -226,7 +230,18 @@ async def run(
                 )
                 tasks.append(tg.create_task(position_sync.run(), name="position-sync"))
 
-                # 주문 상태 동기화는 실제로 주문을 낼 때만 의미가 있다
+                # 주문 이력 동기화는 브로커의 실제 주문 목록(list_orders)이
+                # source of truth라 --with-trading 여부와 무관하게 항상 켠다 —
+                # Toss는 모의투자 구분이 없어 사용자가 Toss 앱에서 직접 낸
+                # 주문도 실제 계좌 상태의 일부이고, 이 피드가 없으면 orders
+                # 테이블이 실제 계좌와 어긋난다.
+                order_history_sync = OrderHistorySyncFeed(
+                    rest_client=rest_client, store=store, bus=bus
+                )
+                tasks.append(tg.create_task(order_history_sync.run(), name="order-history-sync"))
+
+                # 미체결 주문 상태 동기화(제출 후 체결/취소/거부 확인)는 우리
+                # 봇이 실제로 주문을 낼 때만 의미가 있다
                 # (--with-trading 없으면 orders 테이블에 신규 레코드가 생기지 않음).
                 if with_trading:
                     order_sync = OrderSyncFeed(
@@ -277,7 +292,7 @@ async def _log_persisted_state(store: StateStore) -> None:
             logger.warning("♻️  재시작 복구 — 미체결 주문 %d개 (수동 확인 필요):", len(orders))
             for ord_ in orders:
                 logger.warning(
-                    "  · %s %s | qty=%d status=%s client_order_id=%s",
+                    "  · %s %s | qty=%s status=%s client_order_id=%s",
                     ord_.side,
                     ord_.symbol,
                     ord_.qty,
@@ -393,8 +408,9 @@ async def _shutdown(
     info_system: object | None = None,
     position_sync: object | None = None,
     order_sync: object | None = None,
+    order_history_sync: object | None = None,
 ) -> None:
-    """Event Bus → Notifier → PositionSync → OrderSync → InfoSystem → StateStore 순으로 정상 종료한다."""
+    """Event Bus → Notifier → PositionSync → OrderSync → OrderHistorySync → InfoSystem → StateStore 순으로 정상 종료한다."""
     for name, obj in [("EventBus", bus), ("Notifier", notifier)]:
         try:
             await obj.stop()  # type: ignore[union-attr]
@@ -412,6 +428,12 @@ async def _shutdown(
             await order_sync.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("OrderSync 종료 오류: %s", exc)
+
+    if order_history_sync is not None:
+        try:
+            await order_history_sync.stop()  # type: ignore[union-attr]
+        except Exception as exc:
+            logger.error("OrderHistorySync 종료 오류: %s", exc)
 
     if info_system is not None:
         try:
@@ -445,8 +467,15 @@ def main() -> None:
     parser.add_argument("--market", choices=["domestic", "overseas"], default="domestic")
     parser.add_argument("--host", default="127.0.0.1", help="Control API 호스트")
     parser.add_argument("--port", type=int, default=8000, help="Control API 포트")
-    parser.add_argument("--with-trading", action="store_true", help="MarketData/Strategy/Executor 포함")
-    parser.add_argument("--with-info", action="store_true", dest="with_info", help="정보 수집·알람 서브시스템 포함 (settings.info.enabled 필요)")
+    parser.add_argument(
+        "--with-trading", action="store_true", help="MarketData/Strategy/Executor 포함"
+    )
+    parser.add_argument(
+        "--with-info",
+        action="store_true",
+        dest="with_info",
+        help="정보 수집·알람 서브시스템 포함 (settings.info.enabled 필요)",
+    )
     parser.add_argument(
         "--i-understand-real-money",
         action="store_true",

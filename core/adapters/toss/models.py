@@ -58,7 +58,10 @@ class Commission:
 class OrderExecution:
     """주문 체결 정보 (Order.execution 내부 필드)."""
 
-    filled_quantity: int
+    # float: 해외주식(미국)은 소수점 단위 매매(fractional investing)를 지원해
+    # 체결 수량이 정수가 아닐 수 있다(예: "0.000151"). int로 두면 Toss가
+    # 이런 값을 내려줄 때 _parse_toss_order()에서 파싱 자체가 실패한다.
+    filled_quantity: float
     avg_fill_price: Decimal | None
     fees: Decimal | None
 
@@ -86,7 +89,7 @@ class TossOrder:
     side: Literal["BUY", "SELL"]
     order_type: Literal["LIMIT", "MARKET"]
     status: str
-    quantity: int
+    quantity: float  # 해외 fractional investing 지원 — filled_quantity와 동일한 이유
     currency: str
     ordered_at: datetime
     execution: OrderExecution

@@ -42,7 +42,9 @@ class MockTossRestClient:
         )
 
     async def get_balance(self, symbol: str | None = None) -> BalanceInfo:
-        return BalanceInfo(items=[], total_eval_amount_krw=0.0, total_profit_loss_krw=0.0, deposit=10_000_000.0)
+        return BalanceInfo(
+            items=[], total_eval_amount_krw=0.0, total_profit_loss_krw=0.0, deposit=10_000_000.0
+        )
 
     async def place_order(self, order: Order) -> OrderAck:
         self.submitted_orders.append(order)
@@ -62,8 +64,15 @@ class MockTossRestClient:
 
 @pytest.mark.asyncio
 async def test_signal_to_toss_order_roundtrip():
-    """시그널 → Risk Manager → Toss 주문 라운드트립 검증."""
-    store = StateStore()
+    """시그널 → Risk Manager → Toss 주문 라운드트립 검증.
+
+    StateStore()를 인자 없이 생성하면 기본 경로가 프로덕션 DB
+    (~/quanteo/data/quanteo.db)를 가리킨다 — 실제로 이 실수 때문에
+    MockTossRestClient가 만든 가짜 'submitted' 주문이 테스트를 돌릴 때마다
+    실사용자 대시보드 주문내역에 그대로 쌓이는 사고가 있었다. 반드시
+    격리된 DB를 써야 한다.
+    """
+    store = StateStore(":memory:")
     await store.open()
 
     bus = EventBus()
@@ -84,6 +93,7 @@ async def test_signal_to_toss_order_roundtrip():
     )
 
     from core.risk.models import Portfolio
+
     portfolio = Portfolio(deposit=10_000_000.0)
 
     result = risk.evaluate(signal, portfolio)

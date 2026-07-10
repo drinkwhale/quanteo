@@ -49,8 +49,9 @@ class PositionItem(BaseModel):
     """보유 포지션 1개.
 
     qty는 Decimal — 해외주식(미국)은 Toss에서 소수점 단위 매매(fractional
-    investing)를 지원해 정수가 아닐 수 있다. (봇이 직접 내는 주문 수량인
-    OrderItem.qty는 항상 정수라 int를 유지한다.)
+    investing)를 지원해 정수가 아닐 수 있다. OrderItem.qty도 OrderHistorySyncFeed가
+    Toss 앱에서 직접 낸 해외 fractional 주문까지 반영하면서 동일한 이유로
+    float로 바뀌었다 — 더 이상 "항상 정수"가 아니다.
     """
 
     symbol: str
@@ -85,7 +86,7 @@ class OrderItem(BaseModel):
     env: str
     side: str  # "BUY" | "SELL"
     order_type: str  # "LIMIT" | "MARKET"
-    qty: int
+    qty: float  # 해외주식 fractional investing 지원 — 정수 아닐 수 있음
     price: Decimal
     status: str
     created_at: str

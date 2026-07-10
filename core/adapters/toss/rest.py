@@ -90,7 +90,9 @@ def _safe_nested_dict(row: dict[str, Any], key: str) -> dict[str, Any]:
 def _safe_get(container: dict[str, Any], key: str, field_label: str) -> Any:
     """중첩 dict에서 값을 꺼낸다. 키가 없으면 경고를 남기고 0을 반환한다."""
     if key not in container:
-        logger.warning("Toss holdings 응답에 %s.%s 필드가 없습니다 — 0으로 처리합니다.", field_label, key)
+        logger.warning(
+            "Toss holdings 응답에 %s.%s 필드가 없습니다 — 0으로 처리합니다.", field_label, key
+        )
         return 0
     return container[key]
 
@@ -126,7 +128,9 @@ class TossRestClient:
     ) -> None:
         self._auth = auth
         self._http_client = http_client
-        self._market_throttler = market_throttler or FixedIntervalThrottler(_MARKET_DATA_THROTTLER_CONFIG)
+        self._market_throttler = market_throttler or FixedIntervalThrottler(
+            _MARKET_DATA_THROTTLER_CONFIG
+        )
         self._order_throttler = order_throttler or FixedIntervalThrottler(_ORDER_THROTTLER_CONFIG)
         self._account_seq: str | None = None
         # 환율 캐시: TTL 60초, asyncio.Lock으로 동시 다중 호출 방지 (인스턴스별 격리)
@@ -230,7 +234,9 @@ class TossRestClient:
         headers = await self._get_headers()
         if with_account:
             headers["X-Tossinvest-Account"] = self._get_account_seq()
-        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json)
+        return await self._do_request(
+            method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json
+        )
 
     async def _request_order(
         self,
@@ -244,7 +250,9 @@ class TossRestClient:
         await self._order_throttler.acquire()
         headers = await self._get_headers()
         headers["X-Tossinvest-Account"] = self._get_account_seq()
-        return await self._do_request(method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json)
+        return await self._do_request(
+            method, f"{_TOSS_BASE_URL}{path}", headers=headers, params=params, json_body=json
+        )
 
     # ------------------------------------------------------------------
     # 현재가 조회 (BrokerAdapter.get_price)
@@ -317,17 +325,29 @@ class TossRestClient:
                     symbol=row.get("symbol", ""),
                     symbol_name=row.get("name", ""),
                     qty=qty,
-                    avg_price=_safe_float(row.get("averagePurchasePrice", 0), "averagePurchasePrice"),
+                    avg_price=_safe_float(
+                        row.get("averagePurchasePrice", 0), "averagePurchasePrice"
+                    ),
                     current_price=_safe_float(row.get("lastPrice", 0), "lastPrice"),
-                    eval_amount=_safe_float(_safe_get(market_value, "amount", "marketValue"), "marketValue.amount"),
-                    profit_loss=_safe_float(_safe_get(profit_loss, "amount", "profitLoss"), "profitLoss.amount"),
-                    profit_loss_rate=_safe_float(_safe_get(profit_loss, "rate", "profitLoss"), "profitLoss.rate"),
+                    eval_amount=_safe_float(
+                        _safe_get(market_value, "amount", "marketValue"), "marketValue.amount"
+                    ),
+                    profit_loss=_safe_float(
+                        _safe_get(profit_loss, "amount", "profitLoss"), "profitLoss.amount"
+                    ),
+                    profit_loss_rate=_safe_float(
+                        _safe_get(profit_loss, "rate", "profitLoss"), "profitLoss.rate"
+                    ),
                     market=Market.OVERSEAS if country == "US" else Market.DOMESTIC,
                 )
             )
 
-        total_market_value = _safe_get(_safe_nested_dict(result, "marketValue"), "amount", "marketValue") or {}
-        total_profit_loss = _safe_get(_safe_nested_dict(result, "profitLoss"), "amount", "profitLoss") or {}
+        total_market_value = (
+            _safe_get(_safe_nested_dict(result, "marketValue"), "amount", "marketValue") or {}
+        )
+        total_profit_loss = (
+            _safe_get(_safe_nested_dict(result, "profitLoss"), "amount", "profitLoss") or {}
+        )
         return BalanceInfo(
             items=items,
             total_eval_amount_krw=_safe_float(
@@ -408,7 +428,8 @@ class TossRestClient:
             BuyingPowerInfo — 현금 기반 매수 가능 금액.
         """
         data = await self._request_market(
-            "GET", "/api/v1/buying-power",
+            "GET",
+            "/api/v1/buying-power",
             params={"currency": currency},
             with_account=True,
         )
@@ -430,7 +451,8 @@ class TossRestClient:
             판매가능 수량 (정수).
         """
         data = await self._request_market(
-            "GET", "/api/v1/sellable-quantity",
+            "GET",
+            "/api/v1/sellable-quantity",
             params={"symbol": symbol},
             with_account=True,
         )
@@ -509,9 +531,7 @@ class TossRestClient:
         Returns:
             TossOrder 인스턴스.
         """
-        data = await self._request_market(
-            "GET", f"/api/v1/orders/{order_id}", with_account=True
-        )
+        data = await self._request_market("GET", f"/api/v1/orders/{order_id}", with_account=True)
         result = data.get("result", {})
         return self._parse_toss_order(result)
 
@@ -529,9 +549,7 @@ class TossRestClient:
             OrderOperationResponse — 취소 후 새로 발급된 주문 ID.
         """
         try:
-            data = await self._request_order(
-                "POST", f"/api/v1/orders/{order_id}/cancel"
-            )
+            data = await self._request_order("POST", f"/api/v1/orders/{order_id}/cancel")
         except TossConflictError:
             # 이미 처리 중인 취소 요청 — 현재 주문 상태를 재조회해 반환
             logger.warning("주문 취소 409 충돌 — 주문 재조회: order_id=%s", order_id)
@@ -571,9 +589,7 @@ class TossRestClient:
         if confirm_high_value:
             body["confirmHighValueOrder"] = True
 
-        data = await self._request_order(
-            "POST", f"/api/v1/orders/{order_id}/modify", json=body
-        )
+        data = await self._request_order("POST", f"/api/v1/orders/{order_id}/modify", json=body)
         result = data.get("result", {})
         return OrderOperationResponse(order_id=result.get("orderId", order_id))
 
@@ -581,7 +597,7 @@ class TossRestClient:
         """Toss API 주문 객체를 TossOrder로 변환한다."""
         execution_raw = item.get("execution", {})
         execution = OrderExecution(
-            filled_quantity=_safe_int(execution_raw.get("filledQuantity", 0), "filledQuantity"),
+            filled_quantity=_safe_float(execution_raw.get("filledQuantity", 0), "filledQuantity"),
             avg_fill_price=(
                 Decimal(str(execution_raw["averageFilledPrice"]))
                 if execution_raw.get("averageFilledPrice") is not None
@@ -609,7 +625,7 @@ class TossRestClient:
             side=item.get("side", "BUY"),
             order_type=item.get("orderType", "LIMIT"),
             status=item.get("status", "PENDING"),
-            quantity=_safe_int(item.get("quantity", 0), "quantity"),
+            quantity=_safe_float(item.get("quantity", 0), "quantity"),
             price=price,
             currency=item.get("currency", "KRW"),
             ordered_at=ordered_at,
@@ -632,7 +648,8 @@ class TossRestClient:
             Fill 리스트 (최신 체결 순).
         """
         data = await self._request_market(
-            "GET", "/api/v1/trades",
+            "GET",
+            "/api/v1/trades",
             params={"count": count},
             with_account=True,
         )
@@ -654,9 +671,7 @@ class TossRestClient:
         Returns:
             PriceLimits 인스턴스.
         """
-        data = await self._request_market(
-            "GET", "/api/v1/price-limits", params={"symbol": symbol}
-        )
+        data = await self._request_market("GET", "/api/v1/price-limits", params={"symbol": symbol})
         result = data.get("result", {})
         raw_ts = result.get("timestamp", "")
         try:
@@ -694,7 +709,9 @@ class TossRestClient:
         params: dict[str, Any] = {}
         if date:
             params["date"] = date
-        data = await self._request_market("GET", "/api/v1/market-calendar/KR", params=params or None)
+        data = await self._request_market(
+            "GET", "/api/v1/market-calendar/KR", params=params or None
+        )
         result = data.get("result", {})
         return KrMarketCalendar(
             today=_parse_kr_market_day(result.get("today", {})),
@@ -716,7 +733,9 @@ class TossRestClient:
         params: dict[str, Any] = {}
         if date:
             params["date"] = date
-        data = await self._request_market("GET", "/api/v1/market-calendar/US", params=params or None)
+        data = await self._request_market(
+            "GET", "/api/v1/market-calendar/US", params=params or None
+        )
         result = data.get("result", {})
         return UsMarketCalendar(
             today=_parse_us_market_day(result.get("today", {})),
@@ -758,7 +777,8 @@ class TossRestClient:
             StockInfo 리스트.
         """
         data = await self._request_market(
-            "GET", "/api/v1/stocks",
+            "GET",
+            "/api/v1/stocks",
             params={"symbols": ",".join(symbols)},
         )
         results = data.get("result", [])
@@ -819,6 +839,7 @@ class TossRestClient:
             ExchangeRate 인스턴스.
         """
         import time
+
         cache_key = f"{base_currency}/{quote_currency}"
 
         async with self._exchange_rate_lock:
@@ -827,7 +848,8 @@ class TossRestClient:
                 return cached[0]
 
             data = await self._request_market(
-                "GET", "/api/v1/exchange-rate",
+                "GET",
+                "/api/v1/exchange-rate",
                 params={"baseCurrency": base_currency, "quoteCurrency": quote_currency},
             )
             result = data.get("result", {})
@@ -888,7 +910,9 @@ class TossRestClient:
         data = await self._request_market("GET", "/api/v1/candles", params=params)
         result = data.get("result", {})
         if isinstance(result, dict) and "candles" not in result:
-            logger.warning("get_candles: 예상치 못한 응답 구조 (candles 키 없음): keys=%s", list(result.keys()))
+            logger.warning(
+                "get_candles: 예상치 못한 응답 구조 (candles 키 없음): keys=%s", list(result.keys())
+            )
         items = result.get("candles", result) if isinstance(result, dict) else result
         if not isinstance(items, list):
             raise RuntimeError(
@@ -902,7 +926,11 @@ class TossRestClient:
             try:
                 ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
             except Exception:
-                logger.warning("get_candles: 타임스탬프 파싱 실패 (raw=%r, symbol=%s) — 현재 시각으로 대체", raw_ts, symbol)
+                logger.warning(
+                    "get_candles: 타임스탬프 파싱 실패 (raw=%r, symbol=%s) — 현재 시각으로 대체",
+                    raw_ts,
+                    symbol,
+                )
                 ts = datetime.now(UTC)
             candles.append(
                 TossCandle(

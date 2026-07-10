@@ -45,14 +45,20 @@ class PositionSnapshot:
 
 @dataclass(frozen=True)
 class PendingOrder:
-    """재시작 복구용 미체결 주문 스냅샷."""
+    """재시작 복구용 미체결 주문 스냅샷.
+
+    qty는 float — orders.qty가 REAL로 바뀌면서 해외주식 fractional
+    investing 주문(OrderHistorySyncFeed가 Toss 앱에서 직접 낸 주문까지
+    반영)도 이 스냅샷에 담길 수 있다. int로 두면 재시작 복구 로그에서
+    소수점 수량이 0으로 잘려 "미체결 주문 없음"처럼 보이는 사고가 난다.
+    """
 
     client_order_id: str
     symbol: str
     market: str
     env: str
     side: str
-    qty: int
+    qty: float
     status: str
     created_at: str
     broker_order_id: str | None = None
@@ -169,7 +175,7 @@ class StateStore:
                 market=row["market"],
                 env=row["env"],
                 side=row["side"],
-                qty=int(row["qty"]),
+                qty=float(row["qty"]),
                 status=row["status"],
                 created_at=row["created_at"],
                 broker_order_id=row["broker_order_id"],
@@ -206,6 +212,97 @@ class StateStore:
             await self.conn.execute(
                 "UPDATE orders SET status = ?, updated_at = ? WHERE client_order_id = ?",
                 (status, now, client_order_id),
+            )
+        await self.conn.commit()
+
+    async def upsert_broker_order(
+        self,
+        *,
+        broker_order_id: str,
+        client_order_id: str | None,
+        symbol: str,
+        market: str,
+        side: str,
+        order_type: str,
+        qty: float,
+        price: float,
+        status: str,
+        ordered_at: str,
+    ) -> None:
+        """브로커의 실제 주문 목록(list_orders)을 로컬 orders 테이블에 반영한다.
+
+        OrderExecutor.submit()이 만든 행은 client_order_id로, 우리 봇이
+        만들지 않은 주문(Toss 앱에서 직접 낸 주문 등)은 broker_order_id로
+        기존 행을 찾는다 — Toss가 clientOrderId를 항상 되돌려주는 건 아니라
+        broker_order_id가 더 신뢰할 수 있는 매칭 키다.
+
+        기존 행이 없으면 새로 삽입한다. client_order_id 컬럼은 NOT NULL
+        UNIQUE라 Toss가 clientOrderId를 안 주면 "toss-native-{broker_order_id}"로
+        대신 채운다(이 값으로 "우리 봇이 만든 주문이 아님"을 구분할 수 있다).
+
+        Args:
+            broker_order_id: Toss 주문 ID (orderId).
+            client_order_id: Toss가 되돌려준 clientOrderId. 없으면 None.
+            symbol: 종목 코드.
+            market: 'domestic' | 'overseas'.
+            side: 'buy' | 'sell' (소문자).
+            order_type: 'limit' | 'market' (소문자).
+            qty: 주문 수량.
+            price: 주문 가격.
+            status: 로컬 status 값 ('pending'|'submitted'|'partial'|'filled'|'cancelled'|'rejected').
+            ordered_at: 주문 생성 시각(ISO 8601) — 신규 삽입 시 created_at으로 사용.
+        """
+        now = datetime.now(UTC).isoformat()
+        effective_client_id = client_order_id or f"toss-native-{broker_order_id}"
+
+        cursor = await self.conn.execute(
+            "SELECT client_order_id FROM orders WHERE client_order_id = ? OR broker_order_id = ?",
+            (effective_client_id, broker_order_id),
+        )
+        row = await cursor.fetchone()
+
+        if row is not None:
+            await self.conn.execute(
+                """
+                UPDATE orders
+                SET broker_order_id = ?, symbol = ?, market = ?, side = ?,
+                    order_type = ?, qty = ?, price = ?, status = ?, updated_at = ?
+                WHERE client_order_id = ?
+                """,
+                (
+                    broker_order_id,
+                    symbol,
+                    market,
+                    side,
+                    order_type,
+                    qty,
+                    price,
+                    status,
+                    now,
+                    row["client_order_id"],
+                ),
+            )
+        else:
+            await self.conn.execute(
+                """
+                INSERT INTO orders
+                    (client_order_id, broker_order_id, symbol, market, env, side,
+                     order_type, qty, price, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'prod', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    effective_client_id,
+                    broker_order_id,
+                    symbol,
+                    market,
+                    side,
+                    order_type,
+                    qty,
+                    price,
+                    status,
+                    ordered_at,
+                    now,
+                ),
             )
         await self.conn.commit()
 
