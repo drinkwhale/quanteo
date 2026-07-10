@@ -19,6 +19,7 @@ from core.risk.manager import RiskManager
 from core.store.db import StateStore
 
 if TYPE_CHECKING:
+    from core.adapters.kis.quote_client import KisQuoteClient
     from core.adapters.toss.rest import TossRestClient
 
 
@@ -36,7 +37,10 @@ class AppContainer:
     market: str = "domestic"
     started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     # Toss 브로커 어댑터 (선택: Toss 환경에서만 주입)
-    broker: "TossRestClient | None" = None
+    broker: TossRestClient | None = None
+    # KIS 시세 조회 클라이언트 (선택: day_change의 전일 종가 조회 전용,
+    # 실전 매매 브로커 아님 — kis.app_key/app_secret 설정 시에만 주입)
+    kis_client: KisQuoteClient | None = None
 
 
 def _get_container(conn: HTTPConnection) -> AppContainer:

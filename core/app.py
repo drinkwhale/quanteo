@@ -126,6 +126,20 @@ async def run(
     # 항상 필요하므로, 트레이딩 모듈 시작 여부와 별개로 미리 구성한다.
     rest_client = await _init_broker(settings, with_trading)
 
+    # KIS 시세 조회 클라이언트 (day_change의 전일 종가 조회 전용, 실전 매매
+    # 브로커 아님) — kis.app_key/app_secret 설정 시에만 조립. 미설정이면
+    # day_change는 결측(None)으로 내려가고 앱 부팅은 계속된다.
+    kis_client = None
+    if settings.kis.configured:
+        from core.adapters.kis.quote_client import KisQuoteClient
+
+        kis_client = KisQuoteClient(
+            app_key=settings.kis.app_key,
+            app_secret=settings.kis.app_secret.get_secret_value(),
+            base_url=settings.kis.base_url,
+        )
+        logger.info("KIS 시세 조회 클라이언트 초기화 완료")
+
     # InfoSystem 조립 (enabled 확인)
     info_system = None
     if with_info and settings.info.enabled:
@@ -143,6 +157,7 @@ async def run(
         env="prod",
         market=settings.market.value,
         broker=rest_client,
+        kis_client=kis_client,
     )
     fastapi_app = create_app(container)
 

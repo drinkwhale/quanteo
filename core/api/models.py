@@ -221,10 +221,10 @@ class IndexQuoteResponse(BaseModel):
 
 
 class DayChange(BaseModel):
-    """오늘 시가 대비 당일 등락. amount/rate는 항상 함께 존재하거나 함께
-    없다(캔들 조회 실패 시 둘 다 없음) — 그 불변식을 표현하려고 독립된
-    nullable 필드 두 개 대신 하나의 nullable 하위 모델로 감쌌다. rate는
-    비율(fraction) — 표시 시 프론트에서 *100.
+    """전일 종가 대비 당일 등락. amount/rate는 항상 함께 존재하거나 함께
+    없다(KIS 시세 조회 실패·미설정 시 둘 다 없음) — 그 불변식을 표현하려고
+    독립된 nullable 필드 두 개 대신 하나의 nullable 하위 모델로 감쌌다.
+    rate는 비율(fraction) — 표시 시 프론트에서 *100.
     """
 
     amount: Decimal
@@ -235,9 +235,11 @@ class BalanceItem(BaseModel):
     """보유 종목 1개의 평가 정보. Toss holdings 응답을 그대로 반영한다.
 
     profit_loss/profit_loss_rate는 매입가 대비 누적 손익(평가금액 기준)이고,
-    day_change는 오늘 시가 대비 당일 등락(현재가 기준)이다 — 두 축이 서로
+    day_change는 전일 종가 대비 당일 등락(현재가 기준)이다 — 두 축이 서로
     다른데 대시보드가 이를 혼동해 보여주던 버그를 고치며 추가한 필드.
-    day_change는 캔들 조회 실패 시 null일 수 있다(가짜 값 대신 결측 표시).
+    day_change의 전일 종가는 KIS 시세 조회로 얻는다(Toss 캔들 데이터가
+    실측으로 부정확함이 확인돼 대체) — kis_client 미설정·조회 실패 시
+    null일 수 있다(가짜 값 대신 결측 표시).
     """
 
     symbol: str

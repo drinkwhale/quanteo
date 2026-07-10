@@ -2,52 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
-from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 
 from core.adapters.models import BalanceInfo, BalanceItem
-from core.adapters.toss.models import TossCandle
 from core.api.app import create_app
 from core.api.deps import AppContainer
 from core.config.settings import Market
 from core.events.bus import EventBus
 from core.risk.manager import RiskManager
 from core.store.db import StateStore
-
-_KST = ZoneInfo("Asia/Seoul")
-
-
-def _make_candles_with_prev_close(prev_close: str) -> list[TossCandle]:
-    """day_change 계산이 "KST 오늘 이전 날짜 중 가장 최근 캔들"의 close_price를
-    전일 종가로 쓰므로, 테스트 실행 시점과 무관하게 항상 맞도록 실제 오늘/전일
-    날짜로 캔들을 만든다."""
-    today = datetime.now(_KST)
-    yesterday = today - timedelta(days=1)
-    return [
-        TossCandle(
-            timestamp=yesterday,
-            open_price=Decimal("74000"),
-            high_price=Decimal("74500"),
-            low_price=Decimal("73800"),
-            close_price=Decimal(prev_close),
-            volume=1_000_000,
-            currency="KRW",
-        ),
-        TossCandle(
-            timestamp=today,
-            open_price=Decimal("74600"),
-            high_price=Decimal("75200"),
-            low_price=Decimal("74400"),
-            close_price=Decimal("75000"),
-            volume=1_200_000,
-            currency="KRW",
-        ),
-    ]
 
 
 @pytest.fixture
@@ -81,16 +48,28 @@ def broker_mock():
             deposit=0.0,
         )
     )
-    broker.get_candles = AsyncMock(return_value=_make_candles_with_prev_close("74200"))
     return broker
 
 
 @pytest.fixture
-def container_with_broker(store, broker_mock):
+def kis_client_mock():
+    client = MagicMock()
+    client.get_prev_close = AsyncMock(return_value=Decimal("74200"))
+    return client
+
+
+@pytest.fixture
+def container_with_broker(store, broker_mock, kis_client_mock):
     bus = EventBus()
     risk = RiskManager(bus=bus)
     return AppContainer(
-        store=store, risk=risk, bus=bus, env="vps", market="domestic", broker=broker_mock
+        store=store,
+        risk=risk,
+        bus=bus,
+        env="vps",
+        market="domestic",
+        broker=broker_mock,
+        kis_client=kis_client_mock,
     )
 
 
@@ -127,95 +106,102 @@ def test_balance_item_fields(client_with_broker):
     assert item["market"] == "domestic"
 
 
-def test_balance_day_change_computed_from_prev_close(client_with_broker):
-    """day_change는 profit_loss_rate(매입가 기준)와 다른 값이어야 한다 — 이번에 고친 버그.
+def test_balance_day_change_computed_from_kis_prev_close(client_with_broker, kis_client_mock):
+    """day_change는 profit_loss_rate(매입가 기준)와 다른 값이어야 한다.
 
-    등락률은 한국 증시 관행대로 전일 종가 기준이어야 한다 (당일 시가 기준이 아님).
+    전일 종가는 KIS 시세 조회(get_prev_close)로 얻는다 — Toss 캔들 데이터가
+    실제 시세와 어긋나는 사례가 확인돼 KIS로 대체했다.
     """
     data = client_with_broker.get("/balance").json()
     item = data["items"][0]
-    # current_price=75000, 전일 종가=74200
+    kis_client_mock.get_prev_close.assert_awaited_once_with("005930")
+    # current_price=75000, 전일 종가(KIS)=74200
     assert float(item["day_change"]["amount"]) == 800.0
     assert item["day_change"]["rate"] == pytest.approx(800 / 74200)
     assert item["day_change"]["rate"] != pytest.approx(item["profit_loss_rate"])
 
 
-def test_balance_day_change_null_when_candles_fail(container_with_broker, broker_mock):
-    broker_mock.get_candles = AsyncMock(side_effect=RuntimeError("candle fetch failed"))
+def test_balance_day_change_null_when_kis_client_not_configured(store, broker_mock):
+    """kis_client가 주입 안 되면(설정 미비) day_change는 결측이어야 한다."""
+    bus = EventBus()
+    risk = RiskManager(bus=bus)
+    container = AppContainer(
+        store=store, risk=risk, bus=bus, env="vps", market="domestic", broker=broker_mock
+    )
+    client = TestClient(create_app(container))
+    data = client.get("/balance").json()
+    item = data["items"][0]
+    assert item["day_change"] is None
+
+
+def test_balance_day_change_null_when_kis_lookup_fails(container_with_broker, kis_client_mock):
+    kis_client_mock.get_prev_close = AsyncMock(side_effect=RuntimeError("KIS 조회 실패"))
     client = TestClient(create_app(container_with_broker))
     data = client.get("/balance").json()
     item = data["items"][0]
     assert item["day_change"] is None
 
 
-def test_balance_day_change_uses_most_recent_prior_trading_day(container_with_broker, broker_mock):
-    """전일 종가는 "오늘 이전 날짜 중 가장 최근" 캔들이어야 한다 (연휴 등으로
-
-    여러 날 전 캔들만 있어도 그중 가장 최근 것을 골라야 하고, 오늘 날짜의
-    캔들이 섞여 있어도 그건 기준으로 쓰면 안 된다(당일 시가/종가 기준 아님).
-    """
-    today = datetime.now(_KST)
-    candles = [
-        TossCandle(
-            timestamp=today - timedelta(days=n),
-            open_price=Decimal("70000"),
-            high_price=Decimal("70500"),
-            low_price=Decimal("69800"),
-            close_price=Decimal(str(70000 + n * 100)),  # n이 작을수록(최근일수록) 값이 큼
-            volume=1_000_000,
-            currency="KRW",
-        )
-        for n in range(1, 6)
-    ]
-    broker_mock.get_candles = AsyncMock(return_value=candles)
-    client = TestClient(create_app(container_with_broker))
-    data = client.get("/balance").json()
-    item = data["items"][0]
-    # 가장 최근 전일(n=1)의 close_price=70100을 기준으로 써야 한다.
-    assert float(item["day_change"]["amount"]) == pytest.approx(75000.0 - 70100.0)
-
-
-def test_balance_day_change_null_when_no_prior_trading_day_candle(container_with_broker, broker_mock):
-    """오늘 캔들만 있고 전일 캔들이 없으면(예: 상장 첫날) day_change는 결측이어야 한다."""
-    today = datetime.now(_KST)
-    only_today = [
-        TossCandle(
-            timestamp=today,
-            open_price=Decimal("74600"),
-            high_price=Decimal("75200"),
-            low_price=Decimal("74400"),
-            close_price=Decimal("75000"),
-            volume=1_200_000,
-            currency="KRW",
-        )
-    ]
-    broker_mock.get_candles = AsyncMock(return_value=only_today)
+def test_balance_day_change_null_when_prev_close_is_zero(container_with_broker, kis_client_mock):
+    """KIS가 0/falsy 전일 종가를 주면 결측으로 처리해야 한다(가짜 0원 금지)."""
+    kis_client_mock.get_prev_close = AsyncMock(return_value=Decimal("0"))
     client = TestClient(create_app(container_with_broker))
     data = client.get("/balance").json()
     item = data["items"][0]
     assert item["day_change"] is None
 
 
-def test_balance_day_change_null_when_prev_close_is_zero(container_with_broker, broker_mock):
-    """전일 캔들은 있는데 close_price가 0/falsy면 결측으로 처리해야 한다(가짜 0원 금지)."""
-    broker_mock.get_candles = AsyncMock(return_value=_make_candles_with_prev_close("0"))
-    client = TestClient(create_app(container_with_broker))
-    data = client.get("/balance").json()
-    item = data["items"][0]
-    assert item["day_change"] is None
-
-
-def test_balance_logs_warning_when_prev_close_is_zero(container_with_broker, broker_mock, caplog):
-    """close_price==0은 데이터 이상이라 warning으로 남아야 한다."""
-    broker_mock.get_candles = AsyncMock(return_value=_make_candles_with_prev_close("0"))
+def test_balance_logs_warning_when_prev_close_is_zero(container_with_broker, kis_client_mock, caplog):
+    kis_client_mock.get_prev_close = AsyncMock(return_value=Decimal("0"))
     client = TestClient(create_app(container_with_broker))
     with caplog.at_level("WARNING"):
         client.get("/balance")
-    assert any("close_price가 비정상" in record.message for record in caplog.records)
+    assert any("전일 종가가 비정상" in record.message for record in caplog.records)
 
 
-def test_balance_day_change_mixed_success_across_holdings(container_no_broker, store):
-    """보유 종목 여럿 중 하나만 캔들 조회에 실패해도 나머지는 정상 반환돼야 한다."""
+def test_balance_day_change_null_for_overseas_symbol(container_with_broker, store, kis_client_mock):
+    """KIS 국내 시세 조회 범위 밖(해외 종목)이면 day_change는 결측이어야 한다."""
+    bus = EventBus()
+    risk = RiskManager(bus=bus)
+    broker = MagicMock()
+    broker.get_balance = AsyncMock(
+        return_value=BalanceInfo(
+            items=[
+                BalanceItem(
+                    symbol="AAPL",
+                    symbol_name="Apple",
+                    qty=1,
+                    avg_price=150.0,
+                    current_price=160.0,
+                    eval_amount=160.0,
+                    profit_loss=10.0,
+                    profit_loss_rate=6.67,
+                    market=Market.OVERSEAS,
+                ),
+            ],
+            total_eval_amount_krw=160.0,
+            total_profit_loss_krw=10.0,
+            deposit=0.0,
+        )
+    )
+    container = AppContainer(
+        store=store,
+        risk=risk,
+        bus=bus,
+        env="vps",
+        market="domestic",
+        broker=broker,
+        kis_client=kis_client_mock,
+    )
+    client = TestClient(create_app(container))
+    data = client.get("/balance").json()
+    item = data["items"][0]
+    assert item["day_change"] is None
+    kis_client_mock.get_prev_close.assert_not_awaited()
+
+
+def test_balance_day_change_mixed_success_across_holdings(store):
+    """보유 종목 여럿 중 하나만 KIS 조회에 실패해도 나머지는 정상 반환돼야 한다."""
     bus = EventBus()
     risk = RiskManager(bus=bus)
     broker = MagicMock()
@@ -251,15 +237,16 @@ def test_balance_day_change_mixed_success_across_holdings(container_no_broker, s
         )
     )
 
-    async def _get_candles(symbol: str, **kwargs: object) -> list[TossCandle]:
+    async def _get_prev_close(symbol: str) -> Decimal:
         if symbol == "005930":
-            return _make_candles_with_prev_close("74200")
-        raise RuntimeError("candle fetch failed for this symbol only")
+            return Decimal("74200")
+        raise RuntimeError("KIS 조회 실패 for this symbol only")
 
-    broker.get_candles = AsyncMock(side_effect=_get_candles)
+    kis_client = MagicMock()
+    kis_client.get_prev_close = AsyncMock(side_effect=_get_prev_close)
 
     container = AppContainer(
-        store=store, risk=risk, bus=bus, env="vps", market="domestic", broker=broker
+        store=store, risk=risk, bus=bus, env="vps", market="domestic", broker=broker, kis_client=kis_client
     )
     client = TestClient(create_app(container))
     res = client.get("/balance")

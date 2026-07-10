@@ -1,6 +1,5 @@
 """Settings 모듈 단위 테스트."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -122,3 +121,46 @@ class TestLoadSettings:
         settings = load_settings()
 
         assert settings.credentials.client_id == "test-client-id"
+
+    def test_kis_not_configured_by_default(self, tmp_path: Path) -> None:
+        """kis: 섹션이 없으면 configured가 False여야 한다 (day_change 결측 처리 분기용)."""
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(config_path, TOSS_CONFIG)
+
+        settings = load_settings(config_path=config_path)
+
+        assert not settings.kis.configured
+
+    def test_kis_section_loaded(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(
+            config_path,
+            {
+                **TOSS_CONFIG,
+                "kis": {
+                    "app_key": "test-kis-app-key",
+                    "app_secret": "test-kis-app-secret",
+                    "prod_url": "https://example-kis.test:9443",
+                },
+            },
+        )
+
+        settings = load_settings(config_path=config_path)
+
+        assert settings.kis.app_key == "test-kis-app-key"
+        assert settings.kis.base_url == "https://example-kis.test:9443"
+        assert settings.kis.configured
+
+    def test_kis_secret_is_masked(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(
+            config_path,
+            {
+                **TOSS_CONFIG,
+                "kis": {"app_key": "k", "app_secret": "super-secret-value"},
+            },
+        )
+
+        settings = load_settings(config_path=config_path)
+
+        assert "super-secret-value" not in repr(settings.kis.app_secret)
