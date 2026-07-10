@@ -37,7 +37,10 @@ CREATE TABLE IF NOT EXISTS orders (
     env              TEXT    NOT NULL,
     side             TEXT    NOT NULL CHECK(side IN ('buy', 'sell')),
     order_type       TEXT    NOT NULL DEFAULT 'market',
-    qty              INTEGER NOT NULL,
+    -- REAL: positions.qty와 동일한 이유 — 해외주식 fractional investing 주문은
+    -- 수량이 정수가 아닐 수 있다. SQLite는 컬럼 타입과 무관하게 REAL 값을
+    -- 그대로 저장하므로(type affinity), 기존 DB에도 안전하게 적용된다.
+    qty              REAL    NOT NULL,
     price            REAL    NOT NULL DEFAULT 0.0,
     status           TEXT    NOT NULL DEFAULT 'pending'
                              CHECK(status IN ('pending','submitted','partial','filled','cancelled','rejected')),

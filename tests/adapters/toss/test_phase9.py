@@ -130,7 +130,12 @@ async def test_get_sellable_quantity_fractional_truncates():
 async def test_get_commissions_parses_list():
     body = {
         "result": [
-            {"marketCountry": "KR", "commissionRate": "0.015", "startDate": "2026-01-01", "endDate": None},
+            {
+                "marketCountry": "KR",
+                "commissionRate": "0.015",
+                "startDate": "2026-01-01",
+                "endDate": None,
+            },
             {"marketCountry": "US", "commissionRate": "0.020"},
         ]
     }
@@ -178,6 +183,36 @@ async def test_list_orders_returns_toss_orders_and_cursor():
     assert orders[0].quantity == 10
     assert orders[0].price == Decimal("72000")
     assert cursor == "cursor_abc"
+
+
+@pytest.mark.asyncio
+async def test_list_orders_parses_fractional_quantity_for_overseas_orders():
+    """해외주식은 fractional investing으로 수량이 정수가 아닐 수 있다.
+
+    실제 사고: quantity/filledQuantity를 int()로 강제 변환하다가 "0.000151"
+    같은 값을 만나 list_orders() 전체가 RuntimeError로 죽었다 — 주문 이력
+    동기화(OrderHistorySyncFeed)가 이 때문에 매 주기 실패했다.
+    """
+    order_raw = {
+        "orderId": "ord-frac",
+        "symbol": "AAPL",
+        "side": "SELL",
+        "orderType": "MARKET",
+        "timeInForce": "DAY",
+        "status": "FILLED",
+        "quantity": "0.5",
+        "price": None,
+        "currency": "USD",
+        "orderedAt": "2026-07-10T09:00:00+09:00",
+        "execution": {"filledQuantity": "0.000151"},
+    }
+    body = {"result": {"orders": [order_raw], "hasNext": False, "nextCursor": None}}
+    client = _make_client(body)
+
+    orders, _ = await client.list_orders("CLOSED")
+
+    assert orders[0].quantity == 0.5
+    assert orders[0].execution.filled_quantity == 0.000151
 
 
 @pytest.mark.asyncio
@@ -254,8 +289,18 @@ async def test_modify_order_sends_correct_body():
 async def test_get_trades_parses_fills():
     body = {
         "result": [
-            {"price": "72000", "volume": "10", "timestamp": "2026-06-29T10:30:00+09:00", "currency": "KRW"},
-            {"price": "72100", "volume": "5", "timestamp": "2026-06-29T10:31:00+09:00", "currency": "KRW"},
+            {
+                "price": "72000",
+                "volume": "10",
+                "timestamp": "2026-06-29T10:30:00+09:00",
+                "currency": "KRW",
+            },
+            {
+                "price": "72100",
+                "volume": "5",
+                "timestamp": "2026-06-29T10:31:00+09:00",
+                "currency": "KRW",
+            },
         ]
     }
     client = _make_client(body)
@@ -314,7 +359,10 @@ async def test_get_market_calendar_kr_is_open():
     body = {
         "result": {
             "today": {"date": "2026-06-29", "integrated": {"open": "09:00", "close": "15:30"}},
-            "previousBusinessDay": {"date": "2026-06-26", "integrated": {"open": "09:00", "close": "15:30"}},
+            "previousBusinessDay": {
+                "date": "2026-06-26",
+                "integrated": {"open": "09:00", "close": "15:30"},
+            },
             "nextBusinessDay": {"date": "2026-06-30", "integrated": None},
         }
     }

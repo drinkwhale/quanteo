@@ -85,7 +85,7 @@ class OrderItem(BaseModel):
     env: str
     side: str  # "BUY" | "SELL"
     order_type: str  # "LIMIT" | "MARKET"
-    qty: int
+    qty: float  # 해외주식 fractional investing 지원 — 정수 아닐 수 있음
     price: Decimal
     status: str
     created_at: str
