@@ -172,6 +172,7 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
                   const canCancel =
                     CANCELLABLE_STATUSES.has(o.status) && brokerId != null;
                   const isLoading = loading === brokerId;
+                  const isBuy = o.side === "BUY";
 
                   return (
                     <tr
@@ -182,9 +183,9 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
                         <StockCell symbol={o.symbol} names={stockNames} />
                       </td>
                       <td
-                        className={`px-4 py-2 font-semibold ${o.side === "BUY" ? "text-positive" : "text-negative"}`}
+                        className={`px-4 py-2 font-semibold ${isBuy ? "text-positive" : "text-negative"}`}
                       >
-                        {o.side === "BUY" ? "BUY" : "SELL"}
+                        {o.side}
                       </td>
                       <td className="px-4 py-2 text-right text-white tabular-nums">
                         {o.qty.toLocaleString()}

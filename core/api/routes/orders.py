@@ -61,8 +61,8 @@ async def get_orders(
             symbol=row["symbol"],
             market=row["market"],
             env=row["env"],
-            # store 레이어는 'buy'/'sell' 소문자로 저장 — API 계약(OrderItem.side)은 대문자라 여기서 정규화
-            side=row["side"].upper(),
+            # side 대소문자 정규화는 OrderItem 모델의 field_validator가 전담한다.
+            side=row["side"],
             order_type=row["order_type"],
             qty=row["qty"],
             price=row["price"],

@@ -140,4 +140,20 @@ describe("OrdersTable tabs", () => {
 
     warnSpy.mockRestore();
   });
+
+  // 회귀 테스트 — side가 BUY/SELL 값에 따라 실제로 다르게 표시되는지 확인한다.
+  // 과거 API가 side를 소문자("buy")로 내려보내면서 o.side === "BUY" 비교가
+  // 항상 false가 되어 모든 주문이 SELL로 잘못 표시되던 버그가 있었다.
+  it("side에 따라 방향 텍스트와 색상이 다르게 표시된다", () => {
+    const orders: OrderItem[] = [
+      makeOrder({ client_order_id: "buy-1", side: "BUY" }),
+      makeOrder({ client_order_id: "sell-1", side: "SELL" }),
+    ];
+    render(<OrdersTable orders={orders} stockNames={new Map()} />);
+
+    const buyCell = screen.getByText("BUY");
+    const sellCell = screen.getByText("SELL");
+    expect(buyCell).toHaveClass("text-positive");
+    expect(sellCell).toHaveClass("text-negative");
+  });
 });
