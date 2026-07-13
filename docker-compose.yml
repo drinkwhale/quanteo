@@ -1,11 +1,11 @@
-version: "3.9"
-
 # ============================================================
-# quanteo docker-compose — 로컬 개발 / VPS 배포용
+# quanteo docker-compose — 로컬 개발 / VPS 배포용 (Toss증권 어댑터)
+#
+# 사전 준비: ~/quanteo/config/quanteo.yaml 에 client_id/client_secret 설정
 #
 # 사용법:
-#   docker compose up                    # 기본 실행 (vps 환경)
-#   docker compose up --build            # 이미지 재빌드
+#   docker compose up -d                 # 기본 실행 (국내 시장, --with-info)
+#   docker compose up -d --build         # 이미지 재빌드
 #   docker compose logs -f quanteo-core  # 로그 실시간 확인
 # ============================================================
 
@@ -23,20 +23,28 @@ services:
       - "8000:8000"
 
     volumes:
-      # KIS 자격증명 및 캐시 (읽기 전용 마운트 권장)
-      # 호스트: ~/KIS/config/kis_devlp.yaml → 컨테이너 내부
-      - "${KIS_CONFIG_DIR:-${HOME}/KIS}:/home/quanteo/KIS:ro"
-      # SQLite DB — 재시작 후에도 상태 유지
-      - quanteo-data:/home/quanteo/KIS/data
+      # quanteo.yaml(자격증명) + sqlite DB — 호스트 ~/quanteo 전체를 그대로 마운트.
+      # Path.home()/quanteo 기준 기본 경로(설정: config/quanteo.yaml, DB: data/quanteo.db)와
+      # 1:1로 맞아떨어지므로 QUANTEO_CONFIG_PATH 재지정이 불필요함. DB 쓰기 때문에 read-write.
+      - "${QUANTEO_HOME:-${HOME}/quanteo}:/home/quanteo/quanteo"
+      # Google Calendar OAuth 캐시 (선택 — 캘린더 기능 안 쓰면 없어도 정상 동작)
+      - "${HOME}/.quanteo:/home/quanteo/.quanteo"
 
     environment:
-      # 환경 변수로 설정 경로 재지정 가능
-      - QUANTEO_CONFIG_PATH=/home/quanteo/KIS/config/kis_devlp.yaml
       - PYTHONUNBUFFERED=1
 
-    # 기본 명령: vps 환경, 트레이딩 없이 Control API만
-    # 트레이딩 활성화: --with-trading 추가
-    command: ["--env", "vps", "--host", "0.0.0.0", "--port", "8000"]
+    # 기본 명령: 국내 시장 + 정보수집·알람 서브시스템, 트레이딩은 미포함
+    # 트레이딩 활성화: --with-trading --i-understand-real-money 추가
+    command:
+      [
+        "--market",
+        "domestic",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--with-info",
+      ]
 
     healthcheck:
       test:
@@ -56,7 +64,3 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-
-volumes:
-  quanteo-data:
-    driver: local
