@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -45,6 +46,29 @@ async def test_build_components_creates_all_components():
     assert system.fx_reporter is not None
     assert system.calendar_client is not None
     assert system.notifier is not None
+
+
+def test_build_components_names_failing_component_and_reraises(caplog):
+    """컴포넌트 하나가 실패하면 어떤 컴포넌트인지 로그로 남기고 그대로 재발생시켜야 한다.
+
+    이전엔 core.app.run()의 바깥쪽 try/except가 "InfoSystem 초기화 실패"라는
+    뭉뚱그린 로그 한 줄만 남겨서, anthropic/finnhub/google_calendar 중 무엇이
+    문제인지 알 방법이 없었다 — 이 테스트가 그 회귀를 막는다.
+    """
+    from info.main import InfoSystem
+
+    settings = _make_settings()
+
+    with (
+        patch(_PATCH_MAKE_NOTIFIER, return_value=MagicMock()),
+        patch(_PATCH_SCHEDULER),
+        patch(_PATCH_GCAL, side_effect=RuntimeError("credentials 파일 없음")),
+        caplog.at_level(logging.ERROR, logger="info.main"),
+        pytest.raises(RuntimeError, match="credentials 파일 없음"),
+    ):
+        InfoSystem(settings)
+
+    assert any("GoogleCalendarClient" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio

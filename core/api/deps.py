@@ -41,6 +41,9 @@ class AppContainer:
     # KIS 시세 조회 클라이언트 (선택: day_change의 전일 종가 조회 전용,
     # 실전 매매 브로커 아님 — kis.app_key/app_secret 설정 시에만 주입)
     kis_client: KisQuoteClient | None = None
+    # 정보수집·알람 서브시스템(InfoSystem) 실제 기동 여부. --with-info 플래그만으론
+    # 알 수 없다 — settings.info.enabled=True + 컴포넌트 초기화까지 성공해야 True.
+    info_enabled: bool = False
 
 
 def _get_container(conn: HTTPConnection) -> AppContainer:
