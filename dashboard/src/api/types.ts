@@ -25,6 +25,13 @@ export interface PositionList {
   items: PositionItem[];
 }
 
+// core/api/routes/orders.py의 _VALID_STATUSES와 1:1 대응 — "open"은 Toss
+// list_orders(status="OPEN") 조회 파라미터일 뿐 실제 주문 상태값이 아니므로
+// 여기 포함하지 않는다. 이 유니온에 값을 추가하면 OrdersTable.tsx의
+// Record<OrderStatus, ...> 매핑들이 컴파일 에러로 누락을 잡아준다.
+export type OrderStatus =
+  "pending" | "submitted" | "partial" | "filled" | "cancelled" | "rejected";
+
 export interface OrderItem {
   client_order_id: string;
   kis_order_id: string | null;
@@ -35,7 +42,7 @@ export interface OrderItem {
   order_type: string;
   qty: number;
   price: number;
-  status: string;
+  status: OrderStatus;
   created_at: string;
   updated_at: string;
 }

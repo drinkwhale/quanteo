@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
-import type { OrderItem } from "../api/types";
+import { describe, expect, it, vi } from "vitest";
+import type { OrderItem, OrderStatus } from "../api/types";
 import { OrdersTable } from "./OrdersTable";
 
 // 대기/완료/조건주문 3개 탭으로 status를 분류하는 필터 로직이 이 테스트의 핵심.
@@ -60,5 +60,84 @@ describe("OrdersTable tabs", () => {
     expect(
       screen.getByText("조건주문 기능은 아직 지원되지 않음"),
     ).toBeInTheDocument();
+  });
+
+  it("탭 배지가 상태별 건수를 정확히 보여준다", () => {
+    render(<OrdersTable orders={ORDERS} stockNames={new Map()} />);
+
+    expect(screen.getByRole("tab", { name: /대기/ })).toHaveTextContent("1");
+    expect(screen.getByRole("tab", { name: /완료/ })).toHaveTextContent("2");
+    expect(screen.getByRole("tab", { name: /조건주문/ })).toHaveTextContent(
+      "0",
+    );
+  });
+
+  // submitted/partial은 CANCELLABLE_STATUSES에 있는데도 대기 탭에서 취소
+  // 버튼이 안 뜨던 회귀 — partial이 CANCELLABLE_STATUSES에서 빠져있던 버그를
+  // 이 테스트가 잡는다.
+  it("submitted/partial 주문은 대기 탭에서 취소 버튼이 보인다", () => {
+    const orders: OrderItem[] = [
+      makeOrder({
+        client_order_id: "submitted-1",
+        status: "submitted",
+        kis_order_id: "broker-1",
+      }),
+      makeOrder({
+        client_order_id: "partial-1",
+        status: "partial",
+        kis_order_id: "broker-2",
+      }),
+    ];
+    render(<OrdersTable orders={orders} stockNames={new Map()} />);
+
+    const rows = screen.getAllByRole("row");
+    expect(rows).toHaveLength(3); // header + 2
+    expect(
+      within(rows[1]).getByRole("button", { name: /취소/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(rows[2]).getByRole("button", { name: /취소/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("완료 탭(filled/cancelled/rejected)에는 취소 버튼이 없다", async () => {
+    const user = userEvent.setup();
+    const orders: OrderItem[] = [
+      makeOrder({
+        client_order_id: "filled-1",
+        status: "filled",
+        kis_order_id: "broker-1",
+      }),
+      makeOrder({
+        client_order_id: "rejected-1",
+        status: "rejected",
+        kis_order_id: "broker-2",
+      }),
+    ];
+    render(<OrdersTable orders={orders} stockNames={new Map()} />);
+
+    await user.click(screen.getByRole("tab", { name: /완료/ }));
+
+    expect(
+      screen.queryByRole("button", { name: /취소/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("알 수 없는 status는 어느 탭에도 안 뜨고 콘솔 경고만 남긴다", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const orders = [
+      makeOrder({
+        client_order_id: "mystery-1",
+        // 백엔드가 아직 프론트에 반영 안 된 새 status를 내려보내는 상황을
+        // 흉내낸다 — 런타임에는 타입이 강제되지 않으므로 실제로 벌어질 수 있다.
+        status: "expired" as unknown as OrderStatus,
+      }),
+    ];
+    render(<OrdersTable orders={orders} stockNames={new Map()} />);
+
+    expect(screen.getByRole("tab", { name: /대기/ })).toHaveTextContent("0");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("mystery-1"));
+
+    warnSpy.mockRestore();
   });
 });

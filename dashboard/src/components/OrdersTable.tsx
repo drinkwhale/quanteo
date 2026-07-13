@@ -1,26 +1,43 @@
 import { useId, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { OrderItem } from "../api/types";
+import type { OrderItem, OrderStatus } from "../api/types";
 import { StockCell } from "./StockCell";
 
-const STATUS_COLOR: Record<string, string> = {
+const STATUS_COLOR: Record<OrderStatus, string> = {
   pending: "text-warning",
-  open: "text-accent",
   submitted: "text-accent",
+  partial: "text-accent",
   filled: "text-positive",
   cancelled: "text-muted",
   rejected: "text-negative",
 };
 
-const CANCELLABLE_STATUSES = new Set(["pending", "submitted", "open"]);
+// partial(부분체결)도 취소 가능 — Toss는 PARTIAL_FILLED를 PENDING과 같은
+// OPEN 그룹으로 취급하고(core/execution/order_sync.py), cancel_order API도
+// 상태로 막지 않고 그대로 브로커에 전달한다.
+const CANCELLABLE_STATUSES: ReadonlySet<OrderStatus> = new Set([
+  "pending",
+  "submitted",
+  "partial",
+]);
 
-// 대기 = 체결 대기 중(부분체결 포함), 완료 = 종결된 주문(체결/취소/거부).
-const PENDING_STATUSES = new Set(["pending", "partial", "open", "submitted"]);
-const COMPLETED_STATUSES = new Set(["filled", "cancelled", "rejected"]);
+type OrderTab = "pending" | "completed";
 
-type OrderTab = "pending" | "completed" | "conditional";
+// 대기 = 아직 종결되지 않은 주문, 완료 = 종결된 주문(체결/취소/거부 모두 포함).
+// Record<OrderStatus, OrderTab>이라 OrderStatus에 값이 추가되는데 여기 안
+// 채우면 컴파일 에러가 난다 — 새 상태가 조용히 안 보이게 되는 걸 막는다.
+const STATUS_TAB: Record<OrderStatus, OrderTab> = {
+  pending: "pending",
+  submitted: "pending",
+  partial: "pending",
+  filled: "completed",
+  cancelled: "completed",
+  rejected: "completed",
+};
 
-const TAB_LABEL: Record<OrderTab, string> = {
+type VisibleTab = OrderTab | "conditional";
+
+const TAB_LABEL: Record<VisibleTab, string> = {
   pending: "대기",
   completed: "완료",
   conditional: "조건주문",
@@ -37,7 +54,7 @@ interface Props {
 export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null); // order_id being actioned
-  const [tab, setTab] = useState<OrderTab>("pending");
+  const [tab, setTab] = useState<VisibleTab>("pending");
   const tabPanelId = useId();
 
   async function handleCancel(orderId: string) {
@@ -53,25 +70,39 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
     }
   }
 
+  // 한 번의 순회로 대기/완료를 나눈다 — status가 STATUS_TAB에 없는(백엔드가
+  // 새 상태를 추가했거나 데이터가 오염된) 주문은 두 탭 어디에도 안 들어가고
+  // 조용히 사라지는 대신 콘솔에 경고를 남긴다. 트레이딩 대시보드에서 주문이
+  // 아무 표시 없이 안 보이는 건 위험하기 때문.
+  const grouped = useMemo(() => {
+    const result: Record<OrderTab, OrderItem[]> = {
+      pending: [],
+      completed: [],
+    };
+    for (const o of orders) {
+      const t = STATUS_TAB[o.status];
+      if (t === undefined) {
+        console.warn(
+          `[OrdersTable] 알 수 없는 주문 상태 — 목록에 표시되지 않습니다: status=${o.status} client_order_id=${o.client_order_id}`,
+        );
+        continue;
+      }
+      result[t].push(o);
+    }
+    return result;
+  }, [orders]);
+
   const counts = useMemo(
     () => ({
-      pending: orders.filter((o) => PENDING_STATUSES.has(o.status)).length,
-      completed: orders.filter((o) => COMPLETED_STATUSES.has(o.status)).length,
+      pending: grouped.pending.length,
+      completed: grouped.completed.length,
       // Toss 어댑터는 LIMIT/MARKET만 지원 — 조건주문 데이터가 없어 항상 0건.
       conditional: 0,
     }),
-    [orders],
+    [grouped],
   );
 
-  const visibleOrders = useMemo(() => {
-    if (tab === "pending") {
-      return orders.filter((o) => PENDING_STATUSES.has(o.status));
-    }
-    if (tab === "completed") {
-      return orders.filter((o) => COMPLETED_STATUSES.has(o.status));
-    }
-    return [];
-  }, [orders, tab]);
+  const visibleOrders = tab === "conditional" ? [] : grouped[tab];
 
   const emptyMessage =
     tab === "conditional"
