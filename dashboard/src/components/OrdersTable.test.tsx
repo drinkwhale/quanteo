@@ -9,7 +9,7 @@ import { OrdersTable } from "./OrdersTable";
 function makeOrder(overrides: Partial<OrderItem>): OrderItem {
   return {
     client_order_id: "c1",
-    kis_order_id: null,
+    broker_order_id: null,
     symbol: "005930",
     market: "domestic",
     env: "vps",
@@ -80,12 +80,12 @@ describe("OrdersTable tabs", () => {
       makeOrder({
         client_order_id: "submitted-1",
         status: "submitted",
-        kis_order_id: "broker-1",
+        broker_order_id: "broker-1",
       }),
       makeOrder({
         client_order_id: "partial-1",
         status: "partial",
-        kis_order_id: "broker-2",
+        broker_order_id: "broker-2",
       }),
     ];
     render(<OrdersTable orders={orders} stockNames={new Map()} />);
@@ -106,12 +106,12 @@ describe("OrdersTable tabs", () => {
       makeOrder({
         client_order_id: "filled-1",
         status: "filled",
-        kis_order_id: "broker-1",
+        broker_order_id: "broker-1",
       }),
       makeOrder({
         client_order_id: "rejected-1",
         status: "rejected",
-        kis_order_id: "broker-2",
+        broker_order_id: "broker-2",
       }),
     ];
     render(<OrdersTable orders={orders} stockNames={new Map()} />);

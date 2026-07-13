@@ -74,3 +74,18 @@ def test_orders_invalid_status(store):
     client = TestClient(create_app(_make_container(store)))
     res = client.get("/orders?status=unknown")
     assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_orders_side_normalized_to_uppercase(store):
+    """DB에는 'buy'/'sell' 소문자로 저장되지만 API 응답은 대문자여야 한다.
+
+    대시보드의 OrderItem.side 타입("BUY" | "SELL")과 계약이 어긋나면
+    주문 방향이 항상 SELL로 잘못 표시되는 회귀가 있었다 (order_history_sync.py
+    가 side를 소문자로 저장하는데 API가 그대로 흘려보내던 버그).
+    """
+    await _insert_order(store, "submitted")
+
+    client = TestClient(create_app(_make_container(store)))
+    data = client.get("/orders").json()
+    assert data["items"][0]["side"] == "BUY"

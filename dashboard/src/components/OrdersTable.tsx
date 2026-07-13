@@ -168,7 +168,7 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
               </thead>
               <tbody>
                 {visibleOrders.map((o) => {
-                  const brokerId = o.kis_order_id;
+                  const brokerId = o.broker_order_id;
                   const canCancel =
                     CANCELLABLE_STATUSES.has(o.status) && brokerId != null;
                   const isLoading = loading === brokerId;
