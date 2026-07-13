@@ -149,8 +149,17 @@ async def run(
 
             info_system = InfoSystem(settings)
             logger.info("InfoSystem 초기화 완료")
-        except Exception as exc:
-            logger.error("InfoSystem 초기화 실패 — info 비활성화: %s", exc)
+        except Exception:
+            # 트레이딩 코어는 info 서브시스템과 무관하게 계속 떠야 하므로 여기서는
+            # 삼키고 계속 진행한다 — 다만 원인 추적이 가능하도록 스택트레이스를
+            # 남기고, 실제 기동 여부는 AppContainer.info_enabled → GET /status로
+            # 조회 가능하게 한다 (컨테이너가 "healthy"인데 info만 죽어있는 상태를
+            # 운영자가 알아챌 방법이 없었던 문제).
+            logger.exception(
+                "InfoSystem 초기화 실패 — info 서브시스템 비활성화. "
+                "quanteo.yaml의 info.* 설정(anthropic/finnhub api_key, "
+                "google_calendar 등)을 확인하세요."
+            )
 
     container = AppContainer(
         store=store,
@@ -160,6 +169,7 @@ async def run(
         market=settings.market.value,
         broker=rest_client,
         kis_client=kis_client,
+        info_enabled=info_system is not None,
     )
     fastapi_app = create_app(container)
 

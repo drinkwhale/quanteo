@@ -28,7 +28,8 @@ dashboard/
 .idea/
 
 # 문서
-README.md
+# README.md는 제외하지 않는다 — pyproject.toml의 readme 필드를 hatchling이
+# 빌드 시 참조하므로, 제외하면 "uv sync --frozen --no-dev"가 실패한다.
 claudedocs/
 specs/
 PROJECT_INDEX.md

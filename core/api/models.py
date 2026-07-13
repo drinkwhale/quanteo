@@ -38,6 +38,9 @@ class BotStatus(BaseModel):
     market: str  # "domestic" | "overseas"
     uptime_seconds: float
     started_at: datetime | None = None
+    # 정보수집·알람 서브시스템(InfoSystem) 실제 기동 여부. --with-info 플래그를
+    # 줬어도 quanteo.yaml 설정 미비로 초기화가 실패하면 False로 내려간다.
+    info_enabled: bool = False
 
 
 # ---------------------------------------------------------------------------

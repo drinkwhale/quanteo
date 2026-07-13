@@ -26,4 +26,5 @@ async def get_status(container: ContainerDep) -> BotStatus:
         market=container.market,
         uptime_seconds=uptime,
         started_at=container.started_at,
+        info_enabled=container.info_enabled,
     )
