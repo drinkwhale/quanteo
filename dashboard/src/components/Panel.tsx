@@ -27,8 +27,22 @@ export function Panel({
 
   return (
     <section
-      className={`bg-panel border border-border rounded-lg overflow-hidden ${className}`}
+      className={`relative bg-panel border border-border rounded-lg overflow-hidden ${className}`}
     >
+      {/* 프레이밍 디테일 — 계기판 모서리 브라켓 + 상단 시그널 라인. 순수 장식, 인터랙션 없음 */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 h-2 w-2 border-l border-t border-accent/40 rounded-tl-lg"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 top-0 h-2 w-2 border-r border-t border-accent/40 rounded-tr-lg"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent"
+      />
+
       <div
         className={`flex items-center gap-1.5 px-3 py-2.5 ${collapsed ? "" : "border-b border-border"}`}
       >
@@ -53,7 +67,7 @@ export function Panel({
             {title}
           </h2>
           {badge !== undefined && (
-            <span className="text-xs text-muted flex-shrink-0 tabular-nums">
+            <span className="text-xs font-mono text-muted flex-shrink-0 tabular-nums">
               {badge}
             </span>
           )}

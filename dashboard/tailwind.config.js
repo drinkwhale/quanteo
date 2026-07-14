@@ -55,6 +55,15 @@ export default {
           "system-ui",
           "sans-serif",
         ],
+        // 시스템 라벨·타임스탬프·종목코드 전용 — 웹폰트 추가 로드 없이 OS 내장 모노 사용
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "JetBrains Mono",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
     },
   },

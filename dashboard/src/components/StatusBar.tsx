@@ -45,11 +45,20 @@ export function StatusBar({ status, streamConnected }: Props) {
         quanteo
       </span>
 
-      <span className={`font-semibold whitespace-nowrap ${haltColor}`}>
+      <span
+        className={`inline-flex items-center gap-1.5 font-semibold whitespace-nowrap ${haltColor}`}
+      >
+        <span
+          className={`inline-block w-1.5 h-1.5 rounded-full ${
+            status.halt_level === "none"
+              ? "bg-positive glow-emerald"
+              : "bg-current"
+          }`}
+        />
         {haltLabel}
       </span>
 
-      <span className="text-muted whitespace-nowrap">
+      <span className="font-mono text-xs text-muted whitespace-nowrap">
         ENV:{" "}
         <span
           className={
@@ -60,20 +69,20 @@ export function StatusBar({ status, streamConnected }: Props) {
         </span>
       </span>
 
-      <span className="text-muted whitespace-nowrap hidden sm:inline">
+      <span className="font-mono text-xs text-muted whitespace-nowrap hidden sm:inline">
         MARKET: <span className="text-white">{status.market}</span>
       </span>
 
-      <span className="text-muted whitespace-nowrap hidden md:inline">
+      <span className="font-mono text-xs text-muted whitespace-nowrap hidden md:inline">
         UPTIME:{" "}
         <span className="text-white tabular-nums">
           {fmtUptime(status.uptime_seconds)}
         </span>
       </span>
 
-      <span className="ml-auto flex-shrink-0 flex items-center gap-1.5 text-muted whitespace-nowrap">
+      <span className="ml-auto flex-shrink-0 flex items-center gap-1.5 font-mono text-xs text-muted whitespace-nowrap">
         <span
-          className={`inline-block w-2 h-2 rounded-full ${streamConnected ? "bg-positive" : "bg-negative"}`}
+          className={`inline-block w-2 h-2 rounded-full ${streamConnected ? "bg-positive glow-emerald" : "bg-negative"}`}
         />
         {streamConnected ? "STREAM ON" : "STREAM OFF"}
       </span>

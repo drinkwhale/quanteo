@@ -61,7 +61,7 @@ export function FillsTable({ fills, error, stockNames }: Props) {
                     {f.volume.toLocaleString()}
                   </td>
                   <td className="px-4 py-2 text-muted text-xs">{f.currency}</td>
-                  <td className="px-4 py-2 text-muted text-xs">
+                  <td className="px-4 py-2 text-muted text-xs font-mono">
                     {new Date(f.timestamp).toLocaleTimeString("ko-KR")}
                   </td>
                 </tr>

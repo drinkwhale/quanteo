@@ -54,7 +54,7 @@ export function PositionsTable({ positions, error, stockNames }: Props) {
                     {fmtPrice(p.book_value, p.market)}
                   </td>
                   <td className="px-4 py-2 text-muted">{p.market}</td>
-                  <td className="px-4 py-2 text-muted text-xs">
+                  <td className="px-4 py-2 text-muted text-xs font-mono">
                     {p.opened_at}
                   </td>
                 </tr>

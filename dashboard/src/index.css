@@ -5,14 +5,14 @@
 
 @layer base {
   :root {
-    /* The Silent Exchange — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
-       타이포그래피는 Pretendard 단일 패밀리 — 토스 HTS 무드에 맞춘 클린 산세리프,
-       숫자 정렬은 tabular-nums 유틸리티로 담당(모노스페이스 대체). */
-    --color-space-black: #0f1117;
-    --color-midnight-panel: #1a1d27;
-    --color-structural-line: #2a2d3a;
-    --color-signal-blue: #3b82f6;
-    --color-signal-blue-deep: #2563eb;
+    /* Tech Green Dark Mode — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
+       타이포그래피는 Pretendard(본문) + mono(시스템 라벨·타임스탬프·코드) 이원 체계.
+       숫자 정렬은 tabular-nums 유틸리티로 담당. */
+    --color-void-black: #05070a;
+    --color-carbon-panel: #10141a;
+    --color-graphite-line: #1f2630;
+    --color-emerald-signal: #10b981;
+    --color-emerald-deep: #059669;
     --color-live-green: #22c55e;
     --color-alert-red: #ef4444;
     --color-caution-amber: #f59e0b;
@@ -20,26 +20,30 @@
     --color-ink-white: #f1f5f9;
 
     /* shadcn/ui 시맨틱 슬롯 — 위 토큰에 매핑. 앱 전체가 항상 다크 테마이므로 라이트 변형 없음 */
-    --background: var(--color-space-black);
+    --background: var(--color-void-black);
     --foreground: var(--color-ink-white);
-    --card: var(--color-midnight-panel);
+    --card: var(--color-carbon-panel);
     --card-foreground: var(--color-ink-white);
-    --popover: var(--color-midnight-panel);
+    --popover: var(--color-carbon-panel);
     --popover-foreground: var(--color-ink-white);
-    --primary: var(--color-signal-blue);
-    --primary-foreground: var(--color-ink-white);
-    --secondary: var(--color-midnight-panel);
+    --primary: var(--color-emerald-signal);
+    --primary-foreground: var(--color-void-black);
+    --secondary: var(--color-carbon-panel);
     --secondary-foreground: var(--color-ink-white);
-    --muted: var(--color-midnight-panel);
+    --muted: var(--color-carbon-panel);
     --muted-foreground: var(--color-ghost-gray);
-    --accent: var(--color-signal-blue);
-    --accent-foreground: var(--color-ink-white);
+    --accent: var(--color-emerald-signal);
+    --accent-foreground: var(--color-void-black);
     --destructive: var(--color-alert-red);
     --destructive-foreground: var(--color-ink-white);
-    --border: var(--color-structural-line);
-    --input: var(--color-structural-line);
-    --ring: var(--color-signal-blue);
+    --border: var(--color-graphite-line);
+    --input: var(--color-graphite-line);
+    --ring: var(--color-emerald-signal);
     --radius: 8px;
+
+    /* restrained glow — RUNNING 상태·포커스 강조 등 국소적으로만 사용 */
+    --glow-emerald:
+      0 0 0 1px rgb(16 185 129 / 0.18), 0 0 20px -6px rgb(16 185 129 / 0.45);
 
     /* 시맨틱 z-index 스케일 */
     --z-dropdown: 10;
@@ -62,6 +66,12 @@
   body {
     -webkit-font-smoothing: antialiased;
     @apply bg-background text-foreground font-sans;
+    /* 매트 블랙 위 극저채도 그리드 텍스처 — 계기판 무드, 콘텐츠보다 항상 뒤로 */
+    background-image:
+      linear-gradient(rgb(31 38 48 / 0.35) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(31 38 48 / 0.35) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-attachment: fixed;
   }
 
   ::-webkit-scrollbar {
@@ -100,7 +110,14 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-signal-blue);
+    outline: 2px solid var(--color-emerald-signal);
     outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* 국소적 emerald glow — RUNNING 인디케이터, 강조 패널 헤더 등 소수 지점 전용 */
+  .glow-emerald {
+    box-shadow: var(--glow-emerald);
   }
 }

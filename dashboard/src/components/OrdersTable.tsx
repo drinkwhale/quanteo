@@ -198,7 +198,7 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
                       >
                         {o.status}
                       </td>
-                      <td className="px-4 py-2 text-muted text-xs">
+                      <td className="px-4 py-2 text-muted text-xs font-mono">
                         {o.created_at}
                       </td>
                       <td className="px-4 py-2 text-center">
