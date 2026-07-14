@@ -34,7 +34,7 @@ export type OrderStatus =
 
 export interface OrderItem {
   client_order_id: string;
-  kis_order_id: string | null;
+  broker_order_id: string | null;
   symbol: string;
   market: string;
   env: string;

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # ---------------------------------------------------------------------------
 # 공통
@@ -87,13 +87,20 @@ class OrderItem(BaseModel):
     symbol: str
     market: str
     env: str
-    side: str  # "BUY" | "SELL"
+    side: Literal["BUY", "SELL"]
     order_type: str  # "LIMIT" | "MARKET"
     qty: float  # 해외주식 fractional investing 지원 — 정수 아닐 수 있음
     price: Decimal
     status: str
     created_at: str
     updated_at: str
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _normalize_side(cls, v: str) -> str:
+        # store 레이어(core/store/db.py)는 'buy'/'sell' 소문자로 저장 — 응답
+        # 직전에 여기서 정규화해 프론트(OrderItem.side: "BUY"|"SELL")와 계약을 맞춘다.
+        return v.upper() if isinstance(v, str) else v
 
 
 class OrderList(BaseModel):
@@ -146,7 +153,7 @@ class FillItem(BaseModel):
     volume: int
     timestamp: datetime
     currency: str
-    side: str | None = None  # "BUY" | "SELL"
+    side: Literal["BUY", "SELL"] | None = None
 
 
 class FillList(BaseModel):

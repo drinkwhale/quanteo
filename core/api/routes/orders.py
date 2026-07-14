@@ -61,6 +61,7 @@ async def get_orders(
             symbol=row["symbol"],
             market=row["market"],
             env=row["env"],
+            # side 대소문자 정규화는 OrderItem 모델의 field_validator가 전담한다.
             side=row["side"],
             order_type=row["order_type"],
             qty=row["qty"],
