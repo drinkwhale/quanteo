@@ -1,4 +1,5 @@
 import type { FillItem } from "../api/types";
+import { TIMESTAMP_CELL_CLASS } from "../lib/utils";
 import { StockCell } from "./StockCell";
 
 interface Props {
@@ -61,7 +62,7 @@ export function FillsTable({ fills, error, stockNames }: Props) {
                     {f.volume.toLocaleString()}
                   </td>
                   <td className="px-4 py-2 text-muted text-xs">{f.currency}</td>
-                  <td className="px-4 py-2 text-muted text-xs font-mono">
+                  <td className={TIMESTAMP_CELL_CLASS}>
                     {new Date(f.timestamp).toLocaleTimeString("ko-KR")}
                   </td>
                 </tr>

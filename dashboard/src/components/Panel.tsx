@@ -10,6 +10,23 @@ type Props = {
   children: ReactNode;
 };
 
+type CornerSide = "left" | "right";
+
+const CORNER_SIDE_CLASS: Record<CornerSide, string> = {
+  left: "left-0 border-l rounded-tl-lg",
+  right: "right-0 border-r rounded-tr-lg",
+};
+
+/** Panel 프레이밍용 모서리 브라켓 한 개 — 좌/우 대칭이라 한 곳에서만 관리 */
+function PanelCornerBracket({ side }: { side: CornerSide }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute top-0 h-2 w-2 border-t border-accent/40 ${CORNER_SIDE_CLASS[side]}`}
+    />
+  );
+}
+
 /**
  * 상시 노출 멀티패널 대시보드의 공용 패널 셸.
  * 접기/펼치기는 로컬 state로만 관리 — 새로고침 시 초기화(영속화는 스코프 밖).
@@ -30,14 +47,8 @@ export function Panel({
       className={`relative bg-panel border border-border rounded-lg overflow-hidden ${className}`}
     >
       {/* 프레이밍 디테일 — 계기판 모서리 브라켓 + 상단 시그널 라인. 순수 장식, 인터랙션 없음 */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 h-2 w-2 border-l border-t border-accent/40 rounded-tl-lg"
-      />
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute right-0 top-0 h-2 w-2 border-r border-t border-accent/40 rounded-tr-lg"
-      />
+      <PanelCornerBracket side="left" />
+      <PanelCornerBracket side="right" />
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent/50 to-transparent"
