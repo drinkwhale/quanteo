@@ -8,16 +8,19 @@
     /* Tech Green Dark Mode — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
        타이포그래피는 Pretendard(본문) + mono(시스템 라벨·타임스탬프·코드) 이원 체계.
        숫자 정렬은 tabular-nums 유틸리티로 담당. */
-    --color-void-black: #05070a;
-    --color-carbon-panel: #10141a;
-    --color-graphite-line: #1f2630;
-    --color-emerald-signal: #10b981;
-    --color-emerald-deep: #059669;
-    --color-live-green: #22c55e;
-    --color-alert-red: #ef4444;
-    --color-caution-amber: #f59e0b;
-    --color-ghost-gray: #6b7280;
-    --color-ink-white: #f1f5f9;
+    /* R G B 트리플릿 형식 — Tailwind opacity modifier(/40, /10 등)가 동작하려면
+       rgb(var(--x) / <alpha-value>) 패턴이 필요하다. hex 문자열로는 오패시티 유틸이
+       생성되지 않는다(빌드에 클래스 자체가 아예 안 나옴 — 조용히 실패). */
+    --color-void-black: 5 7 10;
+    --color-carbon-panel: 16 20 26;
+    --color-graphite-line: 31 38 48;
+    --color-emerald-signal: 16 185 129;
+    --color-emerald-deep: 5 150 105;
+    --color-live-green: 34 197 94;
+    --color-alert-red: 239 68 68;
+    --color-caution-amber: 245 158 11;
+    --color-ghost-gray: 107 114 128;
+    --color-ink-white: 241 245 249;
 
     /* shadcn/ui 시맨틱 슬롯 — 위 토큰에 매핑. 앱 전체가 항상 다크 테마이므로 라이트 변형 없음 */
     --background: var(--color-void-black);
@@ -43,7 +46,8 @@
 
     /* restrained glow — RUNNING 상태·포커스 강조 등 국소적으로만 사용 */
     --glow-emerald:
-      0 0 0 1px rgb(16 185 129 / 0.18), 0 0 20px -6px rgb(16 185 129 / 0.45);
+      0 0 0 1px rgb(var(--color-emerald-signal) / 0.18),
+      0 0 20px -6px rgb(var(--color-emerald-signal) / 0.45);
 
     /* 시맨틱 z-index 스케일 */
     --z-dropdown: 10;
@@ -68,8 +72,15 @@
     @apply bg-background text-foreground font-sans;
     /* 매트 블랙 위 극저채도 그리드 텍스처 — 계기판 무드, 콘텐츠보다 항상 뒤로 */
     background-image:
-      linear-gradient(rgb(31 38 48 / 0.35) 1px, transparent 1px),
-      linear-gradient(90deg, rgb(31 38 48 / 0.35) 1px, transparent 1px);
+      linear-gradient(
+        rgb(var(--color-graphite-line) / 0.35) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgb(var(--color-graphite-line) / 0.35) 1px,
+        transparent 1px
+      );
     background-size: 32px 32px;
     background-attachment: fixed;
   }
@@ -110,7 +121,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-emerald-signal);
+    outline: 2px solid rgb(var(--color-emerald-signal));
     outline-offset: 2px;
   }
 }
