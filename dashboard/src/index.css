@@ -5,41 +5,49 @@
 
 @layer base {
   :root {
-    /* The Silent Exchange — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
-       타이포그래피는 Pretendard 단일 패밀리 — 토스 HTS 무드에 맞춘 클린 산세리프,
-       숫자 정렬은 tabular-nums 유틸리티로 담당(모노스페이스 대체). */
-    --color-space-black: #0f1117;
-    --color-midnight-panel: #1a1d27;
-    --color-structural-line: #2a2d3a;
-    --color-signal-blue: #3b82f6;
-    --color-signal-blue-deep: #2563eb;
-    --color-live-green: #22c55e;
-    --color-alert-red: #ef4444;
-    --color-caution-amber: #f59e0b;
-    --color-ghost-gray: #6b7280;
-    --color-ink-white: #f1f5f9;
+    /* Tech Green Dark Mode — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
+       타이포그래피는 Pretendard(본문) + mono(시스템 라벨·타임스탬프·코드) 이원 체계.
+       숫자 정렬은 tabular-nums 유틸리티로 담당. */
+    /* R G B 트리플릿 형식 — Tailwind opacity modifier(/40, /10 등)가 동작하려면
+       rgb(var(--x) / <alpha-value>) 패턴이 필요하다. hex 문자열로는 오패시티 유틸이
+       생성되지 않는다(빌드에 클래스 자체가 아예 안 나옴 — 조용히 실패). */
+    --color-void-black: 5 7 10;
+    --color-carbon-panel: 16 20 26;
+    --color-graphite-line: 31 38 48;
+    --color-emerald-signal: 16 185 129;
+    --color-emerald-deep: 5 150 105;
+    --color-live-green: 34 197 94;
+    --color-alert-red: 239 68 68;
+    --color-caution-amber: 245 158 11;
+    --color-ghost-gray: 107 114 128;
+    --color-ink-white: 241 245 249;
 
     /* shadcn/ui 시맨틱 슬롯 — 위 토큰에 매핑. 앱 전체가 항상 다크 테마이므로 라이트 변형 없음 */
-    --background: var(--color-space-black);
+    --background: var(--color-void-black);
     --foreground: var(--color-ink-white);
-    --card: var(--color-midnight-panel);
+    --card: var(--color-carbon-panel);
     --card-foreground: var(--color-ink-white);
-    --popover: var(--color-midnight-panel);
+    --popover: var(--color-carbon-panel);
     --popover-foreground: var(--color-ink-white);
-    --primary: var(--color-signal-blue);
-    --primary-foreground: var(--color-ink-white);
-    --secondary: var(--color-midnight-panel);
+    --primary: var(--color-emerald-signal);
+    --primary-foreground: var(--color-void-black);
+    --secondary: var(--color-carbon-panel);
     --secondary-foreground: var(--color-ink-white);
-    --muted: var(--color-midnight-panel);
+    --muted: var(--color-carbon-panel);
     --muted-foreground: var(--color-ghost-gray);
-    --accent: var(--color-signal-blue);
-    --accent-foreground: var(--color-ink-white);
+    --accent: var(--color-emerald-signal);
+    --accent-foreground: var(--color-void-black);
     --destructive: var(--color-alert-red);
     --destructive-foreground: var(--color-ink-white);
-    --border: var(--color-structural-line);
-    --input: var(--color-structural-line);
-    --ring: var(--color-signal-blue);
+    --border: var(--color-graphite-line);
+    --input: var(--color-graphite-line);
+    --ring: var(--color-emerald-signal);
     --radius: 8px;
+
+    /* restrained glow — RUNNING 상태·포커스 강조 등 국소적으로만 사용 */
+    --glow-emerald:
+      0 0 0 1px rgb(var(--color-emerald-signal) / 0.18),
+      0 0 20px -6px rgb(var(--color-emerald-signal) / 0.45);
 
     /* 시맨틱 z-index 스케일 */
     --z-dropdown: 10;
@@ -62,6 +70,19 @@
   body {
     -webkit-font-smoothing: antialiased;
     @apply bg-background text-foreground font-sans;
+    /* 매트 블랙 위 극저채도 그리드 텍스처 — 계기판 무드, 콘텐츠보다 항상 뒤로 */
+    background-image:
+      linear-gradient(
+        rgb(var(--color-graphite-line) / 0.35) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        rgb(var(--color-graphite-line) / 0.35) 1px,
+        transparent 1px
+      );
+    background-size: 32px 32px;
+    background-attachment: fixed;
   }
 
   ::-webkit-scrollbar {
@@ -100,7 +121,14 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-signal-blue);
+    outline: 2px solid rgb(var(--color-emerald-signal));
     outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* 국소적 emerald glow — RUNNING 인디케이터, 강조 패널 헤더 등 소수 지점 전용 */
+  .glow-emerald {
+    box-shadow: var(--glow-emerald);
   }
 }

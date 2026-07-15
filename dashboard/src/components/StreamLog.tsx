@@ -33,9 +33,9 @@ export function StreamLog({ logs }: Props) {
         logs.map((log) => (
           <div
             key={log._key}
-            className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-sans"
+            className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-mono"
           >
-            <span className="text-muted flex-shrink-0 w-20 truncate">
+            <span className="text-muted flex-shrink-0 w-20 truncate tabular-nums">
               {new Date(log.timestamp).toLocaleTimeString("ko-KR")}
             </span>
             <span
@@ -43,7 +43,7 @@ export function StreamLog({ logs }: Props) {
             >
               {log.event_type}
             </span>
-            <span className="text-muted truncate">
+            <span className="text-muted truncate font-sans">
               {typeof log.payload === "object"
                 ? JSON.stringify(log.payload)
                 : String(log.payload)}

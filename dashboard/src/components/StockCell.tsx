@@ -13,7 +13,7 @@ export function StockCell({ symbol, names }: Props) {
     <div className="min-w-0">
       <div className="text-white font-semibold truncate">{name ?? symbol}</div>
       {name && (
-        <div className="text-[10px] text-muted tabular-nums truncate">
+        <div className="text-[10px] font-mono text-muted tabular-nums truncate">
           {symbol}
         </div>
       )}

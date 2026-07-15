@@ -1,4 +1,5 @@
 import { fmtPrice } from "../lib/format";
+import { TIMESTAMP_CELL_CLASS } from "../lib/utils";
 import type { PositionItem } from "../api/types";
 import { StockCell } from "./StockCell";
 
@@ -54,9 +55,7 @@ export function PositionsTable({ positions, error, stockNames }: Props) {
                     {fmtPrice(p.book_value, p.market)}
                   </td>
                   <td className="px-4 py-2 text-muted">{p.market}</td>
-                  <td className="px-4 py-2 text-muted text-xs">
-                    {p.opened_at}
-                  </td>
+                  <td className={TIMESTAMP_CELL_CLASS}>{p.opened_at}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { TIMESTAMP_CELL_CLASS } from "../lib/utils";
 import type { OrderItem, OrderStatus } from "../api/types";
 import { StockCell } from "./StockCell";
 
@@ -198,9 +199,7 @@ export function OrdersTable({ orders, error, onRefetch, stockNames }: Props) {
                       >
                         {o.status}
                       </td>
-                      <td className="px-4 py-2 text-muted text-xs">
-                        {o.created_at}
-                      </td>
+                      <td className={TIMESTAMP_CELL_CLASS}>{o.created_at}</td>
                       <td className="px-4 py-2 text-center">
                         {canCancel && brokerId && (
                           <button
