@@ -48,8 +48,11 @@ from core.strategy.plugins.leverage_inverse_conditions import (
 
 logger = logging.getLogger(__name__)
 
-# 지표 워밍업에 필요한 최소 캔들 수 (DEMA(60) 이중 EMA 수렴에 필요한 여유분 포함)
-_MIN_CANDLES_FOR_INDICATORS = 3
+# on_tick() 진입 시 최소한의 캔들 존재 여부만 확인하는 1차 게이트값이다.
+# DEMA(60)/CCI(20+10)/Stochastic(14+3) 워밍업에 필요한 실제 최소 캔들 수는
+# 훨씬 크며(120개 이상), 그 검증은 _compute_indicators()가 각 지표 계산 결과의
+# 길이를 확인해 별도로 수행한다 — 이 상수를 워밍업 완료 기준으로 오해하지 말 것.
+_MIN_CANDLES_TO_ATTEMPT_INDICATORS = 3
 
 
 class Phase(StrEnum):
@@ -85,6 +88,12 @@ class LeverageInverseStrategy:
         params: LeverageInverseParams | None = None,
         name: str | None = None,
     ) -> None:
+        if qty_per_unit < 1:
+            # Signal.__post_init__(base.py)도 qty>=1을 요구한다. 여기서 막지 않으면
+            # 첫 진입 시그널이 on_tick() 내부에서 ValueError로 죽고, 그 예외는
+            # StrategyEngine의 try/except에 조용히 삼켜져 전략이 평생 무신호가 된다.
+            raise ValueError(f"qty_per_unit는 1 이상이어야 합니다: {qty_per_unit}")
+
         self._underlying_symbol = underlying_symbol
         self._long_symbol = long_symbol
         self._short_symbol = short_symbol
@@ -118,7 +127,7 @@ class LeverageInverseStrategy:
             return None
 
         candles = list(ctx.recent_candles)
-        if len(candles) < _MIN_CANDLES_FOR_INDICATORS:
+        if len(candles) < _MIN_CANDLES_TO_ATTEMPT_INDICATORS:
             return None
 
         indicators = self._compute_indicators(candles)
@@ -283,7 +292,8 @@ class LeverageInverseStrategy:
             reasons.append("가격 DEMA 하향돌파+저점이탈")
 
         if confirm_count >= 2:
-            return self._exit_leverage_full(tick, "2차 확정청산(" + ",".join(reasons) + ")")
+            reason = "2차 확정청산(" + ",".join(reasons) + ")"
+            return self._exit_position_full(self._long_symbol, reason)
 
         if cci[-1] >= self._params.cci_overbought_warning:
             self._leverage_overbought_seen = True
@@ -293,45 +303,10 @@ class LeverageInverseStrategy:
             and self._leverage_overbought_seen
             and detect_dead_cross(cci, cci_signal)
         ):
-            return self._exit_leverage_partial(
-                tick, f"1차 경고: CCI 과열({cci[-1]:.1f}) 후 Signal 데드크로스"
-            )
+            reason = f"1차 경고: CCI 과열({cci[-1]:.1f}) 후 Signal 데드크로스"
+            return self._exit_position_partial(self._long_symbol, Phase.LEVERAGE_PARTIAL, reason)
 
         return None
-
-    def _exit_leverage_full(self, tick: Tick, reason: str) -> Signal:
-        qty = self._position_qty if self._position_qty > 0 else self._qty_per_unit
-        self._phase = Phase.WATCHING
-        self._position_qty = 0
-        self._leverage_overbought_seen = False
-        logger.info("SELL 시그널: %s %s qty=%d (%s)", self.name, self._long_symbol, qty, reason)
-        return Signal(
-            strategy=self.name,
-            symbol=self._long_symbol,
-            side=SignalSide.SELL,
-            qty=qty,
-            price=None,
-            reason=reason,
-        )
-
-    def _exit_leverage_partial(self, tick: Tick, reason: str) -> Signal:
-        sell_qty = min(
-            self._position_qty,
-            max(1, round(self._position_qty * self._params.partial_exit_ratio)),
-        )
-        self._position_qty -= sell_qty
-        self._phase = Phase.LEVERAGE_PARTIAL
-        logger.info(
-            "SELL(부분) 시그널: %s %s qty=%d (%s)", self.name, self._long_symbol, sell_qty, reason
-        )
-        return Signal(
-            strategy=self.name,
-            symbol=self._long_symbol,
-            side=SignalSide.SELL,
-            qty=sell_qty,
-            price=None,
-            reason=reason,
-        )
 
     # -----------------------------------------------------------------------
     # 인버스 보유 중 청산 (spec 4-2장, 대칭)
@@ -374,7 +349,7 @@ class LeverageInverseStrategy:
                 "2차 확정청산(" + ",".join(reasons) + f") | 저점신뢰도={low_point.confidence}"
                 f"({low_point.summary()})"
             )
-            return self._exit_inverse_full(tick, reason)
+            return self._exit_position_full(self._short_symbol, reason)
 
         if cci[-1] <= self._params.cci_oversold_warning:
             self._inverse_oversold_seen = True
@@ -384,40 +359,43 @@ class LeverageInverseStrategy:
             and self._inverse_oversold_seen
             and detect_golden_cross(cci, cci_signal)
         ):
-            return self._exit_inverse_partial(
-                tick, f"1차 경고: CCI 과매도({cci[-1]:.1f}) 후 Signal 골든크로스"
-            )
+            reason = f"1차 경고: CCI 과매도({cci[-1]:.1f}) 후 Signal 골든크로스"
+            return self._exit_position_partial(self._short_symbol, Phase.INVERSE_PARTIAL, reason)
 
         return None
 
-    def _exit_inverse_full(self, tick: Tick, reason: str) -> Signal:
+    # -----------------------------------------------------------------------
+    # 청산 공용 헬퍼 (레버리지·인버스 대칭 — 심볼·목표 phase만 다름)
+    # -----------------------------------------------------------------------
+
+    def _exit_position_full(self, symbol: str, reason: str) -> Signal:
+        """전량 청산 시그널 생성 후 관망 상태로 복귀."""
         qty = self._position_qty if self._position_qty > 0 else self._qty_per_unit
         self._phase = Phase.WATCHING
         self._position_qty = 0
-        self._inverse_oversold_seen = False
-        logger.info("SELL 시그널: %s %s qty=%d (%s)", self.name, self._short_symbol, qty, reason)
+        self._reset_position_state()
+        logger.info("SELL 시그널: %s %s qty=%d (%s)", self.name, symbol, qty, reason)
         return Signal(
             strategy=self.name,
-            symbol=self._short_symbol,
+            symbol=symbol,
             side=SignalSide.SELL,
             qty=qty,
             price=None,
             reason=reason,
         )
 
-    def _exit_inverse_partial(self, tick: Tick, reason: str) -> Signal:
+    def _exit_position_partial(self, symbol: str, target_phase: Phase, reason: str) -> Signal:
+        """부분 익절 시그널 생성 (1/3~1/2 범위, params.partial_exit_ratio)."""
         sell_qty = min(
             self._position_qty,
             max(1, round(self._position_qty * self._params.partial_exit_ratio)),
         )
         self._position_qty -= sell_qty
-        self._phase = Phase.INVERSE_PARTIAL
-        logger.info(
-            "SELL(부분) 시그널: %s %s qty=%d (%s)", self.name, self._short_symbol, sell_qty, reason
-        )
+        self._phase = target_phase
+        logger.info("SELL(부분) 시그널: %s %s qty=%d (%s)", self.name, symbol, sell_qty, reason)
         return Signal(
             strategy=self.name,
-            symbol=self._short_symbol,
+            symbol=symbol,
             side=SignalSide.SELL,
             qty=sell_qty,
             price=None,

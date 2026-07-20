@@ -66,12 +66,57 @@ class LeverageInverseParams:
     max_allocation_pct: float = 10.0
 
     def __post_init__(self) -> None:
+        """파라미터 조합 유효성 검증.
+
+        백테스트로 임계값을 재검증하는 과정에서 값이 자주 바뀌므로(spec 9장),
+        잘못된 조합이 조용히 통과해 이상 시그널을 내지 않도록 생성 시점에 막는다.
+        """
+        if self.dema_period < 3:
+            raise ValueError(f"dema_period는 3 이상이어야 합니다: {self.dema_period}")
+        if self.cci_period < 2:
+            raise ValueError(f"cci_period는 2 이상이어야 합니다: {self.cci_period}")
+        if self.cci_signal_period < 2:
+            raise ValueError(
+                f"cci_signal_period는 2 이상이어야 합니다: {self.cci_signal_period}"
+            )
+        if self.stochastic_k_period < 2:
+            raise ValueError(
+                f"stochastic_k_period는 2 이상이어야 합니다: {self.stochastic_k_period}"
+            )
+        if self.stochastic_d_period < 1:
+            raise ValueError(
+                f"stochastic_d_period는 1 이상이어야 합니다: {self.stochastic_d_period}"
+            )
+        if self.swing_lookback < 1:
+            raise ValueError(f"swing_lookback는 1 이상이어야 합니다: {self.swing_lookback}")
         if not (0.0 < self.partial_exit_ratio < 1.0):
             raise ValueError(
                 f"partial_exit_ratio는 0과 1 사이여야 합니다: {self.partial_exit_ratio}"
             )
-        if self.dema_period < 3:
-            raise ValueError(f"dema_period는 3 이상이어야 합니다: {self.dema_period}")
+        if not (0.0 < self.max_allocation_pct <= 100.0):
+            raise ValueError(
+                f"max_allocation_pct는 0과 100 사이여야 합니다: {self.max_allocation_pct}"
+            )
+        if not (0.0 < self.stochastic_oversold < self.stochastic_overbought <= 100.0):
+            raise ValueError(
+                "stochastic_oversold < stochastic_overbought <= 100 이어야 합니다: "
+                f"oversold={self.stochastic_oversold}, overbought={self.stochastic_overbought}"
+            )
+        if not (
+            self.cci_oversold_extreme
+            < self.cci_oversold_warning
+            < 0
+            < self.cci_overbought_warning
+            < self.cci_overbought_extreme
+        ):
+            raise ValueError(
+                "cci_oversold_extreme < cci_oversold_warning < 0 < "
+                "cci_overbought_warning < cci_overbought_extreme 이어야 합니다: "
+                f"oversold_extreme={self.cci_oversold_extreme}, "
+                f"oversold_warning={self.cci_oversold_warning}, "
+                f"overbought_warning={self.cci_overbought_warning}, "
+                f"overbought_extreme={self.cci_overbought_extreme}"
+            )
 
 
 # ---------------------------------------------------------------------------

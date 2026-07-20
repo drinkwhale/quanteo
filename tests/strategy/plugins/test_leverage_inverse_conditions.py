@@ -48,6 +48,62 @@ class TestLeverageInverseParams:
         with pytest.raises(ValueError):
             LeverageInverseParams(dema_period=2)
 
+    def test_cci_period_2미만이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(cci_period=1)
+
+    def test_cci_signal_period_2미만이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(cci_signal_period=1)
+
+    def test_stochastic_k_period_2미만이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(stochastic_k_period=1)
+
+    def test_stochastic_d_period_1미만이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(stochastic_d_period=0)
+
+    def test_swing_lookback_1미만이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(swing_lookback=0)
+
+    def test_max_allocation_pct_범위_밖이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(max_allocation_pct=0.0)
+        with pytest.raises(ValueError):
+            LeverageInverseParams(max_allocation_pct=150.0)
+
+    def test_stochastic_oversold가_overbought_이상이면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(stochastic_oversold=80.0, stochastic_overbought=80.0)
+
+    def test_stochastic_overbought가_100_초과면_예외(self) -> None:
+        with pytest.raises(ValueError):
+            LeverageInverseParams(stochastic_overbought=150.0)
+
+    def test_cci_임계값_순서가_어긋나면_예외(self) -> None:
+        # cci_oversold_extreme < cci_oversold_warning < 0 < cci_overbought_warning < cci_overbought_extreme
+        with pytest.raises(ValueError):
+            LeverageInverseParams(cci_overbought_warning=250.0, cci_overbought_extreme=200.0)
+        with pytest.raises(ValueError):
+            LeverageInverseParams(cci_oversold_warning=-250.0, cci_oversold_extreme=-200.0)
+        with pytest.raises(ValueError):
+            LeverageInverseParams(cci_oversold_warning=50.0)  # 0보다 커서 순서 위반
+
+    def test_유효한_파라미터_조합은_예외_없이_생성(self) -> None:
+        params = LeverageInverseParams(
+            cci_period=14,
+            cci_signal_period=5,
+            stochastic_k_period=10,
+            stochastic_d_period=3,
+            swing_lookback=5,
+            max_allocation_pct=20.0,
+            stochastic_oversold=15.0,
+            stochastic_overbought=85.0,
+        )
+        assert params.cci_period == 14
+
 
 class TestEntryEvaluation:
     def test_3개_모두_충족_필터_통과시_all_met_True(self) -> None:
