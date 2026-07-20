@@ -121,7 +121,10 @@ class Fill:
     Args:
         symbol: 종목 심볼.
         price: 체결가.
-        volume: 체결 수량.
+        volume: 체결 수량. float — 해외주식은 fractional investing으로 정수가
+            아닐 수 있다(OrderExecution.filled_quantity와 동일한 이유). int로
+            두면 0.5주 같은 체결이 반올림·절삭으로 조용히 0이 되어 실제 체결
+            내역이 화면에서 사라진다.
         timestamp: 체결 시각 (UTC).
         currency: 통화 코드.
         side: 매수/매도 (BUY, SELL). API에서 미제공 시 None.
@@ -129,7 +132,7 @@ class Fill:
 
     symbol: str
     price: Decimal
-    volume: int
+    volume: float
     timestamp: datetime
     currency: str
     side: Literal["BUY", "SELL"] | None = None

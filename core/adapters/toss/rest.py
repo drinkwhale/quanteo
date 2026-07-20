@@ -74,6 +74,24 @@ def _safe_int(value: Any, field: str) -> int:
         raise RuntimeError(f"Toss API 비정상 정수 값 ({field}={value!r})") from exc
 
 
+def _parse_toss_timestamp(
+    raw: Any, *, field_name: str, fallback: datetime | None
+) -> datetime | None:
+    """Toss ISO 8601 타임스탬프 문자열을 datetime으로 변환한다.
+
+    파싱 실패(스키마 변경 등)는 조용히 넘기지 않고 경고 로그를 남긴 뒤
+    fallback을 반환한다 — 원인 추적이 안 되면 필드가 언제부터 깨졌는지
+    알 방법이 없다.
+    """
+    if not raw:
+        return fallback
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        logger.warning("Toss 타임스탬프 파싱 실패 — %s=%r", field_name, raw)
+        return fallback
+
+
 def _safe_nested_dict(row: dict[str, Any], key: str) -> dict[str, Any]:
     """중첩 객체 필드를 꺼낸다. 없거나 dict가 아니면 경고를 남기고 빈 dict를 반환한다.
 
@@ -597,15 +615,9 @@ class TossRestClient:
     def _parse_toss_order(self, item: dict[str, Any]) -> TossOrder:
         """Toss API 주문 객체를 TossOrder로 변환한다."""
         execution_raw = item.get("execution", {})
-        raw_filled_at = execution_raw.get("filledAt")
-        try:
-            filled_at = (
-                datetime.fromisoformat(str(raw_filled_at).replace("Z", "+00:00"))
-                if raw_filled_at
-                else None
-            )
-        except Exception:
-            filled_at = None
+        filled_at = _parse_toss_timestamp(
+            execution_raw.get("filledAt"), field_name="filledAt", fallback=None
+        )
         execution = OrderExecution(
             filled_quantity=_safe_float(execution_raw.get("filledQuantity", 0), "filledQuantity"),
             avg_fill_price=(
@@ -620,11 +632,9 @@ class TossRestClient:
             ),
             filled_at=filled_at,
         )
-        raw_ts = item.get("orderedAt", "")
-        try:
-            ordered_at = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
-        except Exception:
-            ordered_at = datetime.now(UTC)
+        ordered_at = _parse_toss_timestamp(
+            item.get("orderedAt"), field_name="orderedAt", fallback=datetime.now(UTC)
+        )
 
         raw_price = item.get("price")
         price = Decimal(str(raw_price)) if raw_price is not None else None
@@ -660,7 +670,9 @@ class TossRestClient:
             count: 최대 반환 건수.
 
         Returns:
-            Fill 리스트 (최신 체결 순).
+            Fill 리스트 (최신 체결 순). Toss는 CLOSED 목록의 페이지 정렬을
+            문서화하지 않으므로, 수집한 결과를 timestamp 기준 내림차순으로
+            직접 정렬한 뒤 반환한다 — API 응답 순서에 기대지 않는다.
         """
         fills: list[Fill] = []
         cursor: str | None = None
@@ -677,7 +689,9 @@ class TossRestClient:
                     Fill(
                         symbol=order.symbol,
                         price=order.execution.avg_fill_price or Decimal("0"),
-                        volume=int(order.execution.filled_quantity),
+                        # float — 해외주식 fractional 체결(예: 0.5주)을 int()로
+                        # 자르면 0으로 사라진다(Fill.volume 참고).
+                        volume=order.execution.filled_quantity,
                         timestamp=order.execution.filled_at or order.ordered_at,
                         currency=order.currency,
                         side=order.side,
@@ -685,6 +699,7 @@ class TossRestClient:
                 )
             if cursor is None:
                 break
+        fills.sort(key=lambda f: f.timestamp, reverse=True)
         return fills[:count]
 
     # ------------------------------------------------------------------

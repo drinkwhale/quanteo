@@ -150,7 +150,9 @@ class FillItem(BaseModel):
 
     symbol: str
     price: Decimal
-    volume: int
+    # 해외주식 fractional investing 지원 — int면 0.5주 같은 체결이 0으로
+    # 잘린다 (core.adapters.toss.models.Fill.volume 참고).
+    volume: float
     timestamp: datetime
     currency: str
     side: Literal["BUY", "SELL"] | None = None

@@ -388,6 +388,87 @@ async def test_get_trades_paginates_until_count_reached():
     assert len(fills) == 101
 
 
+@pytest.mark.asyncio
+async def test_get_trades_threads_cursor_to_next_page_request():
+    """cursor를 두 번째 list_orders 호출에 실제로 넘기는지 요청 파라미터로 검증한다.
+
+    _make_client_multi는 호출 순서대로만 응답을 매핑하므로, cursor를 무시하거나
+    잘못된 값을 넘기는 버그가 있어도 순서만 맞으면 이전 테스트는 통과했다.
+    """
+    page1 = {
+        "result": {
+            "orders": [_closed_order_raw(f"ord{i}") for i in range(100)],
+            "hasNext": True,
+            "nextCursor": "cursor_1",
+        }
+    }
+    page2 = {"result": {"orders": [], "hasNext": False, "nextCursor": None}}
+    client = _make_client_multi([page1, page2])
+
+    await client.get_trades(count=101)
+
+    second_call = client._http_client.request.call_args_list[1]
+    assert second_call.kwargs["params"]["cursor"] == "cursor_1"
+
+
+@pytest.mark.asyncio
+async def test_get_trades_truncates_when_count_smaller_than_page():
+    """count가 한 페이지 크기보다 작으면 fills[:count]로 잘라야 한다."""
+    body = {
+        "result": {
+            "orders": [_closed_order_raw(f"ord{i}") for i in range(100)],
+            "hasNext": True,
+            "nextCursor": "cursor_1",
+        }
+    }
+    client = _make_client(body)
+
+    fills = await client.get_trades(count=5)
+
+    assert len(fills) == 5
+
+
+@pytest.mark.asyncio
+async def test_get_trades_returns_empty_list_when_no_closed_orders():
+    """CLOSED 주문이 하나도 없으면(신규 계좌 등) 빈 리스트를 반환해야 한다."""
+    body = {"result": {"orders": [], "hasNext": False, "nextCursor": None}}
+    client = _make_client(body)
+
+    fills = await client.get_trades(count=10)
+
+    assert fills == []
+
+
+@pytest.mark.asyncio
+async def test_get_trades_sorts_by_timestamp_descending_regardless_of_page_order():
+    """Toss CLOSED 목록은 정렬 순서를 문서화하지 않으므로, API가 오래된 순으로
+
+    내려줘도 get_trades()가 직접 최신 체결 순으로 정렬해서 반환해야 한다.
+    """
+    older = _closed_order_raw("ord_old", filled_at="2026-06-29T09:00:00+09:00")
+    newer = _closed_order_raw("ord_new", filled_at="2026-06-29T11:00:00+09:00")
+    body = {"result": {"orders": [older, newer], "hasNext": False, "nextCursor": None}}
+    client = _make_client(body)
+
+    fills = await client.get_trades(count=10)
+
+    assert [f.timestamp.hour for f in fills] == [11, 9]
+
+
+@pytest.mark.asyncio
+async def test_get_trades_preserves_fractional_volume_for_overseas_fills():
+    """해외주식 fractional 체결(예: 0.5주)이 int() 절삭으로 0이 되면 안 된다."""
+    order = _closed_order_raw(
+        "ord_frac", symbol="AAPL", filled_quantity="0.5", avg_fill_price="150.25"
+    )
+    body = {"result": {"orders": [order], "hasNext": False, "nextCursor": None}}
+    client = _make_client(body)
+
+    fills = await client.get_trades(count=10)
+
+    assert fills[0].volume == 0.5
+
+
 # ---------------------------------------------------------------------------
 # T052 — 상하한가
 # ---------------------------------------------------------------------------
