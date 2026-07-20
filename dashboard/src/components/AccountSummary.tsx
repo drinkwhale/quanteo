@@ -281,7 +281,9 @@ export function AccountSummary({ balance, error, lastUpdated }: Props) {
                       {item.symbol_name}
                     </div>
                     <div className="text-xs text-muted tabular-nums">
-                      {toNumber(item.qty).toLocaleString()}주
+                      {displayMode === "current"
+                        ? `평단 ${fmtPrice(item.avg_price, item.market)}`
+                        : `${toNumber(item.qty).toLocaleString()}주`}
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
