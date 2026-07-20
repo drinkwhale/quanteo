@@ -20,8 +20,15 @@
     },
     "playwright": {
       "command": "npx",
-      "args": ["-y", "@playwright/mcp", "--browser", "chrome"],
-      "description": "대시보드 E2E 테스트 및 시각적 검증 (localhost:5173)"
+      "args": [
+        "-y",
+        "@playwright/mcp",
+        "--browser",
+        "chrome",
+        "--output-dir",
+        ".playwright-mcp"
+      ],
+      "description": "대시보드 E2E 테스트 및 시각적 검증 (localhost:5173) — 스크린샷 등 산출물은 .playwright-mcp/ 아래 저장 (gitignore 처리됨)"
     },
     "exa-web-search": {
       "command": "npx",
