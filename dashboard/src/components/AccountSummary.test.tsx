@@ -88,6 +88,32 @@ describe("AccountSummary 현재가/평가금액 토글", () => {
   });
 });
 
+describe("AccountSummary 종목 서브텍스트 (보유수량 vs 평단가)", () => {
+  it("평가금액 모드에서는 보유 수량을 보여준다", () => {
+    render(<AccountSummary balance={BALANCE_WITH_DAY_CHANGE} />);
+    expect(screen.getByText("10주")).toBeInTheDocument();
+  });
+
+  it("현재가 모드로 바꾸면 보유 수량 대신 1주 평균(평단가)을 보여준다", async () => {
+    const user = userEvent.setup();
+    render(<AccountSummary balance={BALANCE_WITH_DAY_CHANGE} />);
+
+    await user.click(screen.getByRole("button", { name: "현재가" }));
+
+    expect(screen.getByText("평단 70,000원")).toBeInTheDocument();
+    expect(screen.queryByText("10주")).not.toBeInTheDocument();
+  });
+
+  it("해외 종목은 현재가 모드에서 평단가를 달러로 보여준다", async () => {
+    const user = userEvent.setup();
+    render(<AccountSummary balance={BALANCE_OVERSEAS_ONLY} />);
+
+    await user.click(screen.getByRole("button", { name: "현재가" }));
+
+    expect(screen.getByText("평단 $100.00")).toBeInTheDocument();
+  });
+});
+
 describe("AccountSummary 수수료·세금 포함 토글", () => {
   it("현재가 모드에서는 토글 버튼이 보이지 않는다", async () => {
     const user = userEvent.setup();

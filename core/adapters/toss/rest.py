@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TOSS_BASE_URL = "https://openapi.tossinvest.com"
+_TRADES_PAGE_LIMIT = 100  # GET /api/v1/orders?status=CLOSED 의 최대 limit
 
 
 class TossConflictError(RuntimeError):
@@ -71,6 +72,24 @@ def _safe_int(value: Any, field: str) -> int:
         return int(value)
     except (TypeError, ValueError) as exc:
         raise RuntimeError(f"Toss API 비정상 정수 값 ({field}={value!r})") from exc
+
+
+def _parse_toss_timestamp(
+    raw: Any, *, field_name: str, fallback: datetime | None
+) -> datetime | None:
+    """Toss ISO 8601 타임스탬프 문자열을 datetime으로 변환한다.
+
+    파싱 실패(스키마 변경 등)는 조용히 넘기지 않고 경고 로그를 남긴 뒤
+    fallback을 반환한다 — 원인 추적이 안 되면 필드가 언제부터 깨졌는지
+    알 방법이 없다.
+    """
+    if not raw:
+        return fallback
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        logger.warning("Toss 타임스탬프 파싱 실패 — %s=%r", field_name, raw)
+        return fallback
 
 
 def _safe_nested_dict(row: dict[str, Any], key: str) -> dict[str, Any]:
@@ -596,6 +615,9 @@ class TossRestClient:
     def _parse_toss_order(self, item: dict[str, Any]) -> TossOrder:
         """Toss API 주문 객체를 TossOrder로 변환한다."""
         execution_raw = item.get("execution", {})
+        filled_at = _parse_toss_timestamp(
+            execution_raw.get("filledAt"), field_name="filledAt", fallback=None
+        )
         execution = OrderExecution(
             filled_quantity=_safe_float(execution_raw.get("filledQuantity", 0), "filledQuantity"),
             avg_fill_price=(
@@ -608,12 +630,11 @@ class TossRestClient:
                 if execution_raw.get("fees") is not None
                 else None
             ),
+            filled_at=filled_at,
         )
-        raw_ts = item.get("orderedAt", "")
-        try:
-            ordered_at = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
-        except Exception:
-            ordered_at = datetime.now(UTC)
+        ordered_at = _parse_toss_timestamp(
+            item.get("orderedAt"), field_name="orderedAt", fallback=datetime.now(UTC)
+        )
 
         raw_price = item.get("price")
         price = Decimal(str(raw_price)) if raw_price is not None else None
@@ -637,24 +658,49 @@ class TossRestClient:
     # ------------------------------------------------------------------
 
     async def get_trades(self, count: int = 100) -> list[Fill]:
-        """체결 내역을 조회한다.
+        """내 계좌의 체결 내역을 조회한다.
 
-        GET /api/v1/trades
+        Toss에는 계좌 단위 체결 내역 전용 엔드포인트가 없다. GET /api/v1/trades는
+        종목별 공개 체결(당일 tape) 조회용이라 symbol 파라미터가 필수이고 내
+        주문의 체결 여부와는 무관하다(core.marketdata에서 시세 목적으로 별도
+        사용 중). 그래서 GET /api/v1/orders?status=CLOSED 를 페이지네이션하며
+        실제 체결(filled_quantity > 0)이 있는 주문만 Fill로 변환한다.
 
         Args:
             count: 최대 반환 건수.
 
         Returns:
-            Fill 리스트 (최신 체결 순).
+            Fill 리스트 (최신 체결 순). Toss는 CLOSED 목록의 페이지 정렬을
+            문서화하지 않으므로, 수집한 결과를 timestamp 기준 내림차순으로
+            직접 정렬한 뒤 반환한다 — API 응답 순서에 기대지 않는다.
         """
-        data = await self._request_market(
-            "GET",
-            "/api/v1/trades",
-            params={"count": count},
-            with_account=True,
-        )
-        results = data.get("result", [])
-        return [_normalize_toss_trade(item) for item in results]
+        fills: list[Fill] = []
+        cursor: str | None = None
+        while len(fills) < count:
+            orders, cursor = await self.list_orders(
+                status="CLOSED", cursor=cursor, limit=_TRADES_PAGE_LIMIT
+            )
+            if not orders:
+                break
+            for order in orders:
+                if order.execution.filled_quantity <= 0:
+                    continue
+                fills.append(
+                    Fill(
+                        symbol=order.symbol,
+                        price=order.execution.avg_fill_price or Decimal("0"),
+                        # float — 해외주식 fractional 체결(예: 0.5주)을 int()로
+                        # 자르면 0으로 사라진다(Fill.volume 참고).
+                        volume=order.execution.filled_quantity,
+                        timestamp=order.execution.filled_at or order.ordered_at,
+                        currency=order.currency,
+                        side=order.side,
+                    )
+                )
+            if cursor is None:
+                break
+        fills.sort(key=lambda f: f.timestamp, reverse=True)
+        return fills[:count]
 
     # ------------------------------------------------------------------
     # T052 — 마켓 정보 & 캘린더
@@ -947,26 +993,8 @@ class TossRestClient:
 
 
 # ---------------------------------------------------------------------------
-# 모듈 수준 헬퍼 함수 (T051·T052)
+# 모듈 수준 헬퍼 함수 (T052)
 # ---------------------------------------------------------------------------
-
-
-def _normalize_toss_trade(item: dict[str, Any]) -> Fill:
-    """Toss /api/v1/trades result 항목을 Fill로 변환한다."""
-    raw_ts = item.get("timestamp", "")
-    try:
-        timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
-    except Exception:
-        timestamp = datetime.now(UTC)
-
-    return Fill(
-        symbol=item.get("symbol", ""),
-        price=Decimal(str(item.get("price", "0"))),
-        volume=int(Decimal(str(item.get("volume", "0")))),
-        timestamp=timestamp,
-        currency=item.get("currency", "KRW"),
-        side=item.get("side"),
-    )
 
 
 def _parse_kr_market_day(raw: dict[str, Any]) -> KrMarketDay:
