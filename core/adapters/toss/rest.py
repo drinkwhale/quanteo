@@ -51,6 +51,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TOSS_BASE_URL = "https://openapi.tossinvest.com"
+_TRADES_PAGE_LIMIT = 100  # GET /api/v1/orders?status=CLOSED 의 최대 limit
 
 
 class TossConflictError(RuntimeError):
@@ -596,6 +597,15 @@ class TossRestClient:
     def _parse_toss_order(self, item: dict[str, Any]) -> TossOrder:
         """Toss API 주문 객체를 TossOrder로 변환한다."""
         execution_raw = item.get("execution", {})
+        raw_filled_at = execution_raw.get("filledAt")
+        try:
+            filled_at = (
+                datetime.fromisoformat(str(raw_filled_at).replace("Z", "+00:00"))
+                if raw_filled_at
+                else None
+            )
+        except Exception:
+            filled_at = None
         execution = OrderExecution(
             filled_quantity=_safe_float(execution_raw.get("filledQuantity", 0), "filledQuantity"),
             avg_fill_price=(
@@ -608,6 +618,7 @@ class TossRestClient:
                 if execution_raw.get("fees") is not None
                 else None
             ),
+            filled_at=filled_at,
         )
         raw_ts = item.get("orderedAt", "")
         try:
@@ -637,9 +648,13 @@ class TossRestClient:
     # ------------------------------------------------------------------
 
     async def get_trades(self, count: int = 100) -> list[Fill]:
-        """체결 내역을 조회한다.
+        """내 계좌의 체결 내역을 조회한다.
 
-        GET /api/v1/trades
+        Toss에는 계좌 단위 체결 내역 전용 엔드포인트가 없다. GET /api/v1/trades는
+        종목별 공개 체결(당일 tape) 조회용이라 symbol 파라미터가 필수이고 내
+        주문의 체결 여부와는 무관하다(core.marketdata에서 시세 목적으로 별도
+        사용 중). 그래서 GET /api/v1/orders?status=CLOSED 를 페이지네이션하며
+        실제 체결(filled_quantity > 0)이 있는 주문만 Fill로 변환한다.
 
         Args:
             count: 최대 반환 건수.
@@ -647,14 +662,30 @@ class TossRestClient:
         Returns:
             Fill 리스트 (최신 체결 순).
         """
-        data = await self._request_market(
-            "GET",
-            "/api/v1/trades",
-            params={"count": count},
-            with_account=True,
-        )
-        results = data.get("result", [])
-        return [_normalize_toss_trade(item) for item in results]
+        fills: list[Fill] = []
+        cursor: str | None = None
+        while len(fills) < count:
+            orders, cursor = await self.list_orders(
+                status="CLOSED", cursor=cursor, limit=_TRADES_PAGE_LIMIT
+            )
+            if not orders:
+                break
+            for order in orders:
+                if order.execution.filled_quantity <= 0:
+                    continue
+                fills.append(
+                    Fill(
+                        symbol=order.symbol,
+                        price=order.execution.avg_fill_price or Decimal("0"),
+                        volume=int(order.execution.filled_quantity),
+                        timestamp=order.execution.filled_at or order.ordered_at,
+                        currency=order.currency,
+                        side=order.side,
+                    )
+                )
+            if cursor is None:
+                break
+        return fills[:count]
 
     # ------------------------------------------------------------------
     # T052 — 마켓 정보 & 캘린더
@@ -947,26 +978,8 @@ class TossRestClient:
 
 
 # ---------------------------------------------------------------------------
-# 모듈 수준 헬퍼 함수 (T051·T052)
+# 모듈 수준 헬퍼 함수 (T052)
 # ---------------------------------------------------------------------------
-
-
-def _normalize_toss_trade(item: dict[str, Any]) -> Fill:
-    """Toss /api/v1/trades result 항목을 Fill로 변환한다."""
-    raw_ts = item.get("timestamp", "")
-    try:
-        timestamp = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
-    except Exception:
-        timestamp = datetime.now(UTC)
-
-    return Fill(
-        symbol=item.get("symbol", ""),
-        price=Decimal(str(item.get("price", "0"))),
-        volume=int(Decimal(str(item.get("volume", "0")))),
-        timestamp=timestamp,
-        currency=item.get("currency", "KRW"),
-        side=item.get("side"),
-    )
 
 
 def _parse_kr_market_day(raw: dict[str, Any]) -> KrMarketDay:

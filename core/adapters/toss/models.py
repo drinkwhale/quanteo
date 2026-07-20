@@ -64,6 +64,7 @@ class OrderExecution:
     filled_quantity: float
     avg_fill_price: Decimal | None
     fees: Decimal | None
+    filled_at: datetime | None = None
 
 
 @dataclass(frozen=True)

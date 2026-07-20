@@ -285,32 +285,107 @@ async def test_modify_order_sends_correct_body():
 # ---------------------------------------------------------------------------
 
 
+def _closed_order_raw(
+    order_id: str,
+    symbol: str = "005930",
+    side: str = "BUY",
+    filled_quantity: str = "10",
+    avg_fill_price: str = "72000",
+    filled_at: str = "2026-06-29T10:30:00+09:00",
+) -> dict:
+    return {
+        "orderId": order_id,
+        "symbol": symbol,
+        "side": side,
+        "orderType": "LIMIT",
+        "timeInForce": "DAY",
+        "status": "FILLED",
+        "quantity": filled_quantity,
+        "price": avg_fill_price,
+        "currency": "KRW",
+        "orderedAt": "2026-06-29T10:29:00+09:00",
+        "execution": {
+            "filledQuantity": filled_quantity,
+            "averageFilledPrice": avg_fill_price,
+            "filledAt": filled_at,
+        },
+    }
+
+
 @pytest.mark.asyncio
-async def test_get_trades_parses_fills():
+async def test_get_trades_derives_fills_from_closed_orders():
+    """get_trades()는 /api/v1/trades(symbol 필수인 공개 tape)가 아니라
+
+    /api/v1/orders?status=CLOSED 를 체결 내역 소스로 사용해야 한다 — 계좌
+    단위 체결 내역 전용 엔드포인트가 Toss에는 없기 때문이다.
+    """
     body = {
-        "result": [
-            {
-                "price": "72000",
-                "volume": "10",
-                "timestamp": "2026-06-29T10:30:00+09:00",
-                "currency": "KRW",
-            },
-            {
-                "price": "72100",
-                "volume": "5",
-                "timestamp": "2026-06-29T10:31:00+09:00",
-                "currency": "KRW",
-            },
-        ]
+        "result": {
+            "orders": [
+                _closed_order_raw("ord001", filled_quantity="10", avg_fill_price="72000"),
+                _closed_order_raw("ord002", side="SELL", filled_quantity="5", avg_fill_price="72100"),
+            ],
+            "hasNext": False,
+            "nextCursor": None,
+        }
     }
     client = _make_client(body)
 
     fills = await client.get_trades(count=10)
 
     assert len(fills) == 2
+    assert fills[0].symbol == "005930"
     assert fills[0].price == Decimal("72000")
     assert fills[0].volume == 10
+    assert fills[0].side == "BUY"
     assert fills[1].volume == 5
+    assert fills[1].side == "SELL"
+
+
+@pytest.mark.asyncio
+async def test_get_trades_skips_orders_without_fill():
+    """CLOSED 그룹에는 CANCELED/REJECTED 등 체결이 없는 주문도 섞여 있다."""
+    unfilled = _closed_order_raw("ord003", filled_quantity="0", avg_fill_price="0")
+    unfilled["status"] = "CANCELED"
+    body = {
+        "result": {
+            "orders": [
+                _closed_order_raw("ord001"),
+                unfilled,
+            ],
+            "hasNext": False,
+            "nextCursor": None,
+        }
+    }
+    client = _make_client(body)
+
+    fills = await client.get_trades(count=10)
+
+    assert len(fills) == 1
+    assert fills[0].symbol == "005930"
+
+
+@pytest.mark.asyncio
+async def test_get_trades_paginates_until_count_reached():
+    page1 = {
+        "result": {
+            "orders": [_closed_order_raw(f"ord{i}") for i in range(100)],
+            "hasNext": True,
+            "nextCursor": "cursor_1",
+        }
+    }
+    page2 = {
+        "result": {
+            "orders": [_closed_order_raw("ord_extra")],
+            "hasNext": False,
+            "nextCursor": None,
+        }
+    }
+    client = _make_client_multi([page1, page2])
+
+    fills = await client.get_trades(count=101)
+
+    assert len(fills) == 101
 
 
 # ---------------------------------------------------------------------------
