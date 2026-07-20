@@ -656,6 +656,21 @@
 
 ---
 
+## Phase 15 — 단일종목 레버리지/인버스 전략 플러그인
+
+설계 근거: [`specs/trade.md`](trade.md) (SK하이닉스 등 단일종목 2배 레버리지/인버스 5분봉 매매 로직 명세서)
+
+- [x] **T093** `core/strategy/indicators/dema.py` — EMA·DEMA 계산 + 기울기 전환(우상향/하향) 감지 함수
+- [x] **T094** `core/strategy/indicators/stochastic.py` — Stochastic %K/%D 계산 + 과매수/과매도 반전 감지 함수
+- [x] **T095** `core/strategy/indicators/swing.py` — 직전 고점/저점 탐색, 피봇 저점(Higher Low), 강세 다이버전스, 투매 거래량 캔들 패턴 감지
+- [x] **T096** `core/strategy/plugins/leverage_inverse_conditions.py` — `LeverageInverseParams`(spec 1장 파라미터), 레버리지/인버스 진입 3-of-3 판정(`evaluate_leverage_entry`/`evaluate_inverse_entry`), 저점 신뢰도 평가(`assess_low_point`, spec 6장)
+- [x] **T097** `core/strategy/plugins/leverage_inverse_strategy.py` — `LeverageInverseStrategy` (Strategy Protocol 구현). 상태머신(관망→레버리지/인버스 보유→1차 부분익절→2차 확정청산→관망 복귀, spec 4·8장). 기초자산 심볼로 지표 계산, 레버리지/인버스 상품 심볼로 주문
+  - NOTE: Stochastic %K 기간은 스펙에 명시되지 않아 업계 표준(14)을 기본값으로 사용 — 실거래 전 백테스트 재검증 필요 (spec 9장)
+  - NOTE: 포지션 수량은 전략 내부에서 낙관적으로 추정(체결 피드백 없음, base.py 단방향 흐름 원칙) — Risk Manager/실제 체결 수량과 괴리 가능성 있음, 운영 투입 전 검증 필요
+  - 테스트: `tests/strategy/test_dema.py`, `test_stochastic.py`, `test_swing.py`, `tests/strategy/plugins/test_leverage_inverse_conditions.py`, `test_leverage_inverse_strategy.py` (56개, 전체 통과)
+
+---
+
 ## 다음 단계
 
 구현을 시작하려면 "Phase 14 진행해줘" 또는 "T084까지 진행해줘"로 요청.

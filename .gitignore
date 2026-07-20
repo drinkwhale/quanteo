@@ -163,3 +163,6 @@ dashboard/dist/
 
 # Playwright MCP
 .playwright-mcp/
+
+# Claude Code local project settings (personal permissions/hooks, session locks)
+.claude/
