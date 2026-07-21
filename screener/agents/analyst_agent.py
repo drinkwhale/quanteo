@@ -159,6 +159,13 @@ class AnalystAgent:
             data = resp.json()
 
         raw_text = data["content"][0]["text"].strip()
+        if data.get("stop_reason") == "max_tokens":
+            # JSON이 닫히기 전에 잘렸을 가능성이 높다 — 파싱 실패 메시지만 보면
+            # 원인을 알기 어려우므로 여기서 먼저 명확히 표시한다.
+            raise ValueError(
+                f"Claude 응답이 max_tokens({self._max_tokens})에서 잘렸습니다 — "
+                f"screener/config/settings.yaml의 llm.max_tokens_per_stock 상향 검토 필요"
+            )
         return self._parse_response(raw_text)
 
     def _build_prompt(self, stock: RankedStock, disclosures: list[Disclosure]) -> str:

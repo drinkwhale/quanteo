@@ -19,4 +19,7 @@ report:
 
 llm:
   model: "claude-sonnet-4-6"
-  max_tokens_per_stock: 400
+  # 400이면 one_line_thesis+protips+risk_flags(한국어)가 JSON을 채 닫기 전에
+  # 잘리는 경우가 잦아 파싱 실패 → 정량 폴백으로 자주 떨어졌다(실거래 테스트로
+  # 확인). 여유를 두기 위해 800으로 상향.
+  max_tokens_per_stock: 800

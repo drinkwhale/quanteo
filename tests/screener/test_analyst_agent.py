@@ -162,6 +162,26 @@ class TestSummarize:
         assert any("REVIEW REQUIRED" in flag for flag in summary.risk_flags)
 
     @pytest.mark.asyncio
+    async def test_truncated_response_falls_back_with_clear_reason(self) -> None:
+        agent = AnalystAgent(api_key="test-key", max_tokens=400)
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "content": [{"text": '{"one_line_thesis": "잘린 응답', "type": "text"}],
+            "stop_reason": "max_tokens",
+        }
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summary = await agent.summarize(_stock(), disclosures=[])
+
+        assert summary.one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summary.risk_flags)
+
+    @pytest.mark.asyncio
     async def test_clean_response_has_no_review_flag(self) -> None:
         agent = AnalystAgent(api_key="test-key")
         resp = _claude_response(

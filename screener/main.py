@@ -28,13 +28,18 @@ from screener.scheduler.daily_job import DailyJob, DailyJobScheduler
 logger = logging.getLogger(__name__)
 
 
-def _load_pipeline_settings(config_path: str) -> tuple[dict[str, float], int]:
-    """settings.yaml의 scoring_weights·report.top_n을 읽는다."""
+def _load_pipeline_settings(
+    config_path: str,
+) -> tuple[dict[str, float], int, str, int]:
+    """settings.yaml의 scoring_weights·report.top_n·llm 설정을 읽는다."""
     with open(config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
     weights = raw.get("scoring_weights") or None
     report_top_n = int((raw.get("report") or {}).get("top_n", 10))
-    return weights, report_top_n
+    llm_raw = raw.get("llm") or {}
+    llm_model = llm_raw.get("model", "claude-sonnet-4-6")
+    llm_max_tokens = int(llm_raw.get("max_tokens_per_stock", 800))
+    return weights, report_top_n, llm_model, llm_max_tokens
 
 
 async def main() -> None:
@@ -46,7 +51,9 @@ async def main() -> None:
         return
 
     screener_config = ScreenerConfig.from_yaml(settings.screener.config_path)
-    scoring_weights, report_top_n = _load_pipeline_settings(settings.screener.config_path)
+    scoring_weights, report_top_n, llm_model, llm_max_tokens = _load_pipeline_settings(
+        settings.screener.config_path
+    )
 
     bot_token = settings.telegram.bot_token.get_secret_value()
     chat_id = settings.screener.telegram_chat_id or settings.telegram.chat_id
@@ -62,7 +69,11 @@ async def main() -> None:
             krx_id=settings.screener.krx_id, krx_pw=settings.screener.krx_pw
         ),
         dart_client=DartClient(api_key=settings.screener.dart_api_key),
-        analyst_agent=AnalystAgent(api_key=settings.screener.anthropic_api_key),
+        analyst_agent=AnalystAgent(
+            api_key=settings.screener.anthropic_api_key,
+            model=llm_model,
+            max_tokens=llm_max_tokens,
+        ),
         notifier=notifier,
         screener_config=screener_config,
         scoring_weights=scoring_weights,
