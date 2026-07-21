@@ -671,7 +671,172 @@
 
 ---
 
+## Phase 16 — 일일 종목 추천 시스템 (Stock Miner)
+
+> **목표:** 장 마감 후(15:40 KST) 코스피/코스닥 전 종목을 정량 필터로 압축 → 5축 스코어링으로 랭킹 →
+> 상위 종목에 대해 LLM이 근거 요약을 생성해 텔레그램으로 발송한다. 매매 자동 실행은 하지 않으며,
+> "워치리스트 등록"만 사용자 승인(인라인 버튼)을 거쳐 상태를 변경하는 **bounded autonomy** 패턴을 따른다.
+>
+> **설계 근거:** [`specs/stock-miner.md`](stock-miner.md) 전체.
+> **신규 디렉토리:** `screener/` — 독립 실행 가능한 종목 발굴 서브시스템 (`info/`와 동일하게 `core/`와
+> 분리된 최상위 모듈). `core/app.py`에는 통합하지 않고 별도 프로세스/엔트리포인트(`screener/main.py`)로 실행.
+> **기존 재사용:** `core/notifier/TelegramNotifier`(발송 큐·재시도), `info/ai_filter/claude_filter.py`의
+> Claude 호출·폴백 패턴, `info/news/dart_collector.py`의 `OpenDartReader` 연동, `info/scheduler.py`의
+> `AsyncIOScheduler(timezone="Asia/Seoul")` 패턴, `core/store/`의 SQLite 스키마·마이그레이션 관례.
+>
+> **구현 순서:** 스펙 8절 그대로 따른다 — Screener(T099~~T101, LLM 없이 로컬 검증) → Scorer(T102~~T104,
+> CSV 수동 검증) → Reporter(T105, 정량 데이터만) → Analyst(T106, LLM 요약 추가) → Scheduler(T107, 자동화) →
+> 워치리스트 인터랙션(T108).
+
+- [ ] **T098** `screener/` 스캐폴드 & 의존성 추가
+  - `pyproject.toml`에 추가: `pykrx` (KRX 시세·시총·PER/PBR·수급·공매도 소스). `DART`는 T057에서 이미
+    `OpenDartReader` 도입 완료 — 재사용, 재설치 불필요
+  - 디렉토리 스캐폴드: `screener/config/`, `screener/data/collectors/`, `screener/data/cache/`,
+    `screener/pipeline/`, `screener/agents/`, `screener/notify/`, `screener/scheduler/` (`__init__.py` 포함).
+    `data/cache/`는 `.gitignore`에 추가 (parquet 캐시 파일 커밋 금지)
+  - `screener/config/settings.yaml` — 스펙 9절 예시 그대로 스캐폴드 (`universe`, `scoring_weights`,
+    `report`, `llm` 섹션)
+  - `core/config/settings.py`에 `ScreenerSettings(BaseModel)` 추가: `settings.yaml` 경로 로딩(기본
+    `screener/config/settings.yaml`, `SCREENER_CONFIG_PATH` 환경변수로 재지정 가능) + `enabled: bool = False`
+  - `quanteo.yaml.example`에 `screener:` 섹션 추가 — `dart.api_key`(기존 `info.dart.api_key`와 공유 여부
+    결정 필요 — 동일 DART 앱키 재사용을 기본으로 함), `anthropic.api_key`, `telegram.chat_id`
+
+- [ ] **T099** `data/collectors/pykrx_client.py` — 시세·시총·밸류에이션·수급 수집
+  - `PykrxClient.fetch_universe(date: str) -> pd.DataFrame`: `get_market_ohlcv`, `get_market_cap`,
+    `get_market_fundamental`(PER/PBR/배당수익률) 코스피+코스닥 통합 조회
+  - `fetch_investor_trading(date: str) -> pd.DataFrame`: `get_market_trading_value_by_investor` — 외인/기관
+    순매수 (수급 필터 레이어용)
+  - `fetch_short_balance(date: str) -> pd.DataFrame`: `get_shorting_balance_by_date`
+  - **휴장일 처리:** pykrx가 빈 DataFrame 반환 시 직전 영업일로 자동 폴백 + `logger.warning`
+  - **캐싱:** 시세/수급은 일별 parquet 캐시(`screener/data/cache/{date}_ohlcv.parquet` 등), 당일 캐시 존재 시
+    재호출 생략
+  - `tests/screener/test_pykrx_client.py`: pykrx mock으로 통합 조회·휴장일 폴백·캐시 히트 검증
+
+- [ ] **T100** `pipeline/screener.py` — 유니버스 1차 필터 (결정론적)
+  - `ScreenerConfig`: `settings.yaml`의 `universe` 섹션 로딩(`min_market_cap`, `min_avg_trading_value_20d`,
+    `exclude_administrative`)
+  - `filter_universe(df: pd.DataFrame, config: ScreenerConfig) -> pd.DataFrame`: 관리종목·거래정지·시총·
+    20일 평균 거래대금 필터 순차 적용, 각 필터 단계별 제외 종목 수 `logger.info` 기록(디버깅용)
+  - **20일 평균 거래대금 계산:** `pykrx_client.fetch_universe()`로 최근 20 거래일 조회 후 평균
+  - 입력 ~2000개 → 출력 ~50개 수준으로 압축 (스펙 2절 목표치, 하드코딩 임계값 아님 — 설정 기반)
+  - `tests/screener/test_screener.py`: 각 필터 조건 경계 케이스, 필터 후 종목 수 로깅 검증
+
+- [ ] **T101** Phase 1 로컬 검증 스크립트 (`screener/scripts/verify_screener.py`)
+  - CLI: `uv run python -m screener.scripts.verify_screener --date 2026-07-21` — 유니버스 필터 결과를
+    콘솔/CSV로 출력 (LLM·텔레그램 미사용, 순수 파이프라인 검증)
+  - 스펙 8절 "Phase 1" 완료 기준: LLM 없이 로컬 실행으로 필터링 결과 수동 확인 가능해야 함
+
+- [ ] **T102** `data/collectors/dart_client.py` — 재무제표 & 공시 수집
+  - `DartClient.fetch_financials(corp_code: str, years: int = 3) -> FinancialStatement`: `OpenDartReader`로
+    최근 3개년 매출·영업이익·순이익·부채·유동자산/부채·영업활동현금흐름 조회 (T060
+    `info/news/dart_collector.py`와 동일한 `OpenDartReader` 인스턴스 재사용 패턴, 단 조회 대상은 전체
+    유니버스로 확장)
+  - `fetch_recent_disclosures(corp_code: str, days: int = 30) -> list[Disclosure]`: 자사주 취득/처분·
+    유상증자·주요계약·실적 정정 등 필터링 (T060의 `report_tp` 필터 로직 재사용)
+  - **분기 캐시:** 재무제표는 `screener/data/cache/{corp_code}_financials_{quarter}.parquet`, 갱신일 체크
+    후 캐시 히트 시 API 미호출 (분기당 1회만 갱신, 스펙 4.4절)
+  - **API 장애 처리:** `OpenDartReader` 예외 시 `logger.error` + 해당 종목 스코어링에서 재무 축 `None`
+    처리(전체 파이프라인 중단 금지) — T060과 동일한 장애 격리 원칙
+  - `tests/screener/test_dart_client.py`: 분기 캐시 히트/미스, API 예외 시 격리 처리 검증
+
+- [ ] **T103** `pipeline/scorer.py` — 5축 스코어링 (성장성/수익성/현금흐름/재무안정성/상대가치)
+  - `SectorPercentileScorer`: 섹터 내 percentile 기반 1~5점 산출 공통 헬퍼 (`scipy.stats.rankdata` 또는
+    `pandas.rank(pct=True)`)
+  - `score_growth(df) -> pd.Series`: 매출 YoY, 영업이익 YoY, EPS YoY — 최근 분기 vs 전년동기
+  - `score_profitability(df) -> pd.Series`: ROE, 영업이익률, 영업이익률 3분기 추세 기울기
+  - `score_cashflow(df) -> pd.Series`: 영업활동현금흐름/순이익 비율, FCF 전환율(`FCF = 영업CF - CapEx`)
+  - `score_stability(df) -> pd.Series`: 부채비율, 유동비율, 이자보상배율 + Altman Z-Score 병기(보조 지표,
+    스코어 미반영)
+  - `score_valuation(df) -> pd.Series`: PER/PBR/PSR/EV-EBITDA 섹터 대비 + 자체 5년 밴드 위치, **역방향
+    정규화**(낮을수록 고득점)
+  - **재무 데이터 결측 처리:** T102에서 `None` 처리된 종목은 해당 축 스코어를 섹터 중앙값(3점)으로
+    대체 + `logger.warning` (전체 제외 대신 중립값 부여 — 다른 4축으로 랭킹 가능하도록)
+  - `calculate_weighted_score(scores: pd.DataFrame, weights: dict) -> pd.Series`: `settings.yaml`
+    `scoring_weights` 기반 가중합 (기본 균등 20%씩)
+  - `tests/screener/test_scorer.py`: 5축 각 계산식 검증, 역방향 정규화(밸류에이션) 방향성 확인, 결측치
+    중앙값 대체 검증
+
+- [ ] **T104** `pipeline/ranker.py` — 랭킹 산출 + 필터 레이어(수급/기술/모멘텀)
+  - `rank_top_n(scored_df: pd.DataFrame, top_n: int = 50) -> pd.DataFrame`: 가중합 스코어 기준 상위
+    30~50개 + 원본 지표값 반환
+  - **필터 레이어(스코어 미합산, 부가 정보 전용, 스펙 5절):**
+    - `foreign_institution_streak(df) -> pd.Series`: 외인+기관 동반 순매수 연속일수 (T099
+      `fetch_investor_trading()` 활용)
+    - `volume_surge_ratio(df) -> pd.Series`: 거래량 급증 배수(20일 평균 대비)
+    - `earnings_surprise_flag(df) -> pd.Series`: 최근 실적 서프라이즈 여부
+    - `has_recent_disclosure(df) -> pd.Series`: T102 `fetch_recent_disclosures()` 발생 여부
+  - 동점자(가중합 스코어 동일) 우선순위: 수급 연속일수 → 거래량 급증 배수 순으로 정렬
+  - `tests/screener/test_ranker.py`: 랭킹 정렬 정확도, 동점자 우선순위, 필터 레이어 값이 최종 스코어에
+    영향을 주지 않음을 검증(회귀 방지)
+
+- [ ] **T105** `notify/telegram_reporter.py` — 정량 데이터 리포트 발송 (LLM 요약 없음)
+  - `ScreenerNotifier`: `core/notifier/TelegramNotifier`를 **생성자 주입**으로 받아 래핑 (T062
+    `InfoNotifier`와 동일한 중복 구현 금지 원칙)
+  - `send_daily_report(ranked: pd.DataFrame, top_n: int = 10)`: 스펙 7.2절 포맷에서 LLM 요약 항목
+    (`💡`, `✅`, `⚠️`) 제외한 정량 데이터만 발송 — 순위·스코어·핵심 지표(PER, 수급)
+  - **발송 실패 처리:** T062와 동일한 지수 백오프 3회 재시도 → dead-letter queue 정책 재사용
+  - 스펙 8절 "Phase 3" 완료 기준: LLM 요약 없이 정량 데이터만으로 텔레그램 발송 확인
+  - `tests/screener/test_telegram_reporter.py`: MockTelegramNotifier로 포맷 스냅샷 검증
+
+- [ ] **T106** `agents/analyst_agent.py` — LLM 근거 요약 생성 (Claude API)
+  - `StockSummary` 데이터클래스(스펙 6절 JSON 스키마 그대로): `ticker`, `name`, `one_line_thesis`,
+    `protips: list[str]`, `risk_flags: list[str]`, `score_breakdown: dict[str, int]`
+  - `AnalystAgent.summarize(stock: RankedStock, disclosures: list[Disclosure]) -> StockSummary`: Claude API
+    호출(`settings.yaml` `llm.model`, `llm.max_tokens_per_stock`), **출력 JSON 강제**(structured output 또는
+    프롬프트 지시 + JSON 파싱)
+  - **프롬프트 제약(스펙 6절 필수):** "사실 요약만 생성, 매수/매도 판단 문구 금지"를 시스템 프롬프트에
+    명시. 응답에 매수/매도/투자권유 표현 포함 시 후처리 필터로 재검증(간단 키워드 블록리스트) 후
+    위반 시 `risk_flags`에 `[REVIEW REQUIRED]` 추가하고 해당 문장 제거
+  - **API 실패 폴백:** T058 `ClaudeFilter`와 동일한 2단 폴백 원칙 — Claude 실패 시 정량 데이터만으로
+    `one_line_thesis` 대체 문구("정량 지표 기준 상위 랭크") 생성, 무음 누락 금지
+  - 호출 대상은 T105 Reporter가 이미 걸러낸 상위 N개(기본 10개)로 한정 — 비용 통제
+  - 스펙 8절 "Phase 4" 완료 기준: 정량 리포트에 LLM 요약 항목 추가
+  - `tests/screener/test_analyst_agent.py`: JSON 파싱 검증(httpx/anthropic mock), 매수/매도 문구 차단
+    필터 검증, API 실패 시 폴백 문구 생성 검증
+
+- [ ] **T107** `scheduler/daily_job.py` — 전체 파이프라인 오케스트레이션 + 크론 등록
+  - `DailyJob.run(date: str | None = None)`: T099~~T106 파이프라인 순차 실행
+    (Collector → Screener → Scorer → Ranker → AnalystAgent → Reporter)
+  - **⚠️ 타임존 필수:** `AsyncIOScheduler(timezone="Asia/Seoul")` — T067과 동일 원칙(미설정 시 UTC로 9시간
+    밀려 실행)
+  - `CronTrigger(hour=15, minute=40)` KST, 평일만(`day_of_week="mon-fri"`) — 장 마감 후 트리거
+  - **재시도 정책:** 파이프라인 전체 실패 시(수집 API 장애 등) 지수 백오프 3회 재시도, 소진 시
+    `ScreenerNotifier`를 통해 별도 에러 알림 발송(정상 리포트와 구분되는 `🚨 파이프라인 실패` 메시지)
+  - `misfire_grace_time=300, coalesce=True` 설정 (T067과 동일)
+  - `screener/main.py`: `DailyJob` + 스케줄러 wiring, 독립 프로세스 엔트리포인트(`uv run python -m
+    screener.main`). `core/app.py`와는 별도 프로세스로 기동 (info/main.py와 동일한 독립 실행 패턴)
+  - `tests/screener/test_daily_job.py`: 크론 표현식·타임존 검증, 파이프라인 실패 시 재시도·에러 알림
+    발송 검증, 개별 단계 mock으로 전체 흐름 검증
+
+- [ ] **T108** 워치리스트 등록 인터랙션 (bounded autonomy)
+  - `core/store/` `watchlist` 테이블 추가(`symbol`, `name`, `added_at`, `source: Literal["screener"]`,
+    `score_snapshot: dict`) — 기존 마이그레이션 관례(T006) 준수
+  - `screener/notify/callback_handler.py`: aiogram `CallbackQueryHandler` — 리포트 메시지의 "워치리스트
+    등록" 인라인 버튼 콜백 처리
+  - 콜백 데이터에 `ticker` 인코딩(`watchlist_add:{ticker}`) → 핸들러가 T108 신규 테이블에 upsert
+  - "상세보기" 버튼: 해당 종목의 `StockSummary` 전체 JSON을 별도 메시지로 재발송(스코어 breakdown +
+    risk_flags 전체)
+  - "무시" 버튼: 별도 상태 변경 없음(로그만 기록, 스펙 7.3절 — 정보 제공 목적이므로 무시 액션은
+    부작용 없음이 원칙)
+  - **자동 매매 연동 금지 명시:** 워치리스트 등록은 상태 기록만 수행 — `core/execution/` Order
+    Executor 호출 경로 없음 (스펙 7.3절 경계 준수, 실수로라도 자동 매매와 연결되지 않도록 모듈 경계
+    분리 유지)
+  - `tests/screener/test_callback_handler.py`: 콜백 파싱·upsert 검증, "무시" 버튼 상태 미변경 검증,
+    Order Executor import 부재 정적 검증(경계 위반 회귀 방지)
+
+- [ ] **T109** 통합 테스트 & 문서 갱신
+  - `tests/screener/test_integration_pipeline.py`: Collector→Screener→Scorer→Ranker→AnalystAgent→Reporter
+    엔드투엔드 (pykrx/DART/Claude/Telegram 전부 mock)
+  - `tests/screener/test_integration_degraded.py`: DART API + Claude API 동시 장애 시 파이프라인이
+    정량 데이터만으로 리포트 발송까지 완주하는지 검증(무음 실패 금지 원칙, T058/T102 폴백 조합)
+  - `specs/2026-06-18-quanteo-architecture.md` 갱신: Phase 16 종목 발굴 서브시스템 섹션 추가(`info/`와의
+    관계 — 완전 독립 프로세스, 매매 코어 미연동 명시)
+  - `quanteo.yaml.example` 최종 정비: `screener:` 전체 섹션 완성
+  - `CLAUDE.md` 구현 상태표에 Phase 16 행 추가
+
+---
+
 ## 다음 단계
 
-구현을 시작하려면 "Phase 14 진행해줘" 또는 "T084까지 진행해줘"로 요청.
+구현을 시작하려면 "Phase 16 진행해줘" 또는 "T098까지 진행해줘"로 요청.
 프론트엔드 태스크 설계 근거: [`PRODUCT.md`](../PRODUCT.md), [`DESIGN.md`](../DESIGN.md)
