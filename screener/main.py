@@ -12,12 +12,15 @@ import asyncio
 import logging
 
 import yaml
+from aiogram import Bot, Dispatcher
 
 from core.config.settings import load_settings
 from core.notifier.telegram import TelegramNotifier
+from core.store.db import StateStore
 from screener.agents.analyst_agent import AnalystAgent
 from screener.data.collectors.dart_client import DartClient
 from screener.data.collectors.pykrx_client import PykrxClient
+from screener.notify.callback_handler import CallbackHandler
 from screener.notify.telegram_reporter import ScreenerNotifier
 from screener.pipeline.screener import ScreenerConfig
 from screener.scheduler.daily_job import DailyJob, DailyJobScheduler
@@ -45,11 +48,14 @@ async def main() -> None:
     screener_config = ScreenerConfig.from_yaml(settings.screener.config_path)
     scoring_weights, report_top_n = _load_pipeline_settings(settings.screener.config_path)
 
-    telegram = TelegramNotifier(
-        bot_token=settings.telegram.bot_token.get_secret_value(),
-        chat_id=settings.screener.telegram_chat_id or settings.telegram.chat_id,
-    )
+    bot_token = settings.telegram.bot_token.get_secret_value()
+    chat_id = settings.screener.telegram_chat_id or settings.telegram.chat_id
+
+    telegram = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
     notifier = ScreenerNotifier(telegram_notifier=telegram)
+
+    store = StateStore()
+    await store.open()
 
     job = DailyJob(
         pykrx_client=PykrxClient(),
@@ -63,13 +69,21 @@ async def main() -> None:
     scheduler = DailyJobScheduler(job)
     scheduler.start()
 
-    logger.info("Stock Miner 스케줄러 시작 (평일 15:40 KST)")
+    # 워치리스트 인터랙션(T108) — 인라인 버튼 콜백 폴링. 봇 토큰당 폴링 연결은
+    # 하나뿐이어야 하므로(Telegram API 제약), core/app.py·info/main.py는 폴링하지
+    # 않는다(둘 다 push-only Notifier) — 이 프로세스가 유일한 폴링 주체다.
+    polling_bot = Bot(token=bot_token)
+    dp = Dispatcher()
+    CallbackHandler(store=store, job=job).register(dp)
+
+    logger.info("Stock Miner 스케줄러 시작 (평일 15:40 KST) + 워치리스트 콜백 폴링")
     try:
-        while True:
-            await asyncio.sleep(3600)
+        await dp.start_polling(polling_bot)
     finally:
         scheduler.stop()
+        await store.close()
         await telegram.close()
+        await polling_bot.session.close()
 
 
 if __name__ == "__main__":

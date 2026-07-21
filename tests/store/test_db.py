@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.store.db import StateStore
+from core.store.db import StateStore, WatchlistEntry
 
 
 @pytest.fixture
@@ -262,3 +262,39 @@ async def test_upsert_broker_order_preserves_fractional_qty(store: StateStore):
         row = await cur.fetchone()
 
     assert row["qty"] == pytest.approx(0.000151)
+
+
+@pytest.mark.asyncio
+async def test_upsert_watchlist_inserts_new_entry(store: StateStore):
+    await store.upsert_watchlist(
+        symbol="005930", name="삼성전자", score_snapshot={"growth": 4, "valuation": 3}
+    )
+
+    entries = await store.get_watchlist()
+
+    assert len(entries) == 1
+    assert entries[0] == WatchlistEntry(
+        symbol="005930",
+        name="삼성전자",
+        added_at=entries[0].added_at,
+        source="screener",
+        score_snapshot={"growth": 4, "valuation": 3},
+    )
+
+
+@pytest.mark.asyncio
+async def test_upsert_watchlist_updates_existing_entry(store: StateStore):
+    await store.upsert_watchlist(symbol="005930", name="삼성전자", score_snapshot={"growth": 2})
+    await store.upsert_watchlist(symbol="005930", name="삼성전자", score_snapshot={"growth": 5})
+
+    entries = await store.get_watchlist()
+
+    assert len(entries) == 1  # UNIQUE(symbol) — 갱신이지 중복 삽입이 아님
+    assert entries[0].score_snapshot == {"growth": 5}
+
+
+@pytest.mark.asyncio
+async def test_get_watchlist_empty_by_default(store: StateStore):
+    entries = await store.get_watchlist()
+
+    assert entries == []

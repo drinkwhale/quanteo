@@ -86,6 +86,9 @@ class DailyJob:
         self._weights = scoring_weights
         self._universe_top_n = universe_top_n
         self._report_top_n = report_top_n
+        # 가장 최근 실행에서 생성된 티커별 LLM 요약 — CallbackHandler "상세보기"가 참조.
+        # 프로세스 메모리에만 유지되므로 재시작 후에는 당일 리포트를 다시 실행해야 채워진다.
+        self.last_summaries: dict[str, StockSummary] = {}
 
     async def run(self, date: str | None = None) -> None:
         """파이프라인을 실행한다. 전체 실패 시 지수 백오프 3회 재시도 후 에러 알림."""
@@ -175,6 +178,7 @@ class DailyJob:
             summaries[stock.ticker] = await self._analyst.summarize(
                 stock, disclosures.get(stock.ticker, [])
             )
+        self.last_summaries = summaries
 
         # 5) Reporter
         await self._notifier.send_daily_report_with_summaries(

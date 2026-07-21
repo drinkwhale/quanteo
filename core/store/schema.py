@@ -91,6 +91,19 @@ CREATE TABLE IF NOT EXISTS events_log (
 )
 """
 
+# Phase 16 — Stock Miner 워치리스트 (bounded autonomy: 사용자 승인 시에만 기록)
+CREATE_WATCHLIST = """
+CREATE TABLE IF NOT EXISTS watchlist (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol          TEXT    NOT NULL,
+    name            TEXT    NOT NULL DEFAULT '',
+    added_at        TEXT    NOT NULL,
+    source          TEXT    NOT NULL DEFAULT 'screener' CHECK(source IN ('screener')),
+    score_snapshot  TEXT,
+    UNIQUE(symbol)
+)
+"""
+
 # 인덱스
 CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_orders_symbol   ON orders(symbol)",
@@ -99,6 +112,7 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_signals_symbol  ON signals(symbol)",
     "CREATE INDEX IF NOT EXISTS idx_events_type     ON events_log(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_events_created  ON events_log(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_watchlist_symbol ON watchlist(symbol)",
 ]
 
 # 실행 순서 (FK 의존성 고려)
@@ -109,4 +123,5 @@ ALL_TABLES: list[str] = [
     CREATE_SIGNALS,
     CREATE_SETTINGS,
     CREATE_EVENTS_LOG,
+    CREATE_WATCHLIST,
 ]

@@ -808,7 +808,7 @@
   - `tests/screener/test_daily_job.py`: 크론 표현식·타임존 검증, 파이프라인 실패 시 재시도·에러 알림
     발송 검증, 개별 단계 mock으로 전체 흐름 검증
 
-- [ ] **T108** 워치리스트 등록 인터랙션 (bounded autonomy)
+- [x] **T108** 워치리스트 등록 인터랙션 (bounded autonomy)
   - `core/store/` `watchlist` 테이블 추가(`symbol`, `name`, `added_at`, `source: Literal["screener"]`,
     `score_snapshot: dict`) — 기존 마이그레이션 관례(T006) 준수
   - `screener/notify/callback_handler.py`: aiogram `CallbackQueryHandler` — 리포트 메시지의 "워치리스트
