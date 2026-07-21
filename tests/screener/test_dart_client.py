@@ -118,6 +118,22 @@ class TestFetchRecentDisclosures:
         assert items[0].report_type == "유상증자결정"
 
     @pytest.mark.asyncio
+    async def test_calls_list_with_correct_kwargs(self) -> None:
+        """OpenDartReader.list()의 실제 파라미터명은 start/end다 (bgn_de/end_de 아님)."""
+        client = DartClient(api_key="test-key")
+        mock_dart = MagicMock()
+        mock_dart.list.return_value = pd.DataFrame()
+
+        with patch("screener.data.collectors.dart_client.OpenDartReader", return_value=mock_dart):
+            await client.fetch_recent_disclosures("00164779")
+
+        _, kwargs = mock_dart.list.call_args
+        assert "start" in kwargs
+        assert "end" in kwargs
+        assert "bgn_de" not in kwargs
+        assert "end_de" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_unimportant_disclosure_excluded(self) -> None:
         client = DartClient(api_key="test-key")
         raw = pd.DataFrame([{"report_nm": "분기보고서", "rcept_dt": "20260701", "rcept_no": "1"}])

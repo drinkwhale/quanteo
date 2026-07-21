@@ -794,7 +794,7 @@
   - `tests/screener/test_analyst_agent.py`: JSON 파싱 검증(httpx/anthropic mock), 매수/매도 문구 차단
     필터 검증, API 실패 시 폴백 문구 생성 검증
 
-- [ ] **T107** `scheduler/daily_job.py` — 전체 파이프라인 오케스트레이션 + 크론 등록
+- [x] **T107** `scheduler/daily_job.py` — 전체 파이프라인 오케스트레이션 + 크론 등록
   - `DailyJob.run(date: str | None = None)`: T099~~T106 파이프라인 순차 실행
     (Collector → Screener → Scorer → Ranker → AnalystAgent → Reporter)
   - **⚠️ 타임존 필수:** `AsyncIOScheduler(timezone="Asia/Seoul")` — T067과 동일 원칙(미설정 시 UTC로 9시간

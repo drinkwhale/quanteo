@@ -54,16 +54,33 @@ def _yoy(curr: float | None, prior: float | None) -> float | None:
     return (curr - prior) / abs(prior)
 
 
+_FEATURE_COLUMNS: tuple[str, ...] = (
+    "revenue_yoy",
+    "operating_income_yoy",
+    "net_income_yoy",
+    "roe",
+    "operating_margin",
+    "operating_margin_trend",
+    "cfo_to_net_income",
+    "fcf_conversion",
+    "debt_ratio",
+    "current_ratio",
+)
+
+
 def build_financial_features(statements: dict[str, FinancialStatement]) -> pd.DataFrame:
     """{ticker: FinancialStatement} → 스코어링 입력 피처 DataFrame.
 
     2개년 미만 데이터만 있으면 YoY/추세 관련 필드는 NaN(결측)으로 남는다
-    — score_growth() 등이 결측을 섹터 중앙값으로 대체한다.
+    — score_growth() 등이 결측을 섹터 중앙값으로 대체한다. 재무제표가
+    아예 없는 티커도 전체 컬럼을 NaN으로 채운 행을 반환한다 — 그래야
+    merge 후 DataFrame에 컬럼 자체가 누락되는 일이 없다(score_*()가
+    KeyError 없이 동작하려면 스키마가 항상 일정해야 한다).
     """
     rows: list[dict] = []
     for ticker, stmt in statements.items():
         years = sorted(stmt.years, key=lambda y: y.year, reverse=True)
-        row: dict = {"ticker": ticker}
+        row: dict = {"ticker": ticker, **dict.fromkeys(_FEATURE_COLUMNS)}
         if not years:
             rows.append(row)
             continue
@@ -128,7 +145,7 @@ class SectorPercentileScorer:
             ascending: True면 값이 클수록 고득점(성장성 등). False면 값이
                 작을수록 고득점(밸류에이션 — PER 낮을수록 좋음).
         """
-        values = df[column]
+        values = pd.to_numeric(df[column], errors="coerce")
         median = values.median()
         filled = values.fillna(median)  # 결측 → 섹터 전체가 아닌 전체 중앙값 대체(보수적)
 

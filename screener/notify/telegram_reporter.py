@@ -11,10 +11,14 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pytz
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+if TYPE_CHECKING:
+    from screener.agents.analyst_agent import StockSummary
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,10 @@ class ScreenerNotifier:
     def dlq_size(self) -> int:
         return self._dlq.qsize()
 
+    async def send_error_alert(self, message: str) -> None:
+        """정상 리포트와 구분되는 파이프라인 오류 알림 (DailyJob 재시도 소진 시 호출)."""
+        await self._send_raw(f"🚨 {message}")
+
     # ------------------------------------------------------------------
     # 리포트 포맷
     # ------------------------------------------------------------------
@@ -117,6 +125,33 @@ class ScreenerNotifier:
         for _, row in ranked.head(top_n).iterrows():
             text = self._format_stock_line(row)
             keyboard = _watchlist_keyboard(str(row.get("ticker", "")))
+            await self._send_raw(text, reply_markup=keyboard)
+
+    async def send_daily_report_with_summaries(
+        self, ranked: pd.DataFrame, summaries: dict[str, StockSummary], top_n: int = 10
+    ) -> None:
+        """정량 리포트에 T106 AnalystAgent의 LLM 요약(💡/✅/⚠️)을 덧붙여 발송한다.
+
+        `summaries`에 없는 티커는 정량 데이터만(send_daily_report()와 동일하게) 발송한다
+        — AnalystAgent 개별 실패가 있어도 리포트 자체는 무음 누락 없이 계속 발송된다.
+        """
+        today = datetime.now(tz=KST).strftime("%Y-%m-%d")
+        header = f"📊 오늘의 발굴 종목 ({today})"
+        await self._send_raw(header)
+
+        for _, row in ranked.head(top_n).iterrows():
+            ticker = str(row.get("ticker", ""))
+            text = self._format_stock_line(row)
+
+            summary = summaries.get(ticker)
+            if summary is not None:
+                text += f"\n💡 {summary.one_line_thesis}"
+                for tip in summary.protips:
+                    text += f"\n✅ {tip}"
+                for flag in summary.risk_flags:
+                    text += f"\n⚠️ {flag}"
+
+            keyboard = _watchlist_keyboard(ticker)
             await self._send_raw(text, reply_markup=keyboard)
 
     def _format_stock_line(self, row: pd.Series) -> str:

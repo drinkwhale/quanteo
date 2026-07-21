@@ -218,7 +218,7 @@ class DartClient:
         today = datetime.now(tz=KST).strftime("%Y%m%d")
         start = (datetime.now(tz=KST) - timedelta(days=days)).strftime("%Y%m%d")
 
-        raw = dart.list(corp_code, bgn_de=start, end_de=today)
+        raw = dart.list(corp_code, start=start, end=today)
         if raw is None or len(raw) == 0:
             return []
 

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pandas as pd
 import pytest
 
+from screener.agents.analyst_agent import StockSummary
 from screener.notify.telegram_reporter import ScreenerNotifier
 
 
@@ -86,6 +87,39 @@ class TestSendDailyReport:
         assert "watchlist_add:005930" in callback_data
         assert "detail:005930" in callback_data
         assert "ignore:005930" in callback_data
+
+
+class TestSendDailyReportWithSummaries:
+    @pytest.mark.asyncio
+    async def test_includes_llm_markers_for_summarized_stock(self) -> None:
+        notifier, tg = _make_notifier()
+        summaries = {
+            "005930": StockSummary(
+                ticker="005930",
+                name="삼성전자",
+                one_line_thesis="메모리 업턴 초입",
+                protips=["영업이익률 개선"],
+                risk_flags=["최근 유상증자 공시"],
+                score_breakdown={},
+            )
+        }
+
+        await notifier.send_daily_report_with_summaries(_ranked_df(), summaries, top_n=10)
+
+        first_text = tg.send_raw.call_args_list[1].args[0]
+        assert "💡 메모리 업턴 초입" in first_text
+        assert "✅ 영업이익률 개선" in first_text
+        assert "⚠️ 최근 유상증자 공시" in first_text
+
+    @pytest.mark.asyncio
+    async def test_stock_without_summary_gets_quant_only(self) -> None:
+        notifier, tg = _make_notifier()
+
+        await notifier.send_daily_report_with_summaries(_ranked_df(), summaries={}, top_n=10)
+
+        second_text = tg.send_raw.call_args_list[2].args[0]
+        assert "💡" not in second_text
+        assert "SK하이닉스" in second_text
 
 
 class TestRetryAndDlq:
