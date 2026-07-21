@@ -824,7 +824,7 @@
   - `tests/screener/test_callback_handler.py`: 콜백 파싱·upsert 검증, "무시" 버튼 상태 미변경 검증,
     Order Executor import 부재 정적 검증(경계 위반 회귀 방지)
 
-- [ ] **T109** 통합 테스트 & 문서 갱신
+- [x] **T109** 통합 테스트 & 문서 갱신
   - `tests/screener/test_integration_pipeline.py`: Collector→Screener→Scorer→Ranker→AnalystAgent→Reporter
     엔드투엔드 (pykrx/DART/Claude/Telegram 전부 mock)
   - `tests/screener/test_integration_degraded.py`: DART API + Claude API 동시 장애 시 파이프라인이

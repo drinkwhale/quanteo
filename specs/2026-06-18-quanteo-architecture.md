@@ -520,3 +520,76 @@ uv run quanteo --with-info
 | `anthropic` | Claude Haiku AI 필터 |
 | `gcsa` | Google Calendar API |
 | `apscheduler` | 크론·인터벌 스케줄러 |
+
+## 13. Phase 16 — 일일 종목 추천 시스템 (Stock Miner)
+
+> 구현 완료: T098~T109 (2026-07-21). 설계 근거: [`specs/stock-miner.md`](stock-miner.md).
+
+코스피/코스닥 전 종목을 정량 필터·5축 스코어링으로 압축해 상위 종목에 LLM 근거 요약을 붙여
+텔레그램으로 발송하는 완전 독립 서브시스템. `info/`(Phase 10)와 동일하게 `core/`의 매매 코어와
+분리된 최상위 모듈이며, **매매 코어와 wiring되지 않는다** — `core/execution/` Order Executor를
+import하지 않고, 워치리스트 등록은 상태 기록만 수행한다(bounded autonomy, §13.2).
+
+### 13.1 서브시스템 구조
+
+```
+screener/
+├── config/settings.yaml     universe·scoring_weights·report·llm 설정
+├── data/collectors/         PykrxClient(시세·시총·수급), DartClient(재무제표·공시)
+├── pipeline/
+│   ├── screener.py          filter_universe() — 관리종목·시총·거래대금 1차 필터
+│   ├── scorer.py             5축(성장성/수익성/현금흐름/재무안정성/상대가치) 섹터 percentile 스코어
+│   └── ranker.py              rank_top_n() + 필터 레이어(수급 연속일수·거래량 급증·공시)
+├── agents/analyst_agent.py  AnalystAgent — Claude 근거 요약(JSON 강제, 매수/매도 문구 차단)
+├── notify/
+│   ├── telegram_reporter.py  ScreenerNotifier — 정량/LLM 통합 리포트 발송
+│   └── callback_handler.py   CallbackHandler — 워치리스트 등록/상세보기/무시 인라인 버튼
+├── scheduler/daily_job.py   DailyJob — 전체 파이프라인 오케스트레이션
+└── main.py                  독립 프로세스 엔트리포인트 + 콜백 폴링
+```
+
+### 13.2 핵심 설계 결정
+
+| 결정 | 내용 |
+|------|------|
+| **파이프라인 분리** | Screener/Scorer/Ranker는 LLM 미사용(결정론적, pandas) — AnalystAgent만 Claude 호출, 상위 N개(기본 10)로 제한해 비용 통제 |
+| **섹터 percentile 스코어링** | `SectorPercentileScorer` — 섹터 내 순위를 1~5점으로 이산화, 결측치는 전체 중앙값으로 대체(섹터 자체를 제외하지 않음) |
+| **데이터 수집 범위 밖 지표는 근사·명시** | EPS YoY≈순이익 YoY, FCF≈영업CF(CapEx 미수집), Altman Z-Score는 항상 `None`(총자산·이익잉여금 미수집) — 거짓 정밀도 대신 한계를 코드에 명시 |
+| **매수/매도 문구 이중 차단** | 시스템 프롬프트로 금지 + 응답 후처리 키워드 블록리스트 재검증, 위반 시 `[REVIEW REQUIRED]` 플래그 + 해당 문장 제거 |
+| **bounded autonomy** | 리포트는 정보 제공까지만. "워치리스트 등록" 버튼(사용자 승인)만 상태 변경 — `core.execution` import 없음(AST 정적 테스트로 회귀 방지) |
+| **DART 장애 격리** | 재무 데이터 없어도 정량 스코어(밸류에이션 등)만으로 리포트 발송 완주 — T058/T102와 동일한 무음 실패 금지 원칙 |
+| **단일 폴링 프로세스** | 봇 토큰당 폴링 연결은 하나뿐이라 `screener/main.py`가 콜백 폴링의 유일한 주체 — `core/app.py`·`info/main.py`는 push-only |
+
+### 13.3 스케줄러 잡
+
+| 잡 ID | 트리거 | 역할 |
+|-------|--------|------|
+| `stock_miner_daily_job` | 평일 15:40 KST | 전체 파이프라인 실행 → 리포트 발송(전체 실패 시 3회 재시도 후 별도 에러 알림) |
+
+### 13.4 활성화 방법
+
+```yaml
+# quanteo.yaml
+screener:
+  enabled: true
+  dart:
+    api_key: ""        # 비우면 info.dart.api_key 재사용
+  anthropic:
+    api_key: ""        # 비우면 info.anthropic.api_key 재사용
+  telegram:
+    chat_id: ""         # 비우면 telegram.chat_id 재사용
+```
+
+```bash
+uv run python -m screener.main
+```
+
+### 13.5 외부 의존성
+
+| 패키지 | 용도 |
+|--------|------|
+| `pykrx` | KRX 시세·시총·PER/PBR·수급·공매도 |
+| `pyarrow` | 일별/분기 parquet 캐시 |
+| `opendartreader` | 재무제표·공시 (info/의 T060과 동일 라이브러리, 대상만 전체 유니버스로 확장) |
+| `anthropic` (httpx 직접 호출) | 종목 요약 생성 |
+| `aiogram` | 리포트 발송 + 인라인 버튼 콜백 폴링 |
