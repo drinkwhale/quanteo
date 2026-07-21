@@ -103,7 +103,7 @@ def filter_universe(
 
 
 async def compute_avg_trading_value_20d(
-    client: "PykrxClient", date: str, days: int = 20
+    client: PykrxClient, date: str, days: int = 20
 ) -> pd.Series:
     """최근 `days` 거래일(월~금)의 티커별 평균 거래대금을 계산한다.
 

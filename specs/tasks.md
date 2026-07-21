@@ -726,7 +726,7 @@
     콘솔/CSV로 출력 (LLM·텔레그램 미사용, 순수 파이프라인 검증)
   - 스펙 8절 "Phase 1" 완료 기준: LLM 없이 로컬 실행으로 필터링 결과 수동 확인 가능해야 함
 
-- [ ] **T102** `data/collectors/dart_client.py` — 재무제표 & 공시 수집
+- [x] **T102** `data/collectors/dart_client.py` — 재무제표 & 공시 수집
   - `DartClient.fetch_financials(corp_code: str, years: int = 3) -> FinancialStatement`: `OpenDartReader`로
     최근 3개년 매출·영업이익·순이익·부채·유동자산/부채·영업활동현금흐름 조회 (T060
     `info/news/dart_collector.py`와 동일한 `OpenDartReader` 인스턴스 재사용 패턴, 단 조회 대상은 전체

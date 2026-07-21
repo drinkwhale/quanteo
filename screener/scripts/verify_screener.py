@@ -15,7 +15,11 @@ import sys
 import pandas as pd
 
 from screener.data.collectors.pykrx_client import PykrxClient
-from screener.pipeline.screener import ScreenerConfig, compute_avg_trading_value_20d, filter_universe
+from screener.pipeline.screener import (
+    ScreenerConfig,
+    compute_avg_trading_value_20d,
+    filter_universe,
+)
 
 logger = logging.getLogger(__name__)
 
