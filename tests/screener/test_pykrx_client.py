@@ -232,3 +232,32 @@ def test_krx_credentials_untouched_when_missing(
 
     assert "KRX_ID" not in os.environ
     assert "KRX_PW" not in os.environ
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_history_returns_and_caches(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+    history_df = pd.DataFrame(
+        {"시가": [100, 101], "고가": [102, 103], "저가": [99, 100], "종가": [101, 102], "거래량": [1000, 1100]},
+        index=pd.date_range("2026-07-01", periods=2, freq="B"),
+    )
+
+    with patch("pykrx.stock.get_market_ohlcv", return_value=history_df) as mock_call:
+        df = await client.fetch_ohlcv_history("005930", "20260721")
+        assert len(df) == 2
+        assert mock_call.call_count == 1
+
+        # 캐시 히트 — 같은 (end_date, ticker)로 재호출 시 pykrx 재호출 없음
+        df2 = await client.fetch_ohlcv_history("005930", "20260721")
+        assert len(df2) == 2
+        assert mock_call.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_history_returns_empty_on_failure(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+
+    with patch("pykrx.stock.get_market_ohlcv", side_effect=Exception("network error")):
+        df = await client.fetch_ohlcv_history("005930", "20260721")
+
+    assert df.empty

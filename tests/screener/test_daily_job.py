@@ -37,6 +37,8 @@ def _make_job(**overrides) -> tuple[DailyJob, dict]:
     pykrx.fetch_investor_trading = AsyncMock(
         return_value=pd.DataFrame({"ticker": ["005930"], "foreign_net": [100], "institution_net": [100]})
     )
+    # 히스토리 없음(빈 DataFrame) → assess_buy_principle이 캔들 부족으로 None 반환
+    pykrx.fetch_ohlcv_history = AsyncMock(return_value=pd.DataFrame())
 
     dart = AsyncMock()
     dart.fetch_financials = AsyncMock(

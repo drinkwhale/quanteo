@@ -121,6 +121,46 @@ class TestSendDailyReportWithSummaries:
         assert "💡" not in second_text
         assert "SK하이닉스" in second_text
 
+    @pytest.mark.asyncio
+    async def test_includes_bbc_principle_line_when_present(self) -> None:
+        notifier, tg = _make_notifier()
+        summaries = {
+            "005930": StockSummary(
+                ticker="005930",
+                name="삼성전자",
+                one_line_thesis="메모리 업턴 초입",
+                protips=[],
+                risk_flags=[],
+                score_breakdown={},
+                bbc_principle=2,
+                bbc_reason="제2원칙 눌림목: 테스트",
+            )
+        }
+
+        await notifier.send_daily_report_with_summaries(_ranked_df(), summaries, top_n=10)
+
+        first_text = tg.send_raw.call_args_list[1].args[0]
+        assert "📐 박병창 매수 원칙: 제2원칙 — 제2원칙 눌림목: 테스트" in first_text
+
+    @pytest.mark.asyncio
+    async def test_omits_bbc_line_when_no_principle_matched(self) -> None:
+        notifier, tg = _make_notifier()
+        summaries = {
+            "005930": StockSummary(
+                ticker="005930",
+                name="삼성전자",
+                one_line_thesis="메모리 업턴 초입",
+                protips=[],
+                risk_flags=[],
+                score_breakdown={},
+            )
+        }
+
+        await notifier.send_daily_report_with_summaries(_ranked_df(), summaries, top_n=10)
+
+        first_text = tg.send_raw.call_args_list[1].args[0]
+        assert "📐" not in first_text
+
 
 class TestRetryAndDlq:
     @pytest.mark.asyncio
