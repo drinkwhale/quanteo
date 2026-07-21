@@ -11,6 +11,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+import OpenDartReader  # noqa: N813 — 패키지가 sys.modules를 클래스로 자체 치환한다 (import 시 클래스 자체가 바인딩됨)
 import pytz
 
 from info.news.rss_collector import NewsItem
@@ -70,14 +71,12 @@ class DartCollector:
 
     def _fetch_sync(self, corp_code: str) -> list[NewsItem]:
         """OpenDartReader 동기 호출 (executor에서 실행)."""
-        from opendartreader import OpenDartReader
-
         dart = OpenDartReader(self._api_key)
 
         today = datetime.now(tz=KST).strftime("%Y%m%d")
         week_ago = (datetime.now(tz=KST) - timedelta(days=7)).strftime("%Y%m%d")
 
-        raw = dart.list(corp_code, bgn_de=week_ago, end_de=today)
+        raw = dart.list(corp_code, start=week_ago, end=today)
         if raw is None or len(raw) == 0:
             return []
 

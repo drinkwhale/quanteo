@@ -34,11 +34,28 @@ async def test_important_report_filtered():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert len(items) == 1
     assert items[0].source == "DART"
+
+
+@pytest.mark.asyncio
+async def test_calls_list_with_correct_kwargs():
+    """OpenDartReader.list()의 실제 파라미터명은 start/end다 (bgn_de/end_de 아님)."""
+    collector = DartCollector(api_key="test-key")
+    mock_dart = MagicMock()
+    mock_dart.list.return_value = pd.DataFrame()
+
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
+        await collector.fetch()
+
+    _, kwargs = mock_dart.list.call_args
+    assert "start" in kwargs
+    assert "end" in kwargs
+    assert "bgn_de" not in kwargs
+    assert "end_de" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -55,7 +72,7 @@ async def test_unimportant_report_excluded():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert len(items) == 0
@@ -83,7 +100,7 @@ async def test_important_report_triggers_high_alert():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         await collector.fetch()
 
     mock_notifier.send_news_alert.assert_called_once()
@@ -101,7 +118,7 @@ async def test_network_error_returns_empty(caplog):
     collector = DartCollector(api_key="test-key")
 
     with patch(
-        "opendartreader.OpenDartReader",
+        "info.news.dart_collector.OpenDartReader",
         side_effect=Exception("network error"),
     ):
         with caplog.at_level(logging.ERROR):
@@ -118,7 +135,7 @@ async def test_auth_failure_returns_empty():
     mock_dart = MagicMock()
     mock_dart.list.side_effect = Exception("인증 실패")
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert items == []
@@ -138,7 +155,7 @@ async def test_empty_result_no_telegram():
     mock_dart = MagicMock()
     mock_dart.list.return_value = pd.DataFrame()
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert items == []
