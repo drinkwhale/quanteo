@@ -701,7 +701,7 @@
   - `quanteo.yaml.example`에 `screener:` 섹션 추가 — `dart.api_key`(기존 `info.dart.api_key`와 공유 여부
     결정 필요 — 동일 DART 앱키 재사용을 기본으로 함), `anthropic.api_key`, `telegram.chat_id`
 
-- [ ] **T099** `data/collectors/pykrx_client.py` — 시세·시총·밸류에이션·수급 수집
+- [x] **T099** `data/collectors/pykrx_client.py` — 시세·시총·밸류에이션·수급 수집
   - `PykrxClient.fetch_universe(date: str) -> pd.DataFrame`: `get_market_ohlcv`, `get_market_cap`,
     `get_market_fundamental`(PER/PBR/배당수익률) 코스피+코스닥 통합 조회
   - `fetch_investor_trading(date: str) -> pd.DataFrame`: `get_market_trading_value_by_investor` — 외인/기관

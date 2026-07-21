@@ -29,6 +29,7 @@ dependencies = [
     "apscheduler>=3.10",
     # Phase 16 — 일일 종목 추천 시스템 (Stock Miner)
     "pykrx>=1.0",
+    "pyarrow>=17.0",
 ]
 
 [dependency-groups]
