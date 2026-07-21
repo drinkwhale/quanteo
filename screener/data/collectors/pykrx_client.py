@@ -105,9 +105,13 @@ class PykrxClient:
 
             merged = ohlcv.copy()
             if cap is not None and not cap.empty:
-                merged = merged.join(
-                    cap.reindex(columns=["시가총액", "상장주식수"]), how="left"
-                )
+                # get_market_ohlcv가 이미 시가총액을 포함해서 반환하는 pykrx
+                # 버전이 있다(실거래 조회로 확인, T101 로컬 검증 당시 mock에는
+                # 없어 미발견) — 겹치면 join이 ValueError로 죽으므로 상장주식수만
+                # cap에서 가져온다.
+                cap_cols = [c for c in ("시가총액", "상장주식수") if c not in merged.columns]
+                if cap_cols:
+                    merged = merged.join(cap.reindex(columns=cap_cols), how="left")
             if fund is not None and not fund.empty:
                 merged = merged.join(fund.reindex(columns=["PER", "PBR", "DIV"]), how="left")
             merged["market"] = market

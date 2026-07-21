@@ -13,8 +13,15 @@ from screener.data.collectors.pykrx_client import PykrxClient
 
 
 def _ohlcv_df(tickers: list[str]) -> pd.DataFrame:
+    # 실제 KRX 응답은 get_market_ohlcv에도 시가총액을 포함한다(실거래 조회로
+    # 확인) — cap과 겹치는 이 컬럼을 mock에서 빼먹으면 병합 버그를 놓친다.
     return pd.DataFrame(
-        {"종가": [10000] * len(tickers), "거래량": [1000] * len(tickers), "등락률": [1.0] * len(tickers)},
+        {
+            "종가": [10000] * len(tickers),
+            "거래량": [1000] * len(tickers),
+            "등락률": [1.0] * len(tickers),
+            "시가총액": [50_000_000_000] * len(tickers),
+        },
         index=pd.Index(tickers, name="티커"),
     )
 
@@ -56,8 +63,13 @@ async def test_fetch_universe_merges_ohlcv_cap_fundamental(tmp_path: Path) -> No
 
     assert set(df["ticker"]) == {"005930", "247540"}
     assert "market_cap" in df.columns
+    assert "shares_outstanding" in df.columns
     assert "per" in df.columns
     assert set(df["market"]) == {"KOSPI", "KOSDAQ"}
+    # ohlcv가 이미 시가총액을 갖고 있으면 그 값을 그대로 쓴다(cap과 겹쳐도
+    # join이 죽지 않아야 하고, cap 쪽 값으로 덮어쓰지 않아야 함).
+    assert (df["market_cap"] == 50_000_000_000).all()
+    assert (df["shares_outstanding"] == 10_000_000).all()
 
 
 @pytest.mark.asyncio
