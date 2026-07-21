@@ -712,7 +712,7 @@
     재호출 생략
   - `tests/screener/test_pykrx_client.py`: pykrx mock으로 통합 조회·휴장일 폴백·캐시 히트 검증
 
-- [ ] **T100** `pipeline/screener.py` — 유니버스 1차 필터 (결정론적)
+- [x] **T100** `pipeline/screener.py` — 유니버스 1차 필터 (결정론적)
   - `ScreenerConfig`: `settings.yaml`의 `universe` 섹션 로딩(`min_market_cap`, `min_avg_trading_value_20d`,
     `exclude_administrative`)
   - `filter_universe(df: pd.DataFrame, config: ScreenerConfig) -> pd.DataFrame`: 관리종목·거래정지·시총·
@@ -721,7 +721,7 @@
   - 입력 ~2000개 → 출력 ~50개 수준으로 압축 (스펙 2절 목표치, 하드코딩 임계값 아님 — 설정 기반)
   - `tests/screener/test_screener.py`: 각 필터 조건 경계 케이스, 필터 후 종목 수 로깅 검증
 
-- [ ] **T101** Phase 1 로컬 검증 스크립트 (`screener/scripts/verify_screener.py`)
+- [x] **T101** Phase 1 로컬 검증 스크립트 (`screener/scripts/verify_screener.py`)
   - CLI: `uv run python -m screener.scripts.verify_screener --date 2026-07-21` — 유니버스 필터 결과를
     콘솔/CSV로 출력 (LLM·텔레그램 미사용, 순수 파이프라인 검증)
   - 스펙 8절 "Phase 1" 완료 기준: LLM 없이 로컬 실행으로 필터링 결과 수동 확인 가능해야 함

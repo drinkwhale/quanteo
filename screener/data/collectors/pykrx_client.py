@@ -103,6 +103,7 @@ class PykrxClient:
             columns={
                 "종가": "close",
                 "거래량": "volume",
+                "거래대금": "trading_value",
                 "등락률": "change_pct",
                 "시가총액": "market_cap",
                 "상장주식수": "shares_outstanding",
@@ -111,6 +112,9 @@ class PykrxClient:
                 "DIV": "div_yield",
             }
         )
+        if "trading_value" not in combined.columns:
+            # 일부 pykrx 버전은 전종목 조회에서 거래대금을 반환하지 않는다 — 근사치로 대체.
+            combined["trading_value"] = combined.get("close", 0) * combined.get("volume", 0)
         try:
             combined["name"] = combined["ticker"].map(stock.get_market_ticker_name)
         except Exception as exc:  # pragma: no cover - 네트워크 의존
