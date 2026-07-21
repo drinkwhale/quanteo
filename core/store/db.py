@@ -96,6 +96,12 @@ class StateStore:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA foreign_keys=ON")
+        # WAL은 리더-라이터 블로킹을 줄여주지만 동시 쓰기(라이터끼리)는 여전히
+        # 직렬화된다. busy_timeout 없이는 락 충돌 시 즉시 "database is locked"
+        # 예외가 나므로, quanteo-core(주문 실행)와 quanteo-screener(워치리스트
+        # 등록)가 별도 프로세스로 같은 DB 파일을 동시에 쓰는 배포 구성에서
+        # 재시도 여유를 준다.
+        await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._migrate()
         logger.info("StateStore 연결 완료: %s", self.db_path)
 
