@@ -74,6 +74,14 @@ info:
 screener:
   enabled: false             # true 로 바꾸면 screener.main이 스케줄러를 시작
 
+  # KRX 데이터 로그인 — data.krx.co.kr 개인 회원 계정(무료 가입).
+  # KRX가 전종목시세/시총/펀더멘털 등 대량 조회 엔드포인트에 로그인 세션을
+  # 요구하도록 정책을 바꿔서(2026-07 확인) pykrx가 정상 동작하려면 필수다.
+  # 비워두면 유니버스 조회 단계에서 실패한다("LOGOUT" 응답).
+  krx:
+    id: ""
+    pw: ""
+
   # DART 재무제표·공시 수집 — 비워두면 위 info.dart.api_key를 그대로 재사용
   dart:
     api_key: ""

@@ -187,6 +187,7 @@ class TestScreenerSettings:
                     "dart": {"api_key": "screener-dart-key"},
                     "anthropic": {"api_key": "screener-anthropic-key"},
                     "telegram": {"chat_id": "screener-chat"},
+                    "krx": {"id": "krx-user", "pw": "krx-pass"},
                 },
             },
         )
@@ -197,6 +198,18 @@ class TestScreenerSettings:
         assert settings.screener.dart_api_key == "screener-dart-key"
         assert settings.screener.anthropic_api_key == "screener-anthropic-key"
         assert settings.screener.telegram_chat_id == "screener-chat"
+        assert settings.screener.krx_id == "krx-user"
+        assert settings.screener.krx_pw == "krx-pass"
+
+    def test_krx_credentials_default_empty(self, tmp_path: Path) -> None:
+        # KRX 로그인은 info:/dart:와 무관한 별도 자격증명이라 폴백이 없다.
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(config_path, {**TOSS_CONFIG, "screener": {"enabled": True}})
+
+        settings = load_settings(config_path=config_path)
+
+        assert settings.screener.krx_id == ""
+        assert settings.screener.krx_pw == ""
 
     def test_falls_back_to_info_and_telegram_keys(self, tmp_path: Path) -> None:
         config_path = tmp_path / "quanteo.yaml"

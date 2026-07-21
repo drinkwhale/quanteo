@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -195,3 +196,27 @@ async def test_fetch_short_balance(tmp_path: Path) -> None:
         df = await client.fetch_short_balance("20260721")
 
     assert df.iloc[0]["short_balance"] == 1000
+
+
+def test_krx_credentials_set_env_when_both_provided(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KRX_ID", raising=False)
+    monkeypatch.delenv("KRX_PW", raising=False)
+
+    PykrxClient(cache_dir=tmp_path, krx_id="user", krx_pw="pass")
+
+    assert os.environ["KRX_ID"] == "user"
+    assert os.environ["KRX_PW"] == "pass"
+
+
+def test_krx_credentials_untouched_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KRX_ID", raising=False)
+    monkeypatch.delenv("KRX_PW", raising=False)
+
+    PykrxClient(cache_dir=tmp_path)
+
+    assert "KRX_ID" not in os.environ
+    assert "KRX_PW" not in os.environ

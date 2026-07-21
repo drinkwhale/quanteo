@@ -58,7 +58,9 @@ async def main() -> None:
     await store.open()
 
     job = DailyJob(
-        pykrx_client=PykrxClient(),
+        pykrx_client=PykrxClient(
+            krx_id=settings.screener.krx_id, krx_pw=settings.screener.krx_pw
+        ),
         dart_client=DartClient(api_key=settings.screener.dart_api_key),
         analyst_agent=AnalystAgent(api_key=settings.screener.anthropic_api_key),
         notifier=notifier,
