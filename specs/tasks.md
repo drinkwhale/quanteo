@@ -739,7 +739,7 @@
     처리(전체 파이프라인 중단 금지) — T060과 동일한 장애 격리 원칙
   - `tests/screener/test_dart_client.py`: 분기 캐시 히트/미스, API 예외 시 격리 처리 검증
 
-- [ ] **T103** `pipeline/scorer.py` — 5축 스코어링 (성장성/수익성/현금흐름/재무안정성/상대가치)
+- [x] **T103** `pipeline/scorer.py` — 5축 스코어링 (성장성/수익성/현금흐름/재무안정성/상대가치)
   - `SectorPercentileScorer`: 섹터 내 percentile 기반 1~5점 산출 공통 헬퍼 (`scipy.stats.rankdata` 또는
     `pandas.rank(pct=True)`)
   - `score_growth(df) -> pd.Series`: 매출 YoY, 영업이익 YoY, EPS YoY — 최근 분기 vs 전년동기

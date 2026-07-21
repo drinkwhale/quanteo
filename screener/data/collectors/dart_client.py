@@ -43,6 +43,7 @@ _ACCOUNT_ALIASES: dict[str, tuple[str, ...]] = {
     "operating_income": ("영업이익", "영업이익(손실)"),
     "net_income": ("당기순이익", "당기순이익(손실)", "반기순이익", "분기순이익"),
     "total_liabilities": ("부채총계",),
+    "total_equity": ("자본총계",),
     "current_assets": ("유동자산",),
     "current_liabilities": ("유동부채",),
     "operating_cash_flow": ("영업활동현금흐름", "영업활동으로인한현금흐름"),
@@ -58,6 +59,7 @@ class YearlyFinancials:
     operating_income: float | None = None
     net_income: float | None = None
     total_liabilities: float | None = None
+    total_equity: float | None = None
     current_assets: float | None = None
     current_liabilities: float | None = None
     operating_cash_flow: float | None = None
@@ -185,6 +187,7 @@ class DartClient:
             operating_income=lookup("operating_income"),
             net_income=lookup("net_income"),
             total_liabilities=lookup("total_liabilities"),
+            total_equity=lookup("total_equity"),
             current_assets=lookup("current_assets"),
             current_liabilities=lookup("current_liabilities"),
             operating_cash_flow=lookup("operating_cash_flow"),

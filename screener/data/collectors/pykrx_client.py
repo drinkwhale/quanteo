@@ -120,7 +120,30 @@ class PykrxClient:
         except Exception as exc:  # pragma: no cover - 네트워크 의존
             logger.warning("종목명 매핑 실패, 빈 값으로 대체: %s", exc)
             combined["name"] = ""
+
+        combined["sector"] = combined["ticker"].map(self._sector_map(date))
+        combined["sector"] = combined["sector"].fillna("UNKNOWN")
         return combined
+
+    def _sector_map(self, date: str) -> dict[str, str]:
+        """티커 → 업종명 매핑. 실패 시 빈 매핑(전부 UNKNOWN 처리)."""
+        from pykrx import stock
+
+        mapping: dict[str, str] = {}
+        for market in _MARKETS:
+            try:
+                sectors = stock.get_market_sector_classifications(date, market)
+            except Exception as exc:
+                logger.warning("업종 분류 조회 실패(%s/%s): %s", date, market, exc)
+                continue
+            if sectors is None or sectors.empty:
+                continue
+            # 컬럼명은 pykrx 버전에 따라 "업종명" 또는 "업종"으로 다를 수 있다.
+            sector_col = next((c for c in ("업종명", "업종") if c in sectors.columns), None)
+            if sector_col is None:
+                continue
+            mapping.update(sectors[sector_col].to_dict())
+        return mapping
 
     # ------------------------------------------------------------------
     # 투자자별 순매수 (외인/기관)

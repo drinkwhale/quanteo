@@ -60,6 +60,52 @@ async def test_fetch_universe_merges_ohlcv_cap_fundamental(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_fetch_universe_maps_sector(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+
+    def ohlcv_side_effect(date, market):
+        return _ohlcv_df(["005930"]) if market == "KOSPI" else pd.DataFrame()
+
+    sector_df = pd.DataFrame({"업종명": ["반도체"]}, index=pd.Index(["005930"], name="티커"))
+
+    with (
+        patch("pykrx.stock.get_market_ohlcv", side_effect=ohlcv_side_effect),
+        patch("pykrx.stock.get_market_cap", return_value=_cap_df(["005930"])),
+        patch("pykrx.stock.get_market_fundamental", return_value=_fund_df(["005930"])),
+        patch("pykrx.stock.get_market_ticker_name", return_value="삼성전자"),
+        patch(
+            "pykrx.stock.get_market_sector_classifications",
+            side_effect=lambda date, market: sector_df if market == "KOSPI" else pd.DataFrame(),
+        ),
+    ):
+        df = await client.fetch_universe("20260721")
+
+    assert df.iloc[0]["sector"] == "반도체"
+
+
+@pytest.mark.asyncio
+async def test_fetch_universe_sector_failure_falls_back_to_unknown(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+
+    def ohlcv_side_effect(date, market):
+        return _ohlcv_df(["005930"]) if market == "KOSPI" else pd.DataFrame()
+
+    with (
+        patch("pykrx.stock.get_market_ohlcv", side_effect=ohlcv_side_effect),
+        patch("pykrx.stock.get_market_cap", return_value=_cap_df(["005930"])),
+        patch("pykrx.stock.get_market_fundamental", return_value=_fund_df(["005930"])),
+        patch("pykrx.stock.get_market_ticker_name", return_value="삼성전자"),
+        patch(
+            "pykrx.stock.get_market_sector_classifications",
+            side_effect=Exception("network error"),
+        ),
+    ):
+        df = await client.fetch_universe("20260721")
+
+    assert df.iloc[0]["sector"] == "UNKNOWN"
+
+
+@pytest.mark.asyncio
 async def test_fetch_universe_falls_back_to_previous_business_day(tmp_path: Path) -> None:
     client = PykrxClient(cache_dir=tmp_path)
     call_dates: list[str] = []

@@ -29,6 +29,7 @@ class TestFetchFinancials:
                 _account_row("영업이익", "200,000"),
                 _account_row("당기순이익", "150,000"),
                 _account_row("부채총계", "500,000"),
+                _account_row("자본총계", "800,000"),
                 _account_row("유동자산", "300,000"),
                 _account_row("유동부채", "100,000"),
                 _account_row("영업활동현금흐름", "250,000"),
@@ -45,6 +46,7 @@ class TestFetchFinancials:
         assert yf.revenue == 1_000_000
         assert yf.operating_income == 200_000
         assert yf.net_income == 150_000
+        assert yf.total_equity == 800_000
         assert yf.operating_cash_flow == 250_000
 
     @pytest.mark.asyncio
