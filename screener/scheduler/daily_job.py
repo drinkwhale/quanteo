@@ -1,7 +1,11 @@
 """전체 파이프라인 오케스트레이션 + 크론 등록.
 
 Collector → Screener → Scorer → Ranker → AnalystAgent → Reporter 순서로
-매 거래일 15:40 KST에 실행한다 (T067 InfoScheduler와 동일한 타임존 원칙).
+매 거래일 18:30 KST에 실행한다 (T067 InfoScheduler와 동일한 타임존 원칙).
+
+18:30 실행 이유: pykrx 투자자별 순매수 데이터(외인/기관)는 장 마감 직후가 아니라
+저녁 무렵 확정되므로, 15:40처럼 확정 전에 조회하면 foreign_institution_streak() 등
+당일 수급 필드가 비어있거나 부정확할 수 있다. 확정 이후로 늦춰 정확한 값을 사용한다.
 """
 
 from __future__ import annotations
@@ -193,14 +197,18 @@ class DailyJob:
 
 
 class DailyJobScheduler:
-    """평일 15:40 KST 크론 등록 (T067 InfoScheduler와 동일한 타임존/misfire 원칙)."""
+    """평일 18:30 KST 크론 등록 (T067 InfoScheduler와 동일한 타임존/misfire 원칙).
+
+    15:40이 아닌 18:30인 이유는 daily_job 모듈 docstring 참고 — pykrx 투자자별
+    순매수 데이터의 당일 확정 시점을 확보하기 위함.
+    """
 
     def __init__(self, job: DailyJob) -> None:
         self._job = job
         self._scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
         self._scheduler.add_job(
             self._run_job,
-            CronTrigger(hour=15, minute=40, day_of_week="mon-fri", timezone="Asia/Seoul"),
+            CronTrigger(hour=18, minute=30, day_of_week="mon-fri", timezone="Asia/Seoul"),
             id="stock_miner_daily_job",
             misfire_grace_time=300,
             coalesce=True,
@@ -214,7 +222,7 @@ class DailyJobScheduler:
 
     def start(self) -> None:
         self._scheduler.start()
-        logger.info("DailyJobScheduler 시작 (평일 15:40 KST)")
+        logger.info("DailyJobScheduler 시작 (평일 18:30 KST)")
 
     def stop(self) -> None:
         if self._scheduler.running:

@@ -76,7 +76,7 @@ async def main() -> None:
     dp = Dispatcher()
     CallbackHandler(store=store, job=job).register(dp)
 
-    logger.info("Stock Miner 스케줄러 시작 (평일 15:40 KST) + 워치리스트 콜백 폴링")
+    logger.info("Stock Miner 스케줄러 시작 (평일 18:30 KST) + 워치리스트 콜백 폴링")
     try:
         await dp.start_polling(polling_bot)
     finally:
