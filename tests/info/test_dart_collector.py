@@ -34,7 +34,7 @@ async def test_important_report_filtered():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert len(items) == 1
@@ -55,7 +55,7 @@ async def test_unimportant_report_excluded():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert len(items) == 0
@@ -83,7 +83,7 @@ async def test_important_report_triggers_high_alert():
     mock_dart = MagicMock()
     mock_dart.list.return_value = df
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         await collector.fetch()
 
     mock_notifier.send_news_alert.assert_called_once()
@@ -101,7 +101,7 @@ async def test_network_error_returns_empty(caplog):
     collector = DartCollector(api_key="test-key")
 
     with patch(
-        "opendartreader.OpenDartReader",
+        "info.news.dart_collector.OpenDartReader",
         side_effect=Exception("network error"),
     ):
         with caplog.at_level(logging.ERROR):
@@ -118,7 +118,7 @@ async def test_auth_failure_returns_empty():
     mock_dart = MagicMock()
     mock_dart.list.side_effect = Exception("인증 실패")
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert items == []
@@ -138,7 +138,7 @@ async def test_empty_result_no_telegram():
     mock_dart = MagicMock()
     mock_dart.list.return_value = pd.DataFrame()
 
-    with patch("opendartreader.OpenDartReader", return_value=mock_dart):
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
         items = await collector.fetch()
 
     assert items == []
