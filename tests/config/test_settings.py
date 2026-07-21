@@ -164,3 +164,53 @@ class TestLoadSettings:
         settings = load_settings(config_path=config_path)
 
         assert "super-secret-value" not in repr(settings.kis.app_secret)
+
+
+class TestScreenerSettings:
+    def test_disabled_by_default(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(config_path, TOSS_CONFIG)
+
+        settings = load_settings(config_path=config_path)
+
+        assert not settings.screener.enabled
+
+    def test_own_keys_take_priority(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(
+            config_path,
+            {
+                **TOSS_CONFIG,
+                "info": {"dart": {"api_key": "info-dart-key"}, "anthropic": {"api_key": "info-anthropic-key"}},
+                "screener": {
+                    "enabled": True,
+                    "dart": {"api_key": "screener-dart-key"},
+                    "anthropic": {"api_key": "screener-anthropic-key"},
+                    "telegram": {"chat_id": "screener-chat"},
+                },
+            },
+        )
+
+        settings = load_settings(config_path=config_path)
+
+        assert settings.screener.enabled
+        assert settings.screener.dart_api_key == "screener-dart-key"
+        assert settings.screener.anthropic_api_key == "screener-anthropic-key"
+        assert settings.screener.telegram_chat_id == "screener-chat"
+
+    def test_falls_back_to_info_and_telegram_keys(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "quanteo.yaml"
+        _write_yaml(
+            config_path,
+            {
+                **TOSS_CONFIG,
+                "info": {"dart": {"api_key": "info-dart-key"}, "anthropic": {"api_key": "info-anthropic-key"}},
+                "screener": {"enabled": True},
+            },
+        )
+
+        settings = load_settings(config_path=config_path)
+
+        assert settings.screener.dart_api_key == "info-dart-key"
+        assert settings.screener.anthropic_api_key == "info-anthropic-key"
+        assert settings.screener.telegram_chat_id == "-100"

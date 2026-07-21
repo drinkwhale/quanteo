@@ -1,0 +1,219 @@
+"""pykrx 기반 시세·시총·밸류에이션·수급 수집기.
+
+KRX 조회는 동기 라이브러리(pykrx)라 asyncio 이벤트 루프를 막지 않도록
+run_in_executor로 감싼다. 시세/수급은 일별 parquet 캐시를 사용해 같은 날
+재호출을 피한다.
+
+NOTE: pykrx 반환 컬럼명(시가총액/PER/PBR 등)은 문서 기준으로 매핑했다.
+      실거래 투입 전 실제 KRX 응답으로 컬럼명 검증 필요 (네트워크 제한
+      환경에서 라이브 호출 검증 불가 — 스펙 8절 Phase 1 로컬 검증 스크립트
+      (T101)로 실행 시 확인할 것).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+_MARKETS = ("KOSPI", "KOSDAQ")
+_MAX_FALLBACK_DAYS = 7
+
+_DEFAULT_CACHE_DIR = Path("screener/data/cache")
+
+
+def _prev_day(date: str) -> str:
+    dt = datetime.strptime(date, "%Y%m%d") - timedelta(days=1)
+    return dt.strftime("%Y%m%d")
+
+
+class PykrxClient:
+    """KRX 시세·시총·밸류에이션·수급 데이터 수집기."""
+
+    def __init__(self, cache_dir: Path | str = _DEFAULT_CACHE_DIR) -> None:
+        self._cache_dir = Path(cache_dir)
+
+    # ------------------------------------------------------------------
+    # 유니버스 (시세·시총·밸류에이션)
+    # ------------------------------------------------------------------
+
+    async def fetch_universe(self, date: str) -> pd.DataFrame:
+        """코스피+코스닥 전 종목의 시세·시총·PER/PBR/배당수익률을 조회한다.
+
+        Args:
+            date: 조회 일자 (YYYYMMDD).
+
+        Returns:
+            columns: ticker, name, market, close, volume, change_pct,
+                      market_cap, shares_outstanding, per, pbr, div_yield
+        """
+        cache_path = self._cache_dir / f"{date}_ohlcv.parquet"
+        if cache_path.exists():
+            return pd.read_parquet(cache_path)
+
+        loop = asyncio.get_running_loop()
+        df = await loop.run_in_executor(None, self._fetch_universe_sync, date)
+
+        attempts = 0
+        target_date = date
+        while df.empty and attempts < _MAX_FALLBACK_DAYS:
+            target_date = _prev_day(target_date)
+            logger.warning("pykrx 휴장일 감지(%s) — 직전 영업일(%s)로 폴백", date, target_date)
+            df = await loop.run_in_executor(None, self._fetch_universe_sync, target_date)
+            attempts += 1
+
+        if not df.empty:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(cache_path)
+        return df
+
+    def _fetch_universe_sync(self, date: str) -> pd.DataFrame:
+        from pykrx import stock
+
+        frames: list[pd.DataFrame] = []
+        for market in _MARKETS:
+            ohlcv = stock.get_market_ohlcv(date, market=market)
+            if ohlcv is None or ohlcv.empty:
+                continue
+            cap = stock.get_market_cap(date, market=market)
+            fund = stock.get_market_fundamental(date, market=market)
+
+            merged = ohlcv.copy()
+            if cap is not None and not cap.empty:
+                merged = merged.join(
+                    cap.reindex(columns=["시가총액", "상장주식수"]), how="left"
+                )
+            if fund is not None and not fund.empty:
+                merged = merged.join(fund.reindex(columns=["PER", "PBR", "DIV"]), how="left")
+            merged["market"] = market
+            frames.append(merged)
+
+        if not frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(frames)
+        combined.index.name = "ticker"
+        combined = combined.reset_index()
+        combined = combined.rename(
+            columns={
+                "종가": "close",
+                "거래량": "volume",
+                "거래대금": "trading_value",
+                "등락률": "change_pct",
+                "시가총액": "market_cap",
+                "상장주식수": "shares_outstanding",
+                "PER": "per",
+                "PBR": "pbr",
+                "DIV": "div_yield",
+            }
+        )
+        if "trading_value" not in combined.columns:
+            # 일부 pykrx 버전은 전종목 조회에서 거래대금을 반환하지 않는다 — 근사치로 대체.
+            combined["trading_value"] = combined.get("close", 0) * combined.get("volume", 0)
+        try:
+            combined["name"] = combined["ticker"].map(stock.get_market_ticker_name)
+        except Exception as exc:  # pragma: no cover - 네트워크 의존
+            logger.warning("종목명 매핑 실패, 빈 값으로 대체: %s", exc)
+            combined["name"] = ""
+
+        combined["sector"] = combined["ticker"].map(self._sector_map(date))
+        combined["sector"] = combined["sector"].fillna("UNKNOWN")
+        return combined
+
+    def _sector_map(self, date: str) -> dict[str, str]:
+        """티커 → 업종명 매핑. 실패 시 빈 매핑(전부 UNKNOWN 처리)."""
+        from pykrx import stock
+
+        mapping: dict[str, str] = {}
+        for market in _MARKETS:
+            try:
+                sectors = stock.get_market_sector_classifications(date, market)
+            except Exception as exc:
+                logger.warning("업종 분류 조회 실패(%s/%s): %s", date, market, exc)
+                continue
+            if sectors is None or sectors.empty:
+                continue
+            # 컬럼명은 pykrx 버전에 따라 "업종명" 또는 "업종"으로 다를 수 있다.
+            sector_col = next((c for c in ("업종명", "업종") if c in sectors.columns), None)
+            if sector_col is None:
+                continue
+            mapping.update(sectors[sector_col].to_dict())
+        return mapping
+
+    # ------------------------------------------------------------------
+    # 투자자별 순매수 (외인/기관)
+    # ------------------------------------------------------------------
+
+    async def fetch_investor_trading(self, date: str) -> pd.DataFrame:
+        """외인+기관 순매수(금액) 를 티커 기준으로 조회한다.
+
+        Returns:
+            columns: ticker, foreign_net, institution_net
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._fetch_investor_trading_sync, date)
+
+    def _fetch_investor_trading_sync(self, date: str) -> pd.DataFrame:
+        from pykrx import stock
+
+        series: dict[str, pd.Series] = {}
+        for investor, col in (("외국인", "foreign_net"), ("기관합계", "institution_net")):
+            parts: list[pd.DataFrame] = []
+            for market in _MARKETS:
+                try:
+                    df = stock.get_market_net_purchases_of_equities(date, date, market, investor)
+                except Exception as exc:
+                    logger.warning("투자자별 순매수 조회 실패(%s/%s): %s", market, investor, exc)
+                    continue
+                if df is not None and not df.empty:
+                    parts.append(df)
+            if parts:
+                combined = pd.concat(parts)
+                series[col] = combined["순매수거래대금"].groupby(level=0).sum()
+
+        if not series:
+            return pd.DataFrame(columns=["ticker", "foreign_net", "institution_net"])
+
+        result = pd.DataFrame(series)
+        result.index.name = "ticker"
+        return result.reset_index().fillna(0)
+
+    # ------------------------------------------------------------------
+    # 공매도 잔고
+    # ------------------------------------------------------------------
+
+    async def fetch_short_balance(self, date: str) -> pd.DataFrame:
+        """티커별 공매도 잔고 현황을 조회한다.
+
+        Returns:
+            columns: ticker, short_balance, short_ratio
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._fetch_short_balance_sync, date)
+
+    def _fetch_short_balance_sync(self, date: str) -> pd.DataFrame:
+        from pykrx import stock
+
+        frames: list[pd.DataFrame] = []
+        for market in _MARKETS:
+            try:
+                df = stock.get_shorting_balance(date, market)
+            except Exception as exc:
+                logger.warning("공매도 잔고 조회 실패(%s): %s", market, exc)
+                continue
+            if df is not None and not df.empty:
+                frames.append(df)
+
+        if not frames:
+            return pd.DataFrame(columns=["ticker", "short_balance", "short_ratio"])
+
+        combined = pd.concat(frames)
+        combined.index.name = "ticker"
+        combined = combined.reset_index()
+        combined = combined.rename(columns={"공매도잔고": "short_balance", "비중": "short_ratio"})
+        return combined.reindex(columns=["ticker", "short_balance", "short_ratio"])

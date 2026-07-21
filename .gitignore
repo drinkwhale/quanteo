@@ -157,6 +157,10 @@ htmlcov/
 # uv
 uv.lock
 
+# Stock Miner (Phase 16) — 일별 parquet 캐시 커밋 금지
+screener/data/cache/*
+!screener/data/cache/.gitkeep
+
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/

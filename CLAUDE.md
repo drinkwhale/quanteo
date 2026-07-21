@@ -23,7 +23,7 @@ git branch --show-current
 
 ## 📊 현재 구현 상태
 
-**Phase 1~~15 전체 완료 (T001~~T097)** — 상세 현황은 [PROJECT_INDEX.md](PROJECT_INDEX.md) 참고
+**Phase 1~~16 전체 완료 (T001~~T109)** — 상세 현황은 [PROJECT_INDEX.md](PROJECT_INDEX.md) 참고
 
 | Phase | 내용                                   | Tasks     |
 | ----- | -------------------------------------- | --------- |
@@ -43,12 +43,13 @@ git branch --show-current
 | 13    | 백테스트 프레임워크                    | T077~T083 |
 | 14    | 프론트엔드 디자인 시스템 정비          | T084~T092 |
 | 15    | 단일종목 레버리지/인버스 전략 플러그인 | T093~T097 |
+| 16    | 일일 종목 추천 시스템 (Stock Miner)    | T098~T109 |
 
 **다음:** 신규 Phase 계획 필요 (specs/tasks.md 참고)
 
 주요 구현 모듈: `core/config`, `core/adapters/toss/` (auth/rest/models), `core/adapters/base.py` (BrokerAdapter Protocol), `core/store/`, `core/marketdata/`, `core/events/`,
 `core/strategy/`(indicators·plugins 포함), `core/risk/`, `core/execution/`, `core/api/`, `core/notifier/`, `core/backtest/`, `dashboard/` (React+Vite+Tailwind, shadcn/ui),
-`info/` (ai_filter·news·fx·calendar·telegram·scheduler·main)
+`info/` (ai_filter·news·fx·calendar·telegram·scheduler·main), `screener/` (data/collectors·pipeline·agents·notify·scheduler·main — Stock Miner, 매매 코어와 완전 독립)
 
 코드를 작성하기 전에 현재 디렉토리 구조를 먼저 확인하고, 이 문서와 실제 상태가 다르면 **이 문서를 갱신**할 것.
 

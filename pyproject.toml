@@ -27,6 +27,9 @@ dependencies = [
     "icalendar>=5.0",
     "pytz>=2024.1",
     "apscheduler>=3.10",
+    # Phase 16 — 일일 종목 추천 시스템 (Stock Miner)
+    "pykrx>=1.0",
+    "pyarrow>=17.0",
 ]
 
 [dependency-groups]
@@ -45,7 +48,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "info"]
+packages = ["core", "info", "screener"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

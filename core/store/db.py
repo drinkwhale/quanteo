@@ -7,6 +7,7 @@ StateStore: 단일 aiosqlite 연결을 관리하는 컨텍스트 매니저.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -62,6 +63,17 @@ class PendingOrder:
     status: str
     created_at: str
     broker_order_id: str | None = None
+
+
+@dataclass(frozen=True)
+class WatchlistEntry:
+    """Stock Miner(Phase 16) 워치리스트 항목."""
+
+    symbol: str
+    name: str
+    added_at: str
+    source: str
+    score_snapshot: dict
 
 
 class StateStore:
@@ -305,6 +317,51 @@ class StateStore:
                 ),
             )
         await self.conn.commit()
+
+    # ---------------------------------------------------------------------------
+    # 워치리스트 (Phase 16 — Stock Miner, bounded autonomy)
+    # ---------------------------------------------------------------------------
+
+    async def upsert_watchlist(
+        self,
+        symbol: str,
+        name: str,
+        score_snapshot: dict,
+        source: str = "screener",
+    ) -> None:
+        """워치리스트에 종목을 등록한다 (이미 있으면 스냅샷·시각 갱신).
+
+        사용자의 명시적 승인(인라인 버튼) 하에서만 호출되어야 한다 — 이
+        메서드 자체는 자동 매매 경로와 연결되지 않는다(주문 실행 없음).
+        """
+        now = datetime.now(UTC).isoformat()
+        await self.conn.execute(
+            """
+            INSERT INTO watchlist (symbol, name, added_at, source, score_snapshot)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(symbol) DO UPDATE SET
+                name = excluded.name,
+                added_at = excluded.added_at,
+                score_snapshot = excluded.score_snapshot
+            """,
+            (symbol, name, now, source, json.dumps(score_snapshot, ensure_ascii=False)),
+        )
+        await self.conn.commit()
+
+    async def get_watchlist(self) -> list[WatchlistEntry]:
+        """전체 워치리스트를 등록일 순으로 반환한다."""
+        cursor = await self.conn.execute("SELECT * FROM watchlist ORDER BY added_at")
+        rows = await cursor.fetchall()
+        return [
+            WatchlistEntry(
+                symbol=row["symbol"],
+                name=row["name"],
+                added_at=row["added_at"],
+                source=row["source"],
+                score_snapshot=json.loads(row["score_snapshot"]) if row["score_snapshot"] else {},
+            )
+            for row in rows
+        ]
 
     async def __aenter__(self) -> StateStore:
         await self.open()
