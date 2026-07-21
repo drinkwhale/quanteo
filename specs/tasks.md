@@ -778,7 +778,7 @@
   - 스펙 8절 "Phase 3" 완료 기준: LLM 요약 없이 정량 데이터만으로 텔레그램 발송 확인
   - `tests/screener/test_telegram_reporter.py`: MockTelegramNotifier로 포맷 스냅샷 검증
 
-- [ ] **T106** `agents/analyst_agent.py` — LLM 근거 요약 생성 (Claude API)
+- [x] **T106** `agents/analyst_agent.py` — LLM 근거 요약 생성 (Claude API)
   - `StockSummary` 데이터클래스(스펙 6절 JSON 스키마 그대로): `ticker`, `name`, `one_line_thesis`,
     `protips: list[str]`, `risk_flags: list[str]`, `score_breakdown: dict[str, int]`
   - `AnalystAgent.summarize(stock: RankedStock, disclosures: list[Disclosure]) -> StockSummary`: Claude API
