@@ -191,7 +191,10 @@ class PykrxClient:
             columns: 시가, 고가, 저가, 종가, 거래량 (index: 날짜, datetime64,
                 오래된 것부터 최신 순). 조회 실패 시 빈 DataFrame.
         """
-        cache_path = self._cache_dir / f"{end_date}_{ticker}_hist.parquet"
+        # lookback_days도 캐시 키에 포함 — 같은 (ticker, end_date)를 다른
+        # lookback_days로 호출하면 캐시가 다른 기간의 데이터를 조용히
+        # 반환하는 문제를 방지한다.
+        cache_path = self._cache_dir / f"{end_date}_{ticker}_{lookback_days}d_hist.parquet"
         if cache_path.exists():
             return pd.read_parquet(cache_path)
 

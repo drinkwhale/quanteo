@@ -254,6 +254,31 @@ async def test_fetch_ohlcv_history_returns_and_caches(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_ohlcv_history_cache_key_includes_lookback_days(tmp_path: Path) -> None:
+    # 같은 (ticker, end_date)라도 lookback_days가 다르면 별도 캐시를 써야 한다
+    # — 안 그러면 다른 기간의 캐시 결과를 잘못 반환하게 된다.
+    client = PykrxClient(cache_dir=tmp_path)
+    short_df = pd.DataFrame(
+        {"시가": [100], "고가": [102], "저가": [99], "종가": [101], "거래량": [1000]},
+        index=pd.date_range("2026-07-01", periods=1, freq="B"),
+    )
+    long_df = pd.DataFrame(
+        {"시가": [100, 101], "고가": [102, 103], "저가": [99, 100], "종가": [101, 102], "거래량": [1000, 1100]},
+        index=pd.date_range("2026-06-01", periods=2, freq="B"),
+    )
+
+    with patch(
+        "pykrx.stock.get_market_ohlcv", side_effect=[short_df, long_df]
+    ) as mock_call:
+        df_short = await client.fetch_ohlcv_history("005930", "20260721", lookback_days=10)
+        df_long = await client.fetch_ohlcv_history("005930", "20260721", lookback_days=40)
+
+    assert len(df_short) == 1
+    assert len(df_long) == 2
+    assert mock_call.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_fetch_ohlcv_history_returns_empty_on_failure(tmp_path: Path) -> None:
     client = PykrxClient(cache_dir=tmp_path)
 
