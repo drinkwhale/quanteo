@@ -42,6 +42,23 @@ async def test_important_report_filtered():
 
 
 @pytest.mark.asyncio
+async def test_calls_list_with_correct_kwargs():
+    """OpenDartReader.list()의 실제 파라미터명은 start/end다 (bgn_de/end_de 아님)."""
+    collector = DartCollector(api_key="test-key")
+    mock_dart = MagicMock()
+    mock_dart.list.return_value = pd.DataFrame()
+
+    with patch("info.news.dart_collector.OpenDartReader", return_value=mock_dart):
+        await collector.fetch()
+
+    _, kwargs = mock_dart.list.call_args
+    assert "start" in kwargs
+    assert "end" in kwargs
+    assert "bgn_de" not in kwargs
+    assert "end_de" not in kwargs
+
+
+@pytest.mark.asyncio
 async def test_unimportant_report_excluded():
     collector = DartCollector(api_key="test-key")
     df = _make_dart_df([
