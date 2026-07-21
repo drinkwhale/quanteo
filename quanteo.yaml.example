@@ -67,6 +67,26 @@ info:
     chat_id: ""
 
 # ──────────────────────────────────────────────────────
+# Phase 16 — 일일 종목 추천 시스템 (Stock Miner, 선택)
+# 완전 독립 프로세스로 실행(`uv run python -m screener.main`).
+# core/app.py·info/main.py 어느 쪽과도 wiring되지 않는다.
+# ──────────────────────────────────────────────────────
+screener:
+  enabled: false             # true 로 바꾸면 screener.main이 스케줄러를 시작
+
+  # DART 재무제표·공시 수집 — 비워두면 위 info.dart.api_key를 그대로 재사용
+  dart:
+    api_key: ""
+
+  # 종목 요약(ProTip) 생성용 Claude API — 비워두면 위 info.anthropic.api_key 재사용
+  anthropic:
+    api_key: ""
+
+  # 리포트 발송 대상 chat_id — 비워두면 위 telegram.chat_id 재사용
+  telegram:
+    chat_id: ""
+
+# ──────────────────────────────────────────────────────
 # KIS(한국투자증권) Open Trading API — 자격증명 자리만 마련
 # ⚠️ 아직 core/config/settings.py의 Settings 모델·어댑터에 연결되지 않음.
 #    Phase 8-9에서 "KIS 완전 제거, Toss 단일 브로커" 결정을 내린 바 있어,

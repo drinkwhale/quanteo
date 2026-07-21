@@ -70,6 +70,21 @@ class InfoSettings(BaseModel):
     telegram_chat_id: str = ""  # info 전용 chat_id (없으면 main telegram.chat_id 사용)
 
 
+class ScreenerSettings(BaseModel):
+    """일일 종목 추천 시스템(Stock Miner, Phase 16) 설정.
+
+    스코어링 가중치·유니버스 필터 임계값 등은 여기 두지 않는다 — 그건
+    `config_path`가 가리키는 screener/config/settings.yaml의 몫이다. 여기는
+    quanteo.yaml에서 오는 자격증명·활성화 플래그만 담는다.
+    """
+
+    enabled: bool = False
+    config_path: str = "screener/config/settings.yaml"
+    dart_api_key: str = ""
+    anthropic_api_key: str = ""
+    telegram_chat_id: str = ""
+
+
 class Settings(BaseModel):
     """quanteo 전체 설정."""
 
@@ -78,6 +93,7 @@ class Settings(BaseModel):
     telegram: TelegramConfig = TelegramConfig()
     info: InfoSettings = InfoSettings()
     kis: KisSettings = KisSettings()
+    screener: ScreenerSettings = ScreenerSettings()
 
 
 _DEFAULT_CONFIG_PATH = Path.home() / "quanteo" / "config" / "quanteo.yaml"
@@ -154,10 +170,28 @@ def load_settings(
         base_url=kis_raw.get("prod_url", "https://openapi.koreainvestment.com:9443"),
     )
 
+    screener_raw = raw.get("screener", {})
+    screener = ScreenerSettings(
+        enabled=screener_raw.get("enabled", False),
+        config_path=os.environ.get(
+            "SCREENER_CONFIG_PATH", "screener/config/settings.yaml"
+        ),
+        # DART/Anthropic 키는 info: 섹션과 공유 재사용이 기본값 — screener: 섹션에
+        # 값이 없으면 info.* 키를 그대로 물려받는다.
+        dart_api_key=screener_raw.get("dart", {}).get("api_key", "") or info.dart_api_key,
+        anthropic_api_key=(
+            screener_raw.get("anthropic", {}).get("api_key", "") or info.anthropic_api_key
+        ),
+        telegram_chat_id=(
+            screener_raw.get("telegram", {}).get("chat_id", "") or telegram.chat_id
+        ),
+    )
+
     return Settings(
         market=market,
         credentials=credentials,
         telegram=telegram,
         info=info,
         kis=kis,
+        screener=screener,
     )

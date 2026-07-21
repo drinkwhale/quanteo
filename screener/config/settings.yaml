@@ -1,0 +1,22 @@
+# Stock Miner(Phase 16) 파이프라인 설정.
+# 자격증명(API 키)은 여기 두지 않는다 — quanteo.yaml의 screener: 섹션 참고.
+
+universe:
+  min_market_cap: 50_000_000_000          # 500억 미만 제외
+  min_avg_trading_value_20d: 500_000_000  # 최근 20일 평균 거래대금 5억 미만 제외
+  exclude_administrative: true            # 관리종목·거래정지 제외
+
+scoring_weights:
+  growth: 0.2
+  profitability: 0.2
+  cashflow: 0.2
+  stability: 0.2
+  valuation: 0.2
+
+report:
+  top_n: 10
+  send_time_kst: "15:40"
+
+llm:
+  model: "claude-sonnet-4-6"
+  max_tokens_per_stock: 400
