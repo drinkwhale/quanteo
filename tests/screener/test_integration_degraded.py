@@ -54,6 +54,17 @@ def _fund_df(market: str) -> pd.DataFrame:
     )
 
 
+def _ohlcv_side_effect(*args, **kwargs):
+    """get_market_ohlcv는 두 가지 시그니처로 호출된다.
+
+    - 전종목 스냅샷: get_market_ohlcv(date, market=market)
+    - 단일 종목 기간 히스토리(BBC 매수 원칙 판정용): get_market_ohlcv(start, end, ticker)
+    """
+    if "market" in kwargs:
+        return _ohlcv_df(kwargs["market"])
+    return pd.DataFrame()
+
+
 @pytest.mark.asyncio
 async def test_dart_and_claude_down_still_sends_quant_report(tmp_path: Path) -> None:
     pykrx = PykrxClient(cache_dir=tmp_path / "pykrx")
@@ -82,7 +93,7 @@ async def test_dart_and_claude_down_still_sends_quant_report(tmp_path: Path) -> 
     mock_httpx_client.__aexit__.return_value = None
 
     with (
-        patch("pykrx.stock.get_market_ohlcv", side_effect=lambda date, market: _ohlcv_df(market)),
+        patch("pykrx.stock.get_market_ohlcv", side_effect=_ohlcv_side_effect),
         patch("pykrx.stock.get_market_cap", side_effect=lambda date, market: _cap_df(market)),
         patch(
             "pykrx.stock.get_market_fundamental", side_effect=lambda date, market: _fund_df(market)

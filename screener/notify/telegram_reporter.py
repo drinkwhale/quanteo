@@ -150,6 +150,8 @@ class ScreenerNotifier:
                     text += f"\n✅ {tip}"
                 for flag in summary.risk_flags:
                     text += f"\n⚠️ {flag}"
+                if summary.bbc_principle is not None:
+                    text += f"\n📐 박병창 매수 원칙: 제{summary.bbc_principle}원칙 — {summary.bbc_reason}"
 
             keyboard = _watchlist_keyboard(ticker)
             await self._send_raw(text, reply_markup=keyboard)

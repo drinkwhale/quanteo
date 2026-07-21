@@ -170,6 +170,54 @@ class PykrxClient:
         return mapping
 
     # ------------------------------------------------------------------
+    # 단일 종목 일봉 히스토리 (박병창 매수 3원칙 판정용)
+    # ------------------------------------------------------------------
+
+    async def fetch_ohlcv_history(
+        self, ticker: str, end_date: str, lookback_days: int = 40
+    ) -> pd.DataFrame:
+        """단일 종목의 최근 일봉 히스토리를 조회한다.
+
+        전종목 대량조회와 달리 단일 종목·기간 조회 엔드포인트는 로그인 세션이
+        없어도 동작한다(실거래 확인 완료).
+
+        Args:
+            ticker: 종목코드.
+            end_date: 조회 종료일 (YYYYMMDD).
+            lookback_days: end_date 기준 역산할 달력일수(거래일 아님 — 주말·
+                휴장 포함 여유를 둔 값. 기본 40일이면 통상 20영업일 이상 확보).
+
+        Returns:
+            columns: 시가, 고가, 저가, 종가, 거래량 (index: 날짜, datetime64,
+                오래된 것부터 최신 순). 조회 실패 시 빈 DataFrame.
+        """
+        cache_path = self._cache_dir / f"{end_date}_{ticker}_hist.parquet"
+        if cache_path.exists():
+            return pd.read_parquet(cache_path)
+
+        start_date = (
+            datetime.strptime(end_date, "%Y%m%d") - timedelta(days=lookback_days)
+        ).strftime("%Y%m%d")
+        loop = asyncio.get_running_loop()
+        df = await loop.run_in_executor(
+            None, self._fetch_ohlcv_history_sync, ticker, start_date, end_date
+        )
+        if not df.empty:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(cache_path)
+        return df
+
+    def _fetch_ohlcv_history_sync(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
+        from pykrx import stock
+
+        try:
+            df = stock.get_market_ohlcv(start_date, end_date, ticker)
+        except Exception as exc:
+            logger.warning("일봉 히스토리 조회 실패(%s): %s", ticker, exc)
+            return pd.DataFrame()
+        return df if df is not None else pd.DataFrame()
+
+    # ------------------------------------------------------------------
     # 투자자별 순매수 (외인/기관)
     # ------------------------------------------------------------------
 
