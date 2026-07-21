@@ -756,7 +756,7 @@
   - `tests/screener/test_scorer.py`: 5축 각 계산식 검증, 역방향 정규화(밸류에이션) 방향성 확인, 결측치
     중앙값 대체 검증
 
-- [ ] **T104** `pipeline/ranker.py` — 랭킹 산출 + 필터 레이어(수급/기술/모멘텀)
+- [x] **T104** `pipeline/ranker.py` — 랭킹 산출 + 필터 레이어(수급/기술/모멘텀)
   - `rank_top_n(scored_df: pd.DataFrame, top_n: int = 50) -> pd.DataFrame`: 가중합 스코어 기준 상위
     30~50개 + 원본 지표값 반환
   - **필터 레이어(스코어 미합산, 부가 정보 전용, 스펙 5절):**

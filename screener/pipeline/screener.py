@@ -102,18 +102,23 @@ def filter_universe(
     return result
 
 
-async def compute_avg_trading_value_20d(
-    client: PykrxClient, date: str, days: int = 20
+async def average_over_trading_days(
+    client: PykrxClient, date: str, column: str, days: int = 20
 ) -> pd.Series:
-    """최근 `days` 거래일(월~금)의 티커별 평균 거래대금을 계산한다.
+    """최근 `days` 거래일(월~금)의 티커별 `column` 평균을 계산한다.
+
+    `PykrxClient.fetch_universe()`가 반환하는 컬럼(trading_value, volume 등)
+    아무거나에 재사용 가능한 일반 헬퍼 — 20일 평균 거래대금(T100)과
+    거래량 급증 배수(T104)가 공유한다.
 
     Args:
         client: 시세 조회에 사용할 PykrxClient.
         date: 기준일 (YYYYMMDD). 이 날짜를 포함해 과거로 거슬러 올라간다.
+        column: 평균낼 컬럼명 (예: "trading_value", "volume").
         days: 집계할 거래일 수.
 
     Returns:
-        index=ticker, value=평균 거래대금(원) Series.
+        index=ticker, value=평균값 Series.
 
     NOTE: 주말은 건너뛰지만 임시공휴일까지는 걸러내지 못한다 — 공휴일은
     PykrxClient.fetch_universe() 내부의 직전 영업일 폴백이 흡수하지만, 그
@@ -129,14 +134,21 @@ async def compute_avg_trading_value_20d(
         if cursor.weekday() < 5:  # Mon-Fri만
             day_str = cursor.strftime("%Y%m%d")
             snapshot = await client.fetch_universe(day_str)
-            if not snapshot.empty and "trading_value" in snapshot.columns:
-                frames.append(snapshot[["ticker", "trading_value"]])
+            if not snapshot.empty and column in snapshot.columns:
+                frames.append(snapshot[["ticker", column]])
         cursor -= timedelta(days=1)
         checked += 1
 
     if not frames:
-        logger.warning("20일 평균 거래대금 계산 실패 — 유효 거래일 데이터 없음")
-        return pd.Series(dtype=float, name="trading_value")
+        logger.warning("%d일 평균(%s) 계산 실패 — 유효 거래일 데이터 없음", days, column)
+        return pd.Series(dtype=float, name=column)
 
     combined = pd.concat(frames)
-    return combined.groupby("ticker")["trading_value"].mean()
+    return combined.groupby("ticker")[column].mean()
+
+
+async def compute_avg_trading_value_20d(
+    client: PykrxClient, date: str, days: int = 20
+) -> pd.Series:
+    """최근 `days` 거래일의 티커별 평균 거래대금을 계산한다 (유니버스 필터용)."""
+    return await average_over_trading_days(client, date, "trading_value", days=days)
