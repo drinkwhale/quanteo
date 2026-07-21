@@ -17,11 +17,13 @@ COPY pyproject.toml uv.lock ./
 # 프로덕션 의존성만 /build/.venv에 설치 (dev 그룹 제외)
 RUN uv sync --frozen --no-dev --no-install-project
 
-# 소스 복사 후 프로젝트 자체 설치 (core/ 트레이딩 코어 + info/ 정보수집·알람 서브시스템)
+# 소스 복사 후 프로젝트 자체 설치 (core/ 트레이딩 코어 + info/ 정보수집·알람 서브시스템
+# + screener/ 종목 발굴 서브시스템, Phase 16)
 # README.md도 함께 복사 — pyproject.toml의 readme 필드를 hatchling이 빌드 시
 # 참조하므로 없으면 "uv sync"가 OSError로 실패한다.
 COPY core/ ./core/
 COPY info/ ./info/
+COPY screener/ ./screener/
 COPY README.md ./
 RUN uv sync --frozen --no-dev
 
@@ -41,6 +43,7 @@ WORKDIR /app
 COPY --from=builder /build/.venv /app/.venv
 COPY --from=builder /build/core/ ./core/
 COPY --from=builder /build/info/ ./info/
+COPY --from=builder /build/screener/ ./screener/
 
 # pyproject.toml은 패키지 메타데이터용으로 포함
 COPY pyproject.toml ./
@@ -68,5 +71,10 @@ USER quanteo
 # 시에는 컨테이너가 죽지 않고 ERROR 로그만 남긴 채 조용히 비활성화되므로,
 # 실제 기동 여부는 GET /status 응답의 info_enabled 필드로 확인할 것.
 # 트레이딩 포함: --with-trading --i-understand-real-money 추가
+#
+# screener/(Stock Miner, Phase 16)는 core.app에 통합되지 않은 완전히 별도의
+# 프로세스라 이 ENTRYPOINT/CMD로는 기동되지 않는다 — docker-compose.yml의
+# quanteo-screener 서비스가 동일 이미지에서 entrypoint를
+# ["python", "-m", "screener.main"]으로 덮어써서 별도 컨테이너로 기동한다.
 ENTRYPOINT ["python", "-m", "core.app"]
 CMD ["--market", "domestic", "--host", "0.0.0.0", "--port", "8000", "--with-info"]

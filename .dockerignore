@@ -5,6 +5,9 @@
 .env*
 kis_devlp.yaml
 
+# 예외: screener 파이프라인 기본 설정(가중치·임계값) — 자격증명 없음, 이미지에 포함 필요
+!screener/config/settings.yaml
+
 # 개발/테스트 전용
 tests/
 .venv/
