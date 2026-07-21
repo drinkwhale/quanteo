@@ -769,7 +769,7 @@
   - `tests/screener/test_ranker.py`: 랭킹 정렬 정확도, 동점자 우선순위, 필터 레이어 값이 최종 스코어에
     영향을 주지 않음을 검증(회귀 방지)
 
-- [ ] **T105** `notify/telegram_reporter.py` — 정량 데이터 리포트 발송 (LLM 요약 없음)
+- [x] **T105** `notify/telegram_reporter.py` — 정량 데이터 리포트 발송 (LLM 요약 없음)
   - `ScreenerNotifier`: `core/notifier/TelegramNotifier`를 **생성자 주입**으로 받아 래핑 (T062
     `InfoNotifier`와 동일한 중복 구현 금지 원칙)
   - `send_daily_report(ranked: pd.DataFrame, top_n: int = 10)`: 스펙 7.2절 포맷에서 LLM 요약 항목

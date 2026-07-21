@@ -15,6 +15,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
+from aiogram.types import InlineKeyboardMarkup, Message
 
 from core.notifier.base import NotifyEvent, NotifyLevel, level_rank
 
@@ -121,6 +122,27 @@ class TelegramNotifier:
             raise
         finally:
             await self._bot.session.close()
+
+    async def send_raw(
+        self, text: str, reply_markup: InlineKeyboardMarkup | None = None
+    ) -> Message:
+        """큐를 우회해 즉시 전송한다. 세션은 닫지 않는다 (호출자가 여러 건 연속 전송 가능).
+
+        인라인 키보드가 필요한 알람(Stock Miner 리포트 등) 전용 — NotifyEvent
+        포맷을 거치지 않고 원문 텍스트를 그대로 보낸다. 전송 실패 시 예외를
+        호출자에게 전파한다 (재시도·DLQ 정책은 호출자 책임).
+        """
+        try:
+            return await self._bot.send_message(
+                chat_id=self._chat_id, text=text, reply_markup=reply_markup
+            )
+        except TelegramAPIError:
+            logger.error("Telegram API 오류 (send_raw)", exc_info=False)
+            raise
+
+    async def close(self) -> None:
+        """봇 세션을 닫는다 (send_raw()로 연속 전송한 뒤 호출)."""
+        await self._bot.session.close()
 
     # ------------------------------------------------------------------
     # 내부 구현
