@@ -15,7 +15,7 @@ scoring_weights:
 
 report:
   top_n: 10
-  send_time_kst: "15:40"
+  send_time_kst: "18:30"
 
 llm:
   model: "claude-sonnet-4-6"

@@ -168,14 +168,14 @@ class TestDailyJobScheduler:
         trigger = jobs[0].trigger
         assert str(trigger.timezone) == "Asia/Seoul"
 
-    def test_cron_fields_match_1540_weekdays(self) -> None:
+    def test_cron_fields_match_1830_weekdays(self) -> None:
         job, _ = _make_job()
         scheduler = DailyJobScheduler(job)
 
         trigger = scheduler.scheduler.get_jobs()[0].trigger
         field_map = {f.name: str(f) for f in trigger.fields}
-        assert field_map["hour"] == "15"
-        assert field_map["minute"] == "40"
+        assert field_map["hour"] == "18"
+        assert field_map["minute"] == "30"
         assert field_map["day_of_week"] == "mon-fri"
 
     def test_misfire_and_coalesce_configured(self) -> None:
