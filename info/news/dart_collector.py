@@ -76,7 +76,7 @@ class DartCollector:
         today = datetime.now(tz=KST).strftime("%Y%m%d")
         week_ago = (datetime.now(tz=KST) - timedelta(days=7)).strftime("%Y%m%d")
 
-        raw = dart.list(corp_code, bgn_de=week_ago, end_de=today)
+        raw = dart.list(corp_code, start=week_ago, end=today)
         if raw is None or len(raw) == 0:
             return []
 
