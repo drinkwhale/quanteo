@@ -1,7 +1,7 @@
 """전체 파이프라인 오케스트레이션 + 크론 등록.
 
-Collector → Screener → Scorer → Ranker → AnalystAgent → Reporter 순서로
-매 거래일 18:30 KST에 실행한다 (T067 InfoScheduler와 동일한 타임존 원칙).
+Collector → Screener → Scorer → Ranker → BBC매수원칙판정 → AnalystAgent → Reporter
+순서로 매 거래일 18:30 KST에 실행한다 (T067 InfoScheduler와 동일한 타임존 원칙).
 
 18:30 실행 이유: pykrx 투자자별 순매수 데이터(외인/기관)는 장 마감 직후가 아니라
 저녁 무렵 확정되므로, 15:40처럼 확정 전에 조회하면 foreign_institution_streak() 등
@@ -21,6 +21,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from screener.agents.analyst_agent import RankedStock, StockSummary
+from screener.pipeline.bbc_timing import assess_buy_principle, candles_from_history
 from screener.pipeline.ranker import (
     earnings_surprise_flag,
     foreign_institution_streak,
@@ -175,16 +176,28 @@ class DailyJob:
 
         ranked = rank_top_n(merged, top_n=self._universe_top_n)
 
-        # 4) AnalystAgent — 상위 report_top_n개만 LLM 요약 (비용 통제)
+        # 4) 박병창 매수 3원칙 판정 — 상위 report_top_n개만(비용/호출 통제).
+        #    라이브 트레이딩과 동일한 core.strategy.plugins.bbc_buy.evaluate_buy()를
+        #    일봉 히스토리에 재사용한다 (screener/pipeline/bbc_timing.py 참고).
+        top_tickers = ranked.head(self._report_top_n)["ticker"].tolist()
+        bbc_signals = {}
+        for ticker in top_tickers:
+            history = await self._pykrx.fetch_ohlcv_history(ticker, date)
+            candles = candles_from_history(history, ticker)
+            bbc_signals[ticker] = assess_buy_principle(candles)
+
+        # 5) AnalystAgent — 상위 report_top_n개만 LLM 요약 (비용 통제)
         summaries: dict[str, StockSummary] = {}
         for _, row in ranked.head(self._report_top_n).iterrows():
             stock = RankedStock.from_row(row)
             summaries[stock.ticker] = await self._analyst.summarize(
-                stock, disclosures.get(stock.ticker, [])
+                stock,
+                disclosures.get(stock.ticker, []),
+                bbc_signal=bbc_signals.get(stock.ticker),
             )
         self.last_summaries = summaries
 
-        # 5) Reporter
+        # 6) Reporter
         await self._notifier.send_daily_report_with_summaries(
             ranked, summaries, top_n=self._report_top_n
         )

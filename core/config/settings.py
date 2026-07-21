@@ -83,6 +83,8 @@ class ScreenerSettings(BaseModel):
     dart_api_key: str = ""
     anthropic_api_key: str = ""
     telegram_chat_id: str = ""
+    krx_id: str = ""
+    krx_pw: str = ""
 
 
 class Settings(BaseModel):
@@ -185,6 +187,11 @@ def load_settings(
         telegram_chat_id=(
             screener_raw.get("telegram", {}).get("chat_id", "") or telegram.chat_id
         ),
+        # KRX가 대량 조회 엔드포인트에 로그인 세션을 요구하므로(pykrx 내장
+        # KRX_ID/KRX_PW 로그인 지원) 별도 자격증명 — info:/dart:와 공유하지
+        # 않는다(KRX 개인 회원 계정, DART Open API 키와는 무관).
+        krx_id=screener_raw.get("krx", {}).get("id", ""),
+        krx_pw=screener_raw.get("krx", {}).get("pw", ""),
     )
 
     return Settings(

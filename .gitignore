@@ -161,6 +161,9 @@ uv.lock
 screener/data/cache/*
 !screener/data/cache/.gitkeep
 
+# OpenDartReader corp-code 캐시 (실행 시 cwd에 생성, 커밋 금지)
+docs_cache/
+
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/

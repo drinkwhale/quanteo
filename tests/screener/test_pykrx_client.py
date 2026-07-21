@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,8 +13,15 @@ from screener.data.collectors.pykrx_client import PykrxClient
 
 
 def _ohlcv_df(tickers: list[str]) -> pd.DataFrame:
+    # 실제 KRX 응답은 get_market_ohlcv에도 시가총액을 포함한다(실거래 조회로
+    # 확인) — cap과 겹치는 이 컬럼을 mock에서 빼먹으면 병합 버그를 놓친다.
     return pd.DataFrame(
-        {"종가": [10000] * len(tickers), "거래량": [1000] * len(tickers), "등락률": [1.0] * len(tickers)},
+        {
+            "종가": [10000] * len(tickers),
+            "거래량": [1000] * len(tickers),
+            "등락률": [1.0] * len(tickers),
+            "시가총액": [50_000_000_000] * len(tickers),
+        },
         index=pd.Index(tickers, name="티커"),
     )
 
@@ -55,8 +63,13 @@ async def test_fetch_universe_merges_ohlcv_cap_fundamental(tmp_path: Path) -> No
 
     assert set(df["ticker"]) == {"005930", "247540"}
     assert "market_cap" in df.columns
+    assert "shares_outstanding" in df.columns
     assert "per" in df.columns
     assert set(df["market"]) == {"KOSPI", "KOSDAQ"}
+    # ohlcv가 이미 시가총액을 갖고 있으면 그 값을 그대로 쓴다(cap과 겹쳐도
+    # join이 죽지 않아야 하고, cap 쪽 값으로 덮어쓰지 않아야 함).
+    assert (df["market_cap"] == 50_000_000_000).all()
+    assert (df["shares_outstanding"] == 10_000_000).all()
 
 
 @pytest.mark.asyncio
@@ -195,3 +208,81 @@ async def test_fetch_short_balance(tmp_path: Path) -> None:
         df = await client.fetch_short_balance("20260721")
 
     assert df.iloc[0]["short_balance"] == 1000
+
+
+def test_krx_credentials_set_env_when_both_provided(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KRX_ID", raising=False)
+    monkeypatch.delenv("KRX_PW", raising=False)
+
+    PykrxClient(cache_dir=tmp_path, krx_id="user", krx_pw="pass")
+
+    assert os.environ["KRX_ID"] == "user"
+    assert os.environ["KRX_PW"] == "pass"
+
+
+def test_krx_credentials_untouched_when_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KRX_ID", raising=False)
+    monkeypatch.delenv("KRX_PW", raising=False)
+
+    PykrxClient(cache_dir=tmp_path)
+
+    assert "KRX_ID" not in os.environ
+    assert "KRX_PW" not in os.environ
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_history_returns_and_caches(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+    history_df = pd.DataFrame(
+        {"시가": [100, 101], "고가": [102, 103], "저가": [99, 100], "종가": [101, 102], "거래량": [1000, 1100]},
+        index=pd.date_range("2026-07-01", periods=2, freq="B"),
+    )
+
+    with patch("pykrx.stock.get_market_ohlcv", return_value=history_df) as mock_call:
+        df = await client.fetch_ohlcv_history("005930", "20260721")
+        assert len(df) == 2
+        assert mock_call.call_count == 1
+
+        # 캐시 히트 — 같은 (end_date, ticker)로 재호출 시 pykrx 재호출 없음
+        df2 = await client.fetch_ohlcv_history("005930", "20260721")
+        assert len(df2) == 2
+        assert mock_call.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_history_cache_key_includes_lookback_days(tmp_path: Path) -> None:
+    # 같은 (ticker, end_date)라도 lookback_days가 다르면 별도 캐시를 써야 한다
+    # — 안 그러면 다른 기간의 캐시 결과를 잘못 반환하게 된다.
+    client = PykrxClient(cache_dir=tmp_path)
+    short_df = pd.DataFrame(
+        {"시가": [100], "고가": [102], "저가": [99], "종가": [101], "거래량": [1000]},
+        index=pd.date_range("2026-07-01", periods=1, freq="B"),
+    )
+    long_df = pd.DataFrame(
+        {"시가": [100, 101], "고가": [102, 103], "저가": [99, 100], "종가": [101, 102], "거래량": [1000, 1100]},
+        index=pd.date_range("2026-06-01", periods=2, freq="B"),
+    )
+
+    with patch(
+        "pykrx.stock.get_market_ohlcv", side_effect=[short_df, long_df]
+    ) as mock_call:
+        df_short = await client.fetch_ohlcv_history("005930", "20260721", lookback_days=10)
+        df_long = await client.fetch_ohlcv_history("005930", "20260721", lookback_days=40)
+
+    assert len(df_short) == 1
+    assert len(df_long) == 2
+    assert mock_call.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_ohlcv_history_returns_empty_on_failure(tmp_path: Path) -> None:
+    client = PykrxClient(cache_dir=tmp_path)
+
+    with patch("pykrx.stock.get_market_ohlcv", side_effect=Exception("network error")):
+        df = await client.fetch_ohlcv_history("005930", "20260721")
+
+    assert df.empty

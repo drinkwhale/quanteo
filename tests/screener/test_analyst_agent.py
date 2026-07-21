@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pandas as pd
 import pytest
 
+from core.strategy.plugins.bbc_buy import BbcBuySignal, EntryTime
 from screener.agents.analyst_agent import AnalystAgent, RankedStock, StockSummary
 
 
@@ -160,6 +161,86 @@ class TestSummarize:
 
         assert summary.protips == ["부채비율 낮음"]
         assert any("REVIEW REQUIRED" in flag for flag in summary.risk_flags)
+
+    @pytest.mark.asyncio
+    async def test_truncated_response_falls_back_with_clear_reason(self) -> None:
+        agent = AnalystAgent(api_key="test-key", max_tokens=400)
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "content": [{"text": '{"one_line_thesis": "잘린 응답', "type": "text"}],
+            "stop_reason": "max_tokens",
+        }
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summary = await agent.summarize(_stock(), disclosures=[])
+
+        assert summary.one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summary.risk_flags)
+
+    @pytest.mark.asyncio
+    async def test_bbc_signal_included_in_prompt_and_summary(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        resp = _claude_response(
+            {"one_line_thesis": "재무 건전성 양호", "protips": [], "risk_flags": []}
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        bbc_signal = BbcBuySignal(
+            principle=2, entry_time=EntryTime.AFTERNOON, reason="제2원칙 눌림목: 테스트"
+        )
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summary = await agent.summarize(_stock(), disclosures=[], bbc_signal=bbc_signal)
+
+        assert summary.bbc_principle == 2
+        assert summary.bbc_reason == "제2원칙 눌림목: 테스트"
+        sent_prompt = mock_client.post.call_args.kwargs["json"]["messages"][0]["content"]
+        assert "제2원칙 눌림목: 테스트" in sent_prompt
+
+    @pytest.mark.asyncio
+    async def test_no_bbc_signal_leaves_fields_none(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        resp = _claude_response(
+            {"one_line_thesis": "재무 건전성 양호", "protips": [], "risk_flags": []}
+        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summary = await agent.summarize(_stock(), disclosures=[])
+
+        assert summary.bbc_principle is None
+        assert summary.bbc_reason is None
+
+    @pytest.mark.asyncio
+    async def test_bbc_signal_preserved_in_fallback(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=Exception("connection error"))
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        bbc_signal = BbcBuySignal(
+            principle=3, entry_time=EntryTime.MORNING, reason="제3원칙 급락저점: 테스트"
+        )
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summary = await agent.summarize(_stock(), disclosures=[], bbc_signal=bbc_signal)
+
+        # Claude 장애 폴백이어도 결정론적 BBC 판정은 그대로 유지된다.
+        assert summary.bbc_principle == 3
+        assert summary.bbc_reason == "제3원칙 급락저점: 테스트"
+        assert summary.one_line_thesis == "정량 지표 기준 상위 랭크"
 
     @pytest.mark.asyncio
     async def test_clean_response_has_no_review_flag(self) -> None:
