@@ -804,7 +804,7 @@
     `ScreenerNotifier`를 통해 별도 에러 알림 발송(정상 리포트와 구분되는 `🚨 파이프라인 실패` 메시지)
   - `misfire_grace_time=300, coalesce=True` 설정 (T067과 동일)
   - `screener/main.py`: `DailyJob` + 스케줄러 wiring, 독립 프로세스 엔트리포인트(`uv run python -m
-    screener.main`). `core/app.py`와는 별도 프로세스로 기동 (info/main.py와 동일한 독립 실행 패턴)
+screener.main`). `core/app.py`와는 별도 프로세스로 기동 (info/main.py와 동일한 독립 실행 패턴)
   - `tests/screener/test_daily_job.py`: 크론 표현식·타임존 검증, 파이프라인 실패 시 재시도·에러 알림
     발송 검증, 개별 단계 mock으로 전체 흐름 검증
 
@@ -842,6 +842,7 @@
 > **설계 근거:** [`specs/stock-detail-chart-page.md`](stock-detail-chart-page.md).
 >
 > **설계 문서 대비 정정 사항 (구현 착수 전 확인 완료):**
+>
 > - 설계 문서가 참조하는 `specs/investor-flow-chart.md`와 "Phase 16 T103"(투자자 수급
 >   엔드포인트 근거)은 실제 저장소에 존재하지 않는다(작업 디렉토리·git 히스토리 모두 없음).
 >   Phase 16 T098~T109는 전부 종목 추천 스크리너(Stock Miner) 관련 태스크이며 프론트엔드나
@@ -856,7 +857,7 @@
 >   백테스트 등에서 사용 중이지만, Control API에는 이를 노출하는 라우트가 아직 없다 —
 >   T110에서 신규로 추가한다.
 
-- [ ] **T110** `core/api/routes/candles.py` — `GET /candles` 프록시 라우트 (신규 파일)
+- [x] **T110** `core/api/routes/candles.py` — `GET /candles` 프록시 라우트 (신규 파일)
   - `core/api/models.py`에 `CandleItem`(timestamp, open, high, low, close, volume), `CandleList`
     (items) 응답 모델 추가
   - `GET /candles?symbol=005930&interval=1d&count=100&before=&adjusted=true` — `interval`은
@@ -868,7 +869,7 @@
   - `tests/api/test_candles.py`: 정상 응답 파싱, `interval` 검증(422), `count` 상한, 브로커
     `None` → 503, 어댑터 예외 → 502
 
-- [ ] **T111** `dashboard/src/components/TabNav.tsx` — Tab Navigation 최초 구현 + `App.tsx` 통합
+- [x] **T111** `dashboard/src/components/TabNav.tsx` — Tab Navigation 최초 구현 + `App.tsx` 통합
   - `DESIGN.md` §5 "Tab Navigation" 스펙(현재 문서만 존재, 구현 없음) 최초 구현: active
     `border-accent text-white`, inactive `border-transparent text-muted hover:text-white`
   - `App.tsx` 최상단에 탭 2개 추가 — **"운용현황"**(기존 렌더링 내용 전부 이동) /
@@ -879,7 +880,7 @@
   - `tests/components/TabNav.test.tsx`: 탭 클릭 시 콘텐츠 전환, active 스타일 클래스 검증,
     키보드 포커스 확인
 
-- [ ] **T112** `lightweight-charts` 도입 + `PriceChart` 컴포넌트
+- [x] **T112** `lightweight-charts` 도입 + `PriceChart` 컴포넌트
   - `dashboard/package.json`에 `lightweight-charts` 의존성 추가(`npm install`)
   - `dashboard/src/components/chart/PriceChart.tsx` — `useRef` + `useEffect`로 `createChart()`
     래핑(언마운트 시 `chart.remove()`), 캔들 시리즈 + 거래량 시리즈를 같은 시간축의 별도
@@ -896,7 +897,7 @@
     `tests/components/chart/PriceChart.test.tsx`: 컨테이너 렌더 + 언마운트 시 `chart.remove()`
     호출 검증
 
-- [ ] **T113** `SymbolQuickPick` / `IntervalToggle` 컴포넌트
+- [x] **T113** `SymbolQuickPick` / `IntervalToggle` 컴포넌트
   - `dashboard/src/components/chart/SymbolQuickPick.tsx` — `useStockNames` 캐시(App.tsx에서
     이미 사용 중)를 재사용한 최근/보유 종목 chip 리스트 + 종목코드 직접 입력
     (`Strategy.tsx` `BacktestPanel`의 `<input placeholder="005930">` 패턴 재사용)
@@ -906,7 +907,7 @@
     `tests/components/chart/IntervalToggle.test.tsx`: chip 클릭 시 symbol 변경 콜백, 코드
     직접 입력 유효성(6자리 숫자), 토글 전환 검증
 
-- [ ] **T114** `dashboard/src/pages/StockDetail.tsx` — 종목상세 페이지 조립
+- [x] **T114** `dashboard/src/pages/StockDetail.tsx` — 종목상세 페이지 조립
   - `SymbolQuickPick` + `IntervalToggle` + `PriceChart`를 기존 `Panel` 컴포넌트 안에 조합
     (`Nested Cards Prohibited` 규칙 준수 — 차트는 Panel 콘텐츠지 별도 패널이 아님)
   - `App.tsx` "종목상세" 탭(T111 placeholder)을 이 페이지로 교체
@@ -916,7 +917,7 @@
   - 수동 QA: `npm run dev`로 실행해 종목 선택 → 차트 로드 → interval 전환 → 재조회까지
     브라우저에서 직접 확인
 
-- [ ] **T115** `DESIGN.md` 갱신
+- [x] **T115** `DESIGN.md` 갱신
   - §5 Components에 "Price Chart (Candlestick)" 항목 추가 — T112 색상 매핑 표 + "No-Ambiguity
     Rule의 의도된 예외"임을 명시(캔들 등락은 색상으로만 구분하는 업계 표준 관행, 호버
     툴팁이 접근성 완화책이라는 근거 포함)
