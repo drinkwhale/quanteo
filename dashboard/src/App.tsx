@@ -18,6 +18,7 @@ import { useStatus } from "./hooks/useStatus";
 import { useStockNames } from "./hooks/useStockNames";
 import { useStream } from "./hooks/useStream";
 import { StrategyPage } from "./pages/Strategy";
+import { StockDetail } from "./pages/StockDetail";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"ops" | "chart">("ops");
@@ -155,13 +156,7 @@ export default function App() {
           </>
         )}
 
-        {activeTab === "chart" && (
-          <Panel title="종목상세">
-            <div className="text-center py-12 text-muted">
-              종목 선택 UI (T113-T114에서 구현 예정)
-            </div>
-          </Panel>
-        )}
+        {activeTab === "chart" && <StockDetail recentSymbols={allSymbols} />}
       </main>
     </div>
   );
