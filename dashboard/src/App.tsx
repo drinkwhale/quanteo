@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
 import { AccountSummary } from "./components/AccountSummary";
 import { ControlPanel } from "./components/ControlPanel";
-import { FillsTable } from "./components/FillsTable";
 import { IndicesStrip } from "./components/IndicesStrip";
-import { OrdersTable } from "./components/OrdersTable";
+import { OrdersAndFillsPanel } from "./components/OrdersAndFillsPanel";
 import { Panel } from "./components/Panel";
-import { PositionsTable } from "./components/PositionsTable";
 import { StatusBar } from "./components/StatusBar";
 import { StreamConnectionBadge, StreamLog } from "./components/StreamLog";
 import { TabNav } from "./components/TabNav";
@@ -83,27 +81,15 @@ export default function App() {
               </h2>
 
               <div className="flex-1 min-w-0 space-y-4">
-                <Panel title="포지션" badge={`${posTotal}건`}>
-                  <PositionsTable
-                    positions={positions}
-                    error={posError}
-                    stockNames={stockNames}
-                  />
-                </Panel>
-
-                <Panel title="주문내역" badge={`${ordTotal}건`}>
-                  <OrdersTable
+                <Panel title="주문·체결">
+                  <OrdersAndFillsPanel
                     orders={orders}
-                    error={ordError}
-                    onRefetch={refetchOrders}
-                    stockNames={stockNames}
-                  />
-                </Panel>
-
-                <Panel title="체결내역" badge={`${fillTotal}건`}>
-                  <FillsTable
                     fills={fills}
-                    error={fillError}
+                    ordersError={ordError}
+                    fillsError={fillError}
+                    ordersTotal={ordTotal}
+                    fillsTotal={fillTotal}
+                    onRefetch={refetchOrders}
                     stockNames={stockNames}
                   />
                 </Panel>
