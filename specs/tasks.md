@@ -836,6 +836,95 @@
 
 ---
 
+## Phase 17 — 종목 상세 차트 페이지
+
+> **목표:** 종목을 선택하면 캔들(가격) 차트를 볼 수 있는 화면을 대시보드에 추가한다.
+> **설계 근거:** [`specs/stock-detail-chart-page.md`](stock-detail-chart-page.md).
+>
+> **설계 문서 대비 정정 사항 (구현 착수 전 확인 완료):**
+> - 설계 문서가 참조하는 `specs/investor-flow-chart.md`와 "Phase 16 T103"(투자자 수급
+>   엔드포인트 근거)은 실제 저장소에 존재하지 않는다(작업 디렉토리·git 히스토리 모두 없음).
+>   Phase 16 T098~T109는 전부 종목 추천 스크리너(Stock Miner) 관련 태스크이며 프론트엔드나
+>   `GET /api/investor-flow`와 무관하다. **따라서 이번 Phase는 가격 차트만 다루고
+>   InvestorFlowPanel(하단 수급 패널) 연동은 범위에서 제외한다** — 사용자 확인 완료.
+> - 설계 문서가 "이미 분리돼 있다"고 서술한 `MARKET_DATA_CHART` 스로틀러 그룹은 코드에
+>   존재하지 않는다. `TossRestClient.get_candles()`는 현재 `_request_market()`을 통해 기존
+>   `_market_throttler`(시세·잔고 공용, 5 cps)를 그대로 사용한다. `CLAUDE.md`의 Rate Limit
+>   규칙은 `MARKET_DATA`/`ORDER` 버킷 분리만 요구하므로, 실제 폭주가 관측되기 전까지는
+>   차트 전용 버킷을 신설하지 않는다(T110 참고).
+> - 캔들 API(`TossRestClient.get_candles()`, `core/adapters/toss/rest.py:925`)는 이미 구현돼
+>   백테스트 등에서 사용 중이지만, Control API에는 이를 노출하는 라우트가 아직 없다 —
+>   T110에서 신규로 추가한다.
+
+- [ ] **T110** `core/api/routes/candles.py` — `GET /candles` 프록시 라우트 (신규 파일)
+  - `core/api/models.py`에 `CandleItem`(timestamp, open, high, low, close, volume), `CandleList`
+    (items) 응답 모델 추가
+  - `GET /candles?symbol=005930&interval=1d&count=100&before=&adjusted=true` — `interval`은
+    `Literal["1m", "1d"]`로 검증(그 외 값은 422), `count`는 `Query(..., le=200)`로 상한 적용
+  - `container.broker`가 `None`이면 503 (`market.py`의 기존 브로커 부재 처리 패턴 재사용)
+  - `TossRestClient.get_candles()` 호출, 예외 시 502 (`market.py`의 기존 예외 처리 패턴 재사용)
+  - 신규 스로틀러 버킷은 만들지 않음 — 기존 `_market_throttler` 공유(위 정정 사항 참고)
+  - `core/api/app.py`에 `app.include_router(candles.router, tags=["차트"])` 등록
+  - `tests/api/test_candles.py`: 정상 응답 파싱, `interval` 검증(422), `count` 상한, 브로커
+    `None` → 503, 어댑터 예외 → 502
+
+- [ ] **T111** `dashboard/src/components/TabNav.tsx` — Tab Navigation 최초 구현 + `App.tsx` 통합
+  - `DESIGN.md` §5 "Tab Navigation" 스펙(현재 문서만 존재, 구현 없음) 최초 구현: active
+    `border-accent text-white`, inactive `border-transparent text-muted hover:text-white`
+  - `App.tsx` 최상단에 탭 2개 추가 — **"운용현황"**(기존 렌더링 내용 전부 이동) /
+    **"종목상세"**(T114에서 채울 placeholder). 탭 상태는 로컬 `useState`, 신규 의존성 없음
+  - `StatusBar`는 탭 밖 공통 영역에 유지(탭 전환과 무관하게 봇 상태 인지 유지, `PRODUCT.md`
+    "화면 전환보다 현재 상태 파악이 우선" 원칙)
+  - 키보드 접근성: `focus-visible:outline-signal-blue` (T086 패턴 재사용)
+  - `tests/components/TabNav.test.tsx`: 탭 클릭 시 콘텐츠 전환, active 스타일 클래스 검증,
+    키보드 포커스 확인
+
+- [ ] **T112** `lightweight-charts` 도입 + `PriceChart` 컴포넌트
+  - `dashboard/package.json`에 `lightweight-charts` 의존성 추가(`npm install`)
+  - `dashboard/src/components/chart/PriceChart.tsx` — `useRef` + `useEffect`로 `createChart()`
+    래핑(언마운트 시 `chart.remove()`), 캔들 시리즈 + 거래량 시리즈를 같은 시간축의 별도
+    pane으로 구성
+  - 색상 매핑(설계 문서 §3): 상승 `#22c55e`(live-green), 하락 `#ef4444`(alert-red), 배경
+    투명, 그리드 `#1f2630`(graphite-line), 크로스헤어 `#10b981`(emerald-signal), 거래량
+    `#6b7280`(ghost-gray)
+  - 크로스헤어 호버 시 OHLC 수치 텍스트 툴팁 노출 — 캔들 색상만으로 등락을 구분하는 것에
+    대한 No-Ambiguity Rule 예외의 접근성 완화책(T115에서 `DESIGN.md`에 근거 기록)
+  - `dashboard/src/api/candles.ts` — `GET /api/candles` 클라이언트
+  - `dashboard/src/hooks/useCandles.ts` — `symbol`/`interval` 변경 시 재조회, 폴링 없음(수동
+    갱신)
+  - `tests/hooks/useCandles.test.ts`: symbol/interval 변경 시 재요청 검증(fetch mock).
+    `tests/components/chart/PriceChart.test.tsx`: 컨테이너 렌더 + 언마운트 시 `chart.remove()`
+    호출 검증
+
+- [ ] **T113** `SymbolQuickPick` / `IntervalToggle` 컴포넌트
+  - `dashboard/src/components/chart/SymbolQuickPick.tsx` — `useStockNames` 캐시(App.tsx에서
+    이미 사용 중)를 재사용한 최근/보유 종목 chip 리스트 + 종목코드 직접 입력
+    (`Strategy.tsx` `BacktestPanel`의 `<input placeholder="005930">` 패턴 재사용)
+  - `dashboard/src/components/chart/IntervalToggle.tsx` — 1분봉/일봉 토글(Toss가 지원하는
+    두 interval만 노출, 5분봉·주봉 등 존재하지 않는 옵션 없음)
+  - `tests/components/chart/SymbolQuickPick.test.tsx`,
+    `tests/components/chart/IntervalToggle.test.tsx`: chip 클릭 시 symbol 변경 콜백, 코드
+    직접 입력 유효성(6자리 숫자), 토글 전환 검증
+
+- [ ] **T114** `dashboard/src/pages/StockDetail.tsx` — 종목상세 페이지 조립
+  - `SymbolQuickPick` + `IntervalToggle` + `PriceChart`를 기존 `Panel` 컴포넌트 안에 조합
+    (`Nested Cards Prohibited` 규칙 준수 — 차트는 Panel 콘텐츠지 별도 패널이 아님)
+  - `App.tsx` "종목상세" 탭(T111 placeholder)을 이 페이지로 교체
+  - 초기 상태(종목 미선택): 안내 텍스트만 표시. 종목 선택 시 `useCandles` 트리거
+  - **범위 제외:** 하단 수급(InvestorFlowPanel) 연동은 `GET /api/investor-flow` 백엔드가
+    없어 이번 Phase에서 제외(위 정정 사항 참고) — 별도 Phase에서 그 백엔드부터 설계
+  - 수동 QA: `npm run dev`로 실행해 종목 선택 → 차트 로드 → interval 전환 → 재조회까지
+    브라우저에서 직접 확인
+
+- [ ] **T115** `DESIGN.md` 갱신
+  - §5 Components에 "Price Chart (Candlestick)" 항목 추가 — T112 색상 매핑 표 + "No-Ambiguity
+    Rule의 의도된 예외"임을 명시(캔들 등락은 색상으로만 구분하는 업계 표준 관행, 호버
+    툴팁이 접근성 완화책이라는 근거 포함)
+  - 기존 "Tab Navigation" 스펙(§5)에 "최초 구현: T111" 각주 추가, 실제 구현 후 클래스명 등
+    문법 차이가 있으면 반영
+
+---
+
 ## 다음 단계
 
 구현을 시작하려면 "Phase 16 진행해줘" 또는 "T098까지 진행해줘"로 요청.
