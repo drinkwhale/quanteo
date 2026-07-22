@@ -8,11 +8,6 @@ import pytest
 _PRODUCTION_DB_PATH = Path.home() / "quanteo" / "data" / "quanteo.db"
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
 def _orders_row_count() -> int | None:
     """프로덕션 DB의 orders 행 수를 읽는다.
 
