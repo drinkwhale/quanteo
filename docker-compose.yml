@@ -11,6 +11,9 @@
 # telegram 설정을 해야 한다 — quanteo-screener 컨테이너는 이 없이는
 # 시작 즉시 경고 로그를 남기고 정상 종료한다(재시도 루프 없음, 아래
 # restart 정책 참고).
+# 추가로 screener.krx.id/pw(data.krx.co.kr 개인 회원 계정)도 필요하다 —
+# KRX가 2026-07부터 전종목시세 등 대량 조회 엔드포인트에 로그인을 요구해서,
+# 이게 없으면 screener.enabled: true여도 유니버스 조회 단계에서 실패한다.
 #
 # 사용법:
 #   docker compose up -d                     # 기본 실행 (core + screener)
