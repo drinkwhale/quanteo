@@ -23,7 +23,7 @@ git branch --show-current
 
 ## 📊 현재 구현 상태
 
-**Phase 1~16 전체 완료 (T001~T109), Phase 17 계획 완료·구현 대기 (T110~T115)** — 상세 현황은
+**Phase 1~~16 전체 완료 (T001~~T109), Phase 17 계획 완료·구현 대기 (T110~T115)** — 상세 현황은
 [PROJECT_INDEX.md](PROJECT_INDEX.md) 참고
 
 | Phase | 내용                                   | Tasks     |
@@ -195,6 +195,36 @@ gh pr create --base main --head phase/1-bootstrap
 
 - 전체 기동: `docker compose up -d`
 - 로그 확인: `docker compose logs -f`
+- 이미지 재빌드: `docker compose up -d --build` (코드 변경 후 필요)
+
+### Docker 빌드 체크리스트 (코드 수정 후)
+
+Python 백엔드 파일 수정 시:
+
+- [ ] `core/`, `info/`, `screener/` 하위 파일 변경 확인
+- [ ] 새로운 Python 의존성 추가 시:
+  - `pyproject.toml`에 패키지 추가
+  - `uv sync` 실행 → `uv.lock` 갱신 (필수 커밋)
+  - `docker compose up -d --build` 또는 `docker compose build quanteo-core`
+- [ ] API 엔드포인트 추가/수정 시: 자동으로 `core/api/` 모듈이 rebuild되므로 별도 처리 불필요
+
+TypeScript 대시보드 파일 수정 시 (현재 Docker 미포함):
+
+- [ ] `dashboard/src/`, `dashboard/package.json` 파일 변경 확인
+- [ ] 새로운 npm 의존성 추가 시:
+  - `cd dashboard && npm install` 실행
+  - `package-lock.json` 갱신 (필수 커밋)
+  - **현재:** Docker 이미지에 대시보드 미포함 — `npm run dev` 또는 수동 빌드로 로컬 개발
+  - **Phase 18 계획:** 대시보드를 Docker에 포함할 때 Dockerfile에 Node.js 빌드 스테이지 추가
+
+**현재 Docker 구성:**
+
+- `quanteo:latest` 이미지: Python 3.12 + uv + `core/`, `info/`, `screener/` 모듈
+- `quanteo-core` 서비스: Control API 서빙 (포트 8000)
+- `quanteo-screener` 서비스: Stock Miner 독립 실행
+
+**대시보드 미포함 이유:** Phase 17에서 추가된 차트 기능은 프론트엔드 전용.
+백엔드 API(`GET /candles`)는 기존 Dockerfile로 자동 포함. 대시보드 통합은 추후 Phase 18에서 분석 예정.
 
 ## 규칙 및 제약
 
