@@ -308,3 +308,25 @@ class StreamMessage(BaseModel):
     payload: Any
     timestamp: datetime
     source: str = ""
+
+
+# ---------------------------------------------------------------------------
+# /candles — 캔들 차트 데이터
+# ---------------------------------------------------------------------------
+
+
+class CandleItem(BaseModel):
+    """캔들 데이터 1개 봉."""
+
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class CandleList(BaseModel):
+    """캔들 목록 응답."""
+
+    items: list[CandleItem]

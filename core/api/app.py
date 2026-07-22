@@ -16,6 +16,7 @@ from core.api.deps import AppContainer
 from core.api.routes import (
     backtest,
     balance,
+    candles,
     control,
     indices,
     market,
@@ -60,6 +61,7 @@ def create_app(container: AppContainer) -> FastAPI:
     app.include_router(trades.router, tags=["모니터링"])
     app.include_router(market.router, tags=["마켓"])
     app.include_router(indices.router, tags=["마켓"])
+    app.include_router(candles.router, tags=["차트"])
     app.include_router(control.router, prefix="/control", tags=["제어"])
     app.include_router(stream.router, tags=["스트림"])
     app.include_router(backtest.router, tags=["백테스트"])
