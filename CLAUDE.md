@@ -23,7 +23,7 @@ git branch --show-current
 
 ## 📊 현재 구현 상태
 
-**Phase 1~~16 전체 완료 (T001~~T109), Phase 17 계획 완료·구현 대기 (T110~~T115)** — 상세 현황은
+**Phase 1~16 전체 완료 (T001~T109), Phase 17 계획 완료·구현 대기 (T110~T115)** — 상세 현황은
 [PROJECT_INDEX.md](PROJECT_INDEX.md) 참고
 
 | Phase | 내용                                   | Tasks     |
