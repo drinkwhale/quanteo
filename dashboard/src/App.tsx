@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { RotateCw } from "lucide-react";
 import { AccountSummary } from "./components/AccountSummary";
 import { ControlPanel } from "./components/ControlPanel";
 import { IndicesStrip } from "./components/IndicesStrip";
@@ -81,7 +82,20 @@ export default function App() {
               </h2>
 
               <div className="flex-1 min-w-0 space-y-4">
-                <Panel title="주문·체결">
+                <Panel
+                  title="주문·체결"
+                  headerExtra={
+                    <button
+                      type="button"
+                      onClick={refetchOrders}
+                      className="p-1.5 rounded hover:bg-accent/10 transition-colors"
+                      title="새로고침"
+                      aria-label="주문·체결 새로고침"
+                    >
+                      <RotateCw className="w-4 h-4 text-muted hover:text-accent" />
+                    </button>
+                  }
+                >
                   <OrdersAndFillsPanel
                     orders={orders}
                     fills={fills}
