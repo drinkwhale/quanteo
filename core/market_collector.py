@@ -96,19 +96,15 @@ class MarketDataCollector:
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        stored_count = 0
+        # 배치 데이터 준비
+        batch_data = []
         for symbol, result in zip(self.active_symbols, results):
             if isinstance(result, Exception):
                 logger.debug(f"[{symbol}] 폴링 실패: {result}")
                 continue
 
             try:
-                await self.db.conn.execute(
-                    """
-                    INSERT OR REPLACE INTO market_data
-                    (symbol, price, change_rate, trading_volume, trading_value, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
+                batch_data.append(
                     (
                         symbol,
                         float(result.get("price", 0)),
@@ -116,14 +112,26 @@ class MarketDataCollector:
                         int(result.get("trading_volume", 0)),
                         int(result.get("trading_value", 0)),
                         timestamp,
-                    ),
+                    )
+                )
+            except (ValueError, KeyError, TypeError) as e:
+                logger.error(f"[{symbol}] 데이터 파싱 실패: {e}")
+
+        # 배치로 한 번에 삽입
+        if batch_data:
+            try:
+                await self.db.conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO market_data
+                    (symbol, price, change_rate, trading_volume, trading_value, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    batch_data,
                 )
                 await self.db.conn.commit()
-                stored_count += 1
+                logger.info(f"마켓 데이터 저장: {len(batch_data)}/{len(self.active_symbols)}")
             except Exception as e:
-                logger.error(f"[{symbol}] DB 저장 실패: {e}")
-
-        logger.info(f"마켓 데이터 저장: {stored_count}/{len(self.active_symbols)}")
+                logger.error(f"배치 저장 실패: {e}")
 
     async def start(self) -> None:
         """백그라운드 수집 시작."""
@@ -132,20 +140,33 @@ class MarketDataCollector:
             return
 
         self._collecting = True
-        self.active_symbols = await self.discover_symbols()
-        logger.info(f"모니터링 종목: {len(self.active_symbols)}")
+        logger.info("마켓 데이터 수집 시작")
 
-        # 주기적 폴링 루프
         try:
+            self.active_symbols = await self.discover_symbols()
+            logger.info(f"모니터링 종목: {len(self.active_symbols)}")
+
+            # 주기적 폴링 루프
             while self._collecting:
-                await self.collect_market_data()
+                try:
+                    await self.collect_market_data()
+                except asyncio.CancelledError:
+                    # 종료 신호는 상위로 전파
+                    raise
+                except Exception as e:
+                    # 일시적 오류는 로그하고 다음 주기로 계속
+                    logger.warning(
+                        f"수집 중 오류 (계속 시도): {e}",
+                        exc_info=False,
+                    )
+
                 await asyncio.sleep(self.poll_interval_minutes * 60)
+
         except asyncio.CancelledError:
-            logger.info("수집 중단됨")
-        except Exception as e:
-            logger.error(f"수집 중 오류: {e}", exc_info=True)
+            logger.info("수집 중단됨 (취소)")
         finally:
             self._collecting = False
+            logger.info("마켓 데이터 수집 종료")
 
     def stop(self) -> None:
         """수집 중지."""

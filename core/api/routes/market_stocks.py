@@ -7,18 +7,27 @@ Phase 17: GET /api/market-stocks?sort_by=trading_value&limit=10
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from pydantic import Field
 from typing import Literal
 
 from core.api.deps import ContainerDep
 
 router = APIRouter()
 
+# SQL 주입 방지: 화이트리스트 매핑
+ALLOWED_ORDER_BY = {
+    "trading_value": "trading_value DESC",
+    "volume": "trading_volume DESC",
+    "uptrend": "change_rate DESC",
+    "downtrend": "change_rate ASC",
+}
+
 
 @router.get("/market-stocks")
 async def get_market_stocks(
     sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
-    limit: int = 10,
-    container: ContainerDep = None,
+    limit: int = Field(default=10, ge=1, le=100),
+    container: ContainerDep = None,  # FastAPI 자동 의존성 주입
 ) -> dict:
     """
     거래대금/거래량 기준 TOP 종목 조회.
@@ -29,7 +38,7 @@ async def get_market_stocks(
             - volume: 거래량 많은 순
             - uptrend: 상승률 높은 순
             - downtrend: 하락률 높은 순
-        limit: 조회할 종목 수 (기본값 10)
+        limit: 조회할 종목 수 (1~100, 기본값 10)
 
     Returns:
         {
@@ -61,16 +70,15 @@ async def get_market_stocks(
 
     latest_timestamp = latest[0]
 
-    # 정렬 쿼리 구성
-    order_by_map = {
-        "trading_value": "trading_value DESC",
-        "volume": "trading_volume DESC",
-        "uptrend": "change_rate DESC",
-        "downtrend": "change_rate ASC",
-    }
-    order_by = order_by_map[sort_by]
+    # 정렬 쿼리 구성 (화이트리스트 사용)
+    order_by = ALLOWED_ORDER_BY.get(sort_by)
+    if not order_by:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid sort_by parameter",
+        )
 
-    # 데이터 조회
+    # 데이터 조회 (안전한 매개변수화)
     query = f"""
         SELECT
             symbol, price, change_rate,
@@ -111,7 +119,7 @@ async def get_market_stocks(
 
 @router.get("/market-stocks/summary")
 async def get_market_summary(
-    container: ContainerDep = None,
+    container: ContainerDep,
 ) -> dict:
     """마켓 데이터 요약 (TOP 5 각 카테고리)."""
     async with container.store.conn.execute(
