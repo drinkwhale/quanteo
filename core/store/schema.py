@@ -104,6 +104,29 @@ CREATE TABLE IF NOT EXISTS watchlist (
 )
 """
 
+# Phase 17 — 마켓 데이터 수집 (거래대금/거래량 기준 종목 모니터링)
+CREATE_MARKET_DATA = """
+CREATE TABLE IF NOT EXISTS market_data (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol          TEXT    NOT NULL,
+    price           REAL    NOT NULL,
+    change_rate     REAL    NOT NULL,
+    trading_volume  BIGINT  NOT NULL,
+    trading_value   BIGINT  NOT NULL,
+    market_cap      BIGINT,
+    timestamp       TEXT    NOT NULL,
+    UNIQUE(symbol, timestamp)
+)
+"""
+
+CREATE_ACTIVE_SYMBOLS = """
+CREATE TABLE IF NOT EXISTS active_symbols (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol      TEXT    NOT NULL UNIQUE,
+    last_seen   TEXT    NOT NULL
+)
+"""
+
 # 인덱스
 CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_orders_symbol   ON orders(symbol)",
@@ -113,6 +136,9 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_type     ON events_log(event_type)",
     "CREATE INDEX IF NOT EXISTS idx_events_created  ON events_log(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_watchlist_symbol ON watchlist(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_market_data_symbol ON market_data(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_market_data_timestamp ON market_data(timestamp)",
+    "CREATE INDEX IF NOT EXISTS idx_market_data_value ON market_data(trading_value)",
 ]
 
 # 실행 순서 (FK 의존성 고려)
@@ -124,4 +150,6 @@ ALL_TABLES: list[str] = [
     CREATE_SETTINGS,
     CREATE_EVENTS_LOG,
     CREATE_WATCHLIST,
+    CREATE_MARKET_DATA,
+    CREATE_ACTIVE_SYMBOLS,
 ]

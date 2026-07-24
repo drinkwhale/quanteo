@@ -31,6 +31,7 @@ from core.events.bus import EventBus
 from core.execution.order_history_sync import OrderHistorySyncFeed
 from core.execution.order_sync import OrderSyncFeed
 from core.execution.position_sync import PositionSyncFeed
+from core.market_collector import MarketDataCollector
 from core.notifier.factory import make_notifier
 from core.notifier.wiring import wire_notifier
 from core.risk.manager import RiskConfig, RiskManager
@@ -209,6 +210,7 @@ async def run(
     position_sync: PositionSyncFeed | None = None
     order_sync: OrderSyncFeed | None = None
     order_history_sync: OrderHistorySyncFeed | None = None
+    market_collector: MarketDataCollector | None = None
 
     async def _wait_stop() -> None:
         await stop_event.wait()
@@ -222,6 +224,7 @@ async def run(
             position_sync=position_sync,
             order_sync=order_sync,
             order_history_sync=order_history_sync,
+            market_collector=market_collector,
         )
         _cancel_pending_tasks(tasks)
 
@@ -235,6 +238,14 @@ async def run(
                 _start_trading_tasks(tg, rest_client, bus, risk, store, tasks)
 
             if rest_client is not None:
+                # 마켓 데이터 수집 (Phase 17)
+                market_collector = MarketDataCollector(
+                    broker=rest_client, db=store, poll_interval_minutes=5
+                )
+                tasks.append(
+                    tg.create_task(market_collector.start(), name="market-collector")
+                )
+
                 position_sync = PositionSyncFeed(
                     rest_client=rest_client, store=store, env=container.env, bus=bus
                 )
@@ -419,8 +430,9 @@ async def _shutdown(
     position_sync: object | None = None,
     order_sync: object | None = None,
     order_history_sync: object | None = None,
+    market_collector: MarketDataCollector | None = None,
 ) -> None:
-    """Event Bus → Notifier → PositionSync → OrderSync → OrderHistorySync → InfoSystem → StateStore 순으로 정상 종료한다."""
+    """Event Bus → Notifier → PositionSync → OrderSync → OrderHistorySync → MarketCollector → InfoSystem → StateStore 순으로 정상 종료한다."""
     for name, obj in [("EventBus", bus), ("Notifier", notifier)]:
         try:
             await obj.stop()  # type: ignore[union-attr]
@@ -444,6 +456,12 @@ async def _shutdown(
             await order_history_sync.stop()  # type: ignore[union-attr]
         except Exception as exc:
             logger.error("OrderHistorySync 종료 오류: %s", exc)
+
+    if market_collector is not None:
+        try:
+            market_collector.stop()
+        except Exception as exc:
+            logger.error("MarketCollector 종료 오류: %s", exc)
 
     if info_system is not None:
         try:
