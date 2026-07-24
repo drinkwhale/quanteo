@@ -6,10 +6,10 @@ Phase 17: GET /api/market-stocks?sort_by=trading_value&limit=10
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from typing import Literal
 
-from core.api.deps import DatabaseDep
+from core.api.deps import ContainerDep
 
 router = APIRouter()
 
@@ -18,7 +18,7 @@ router = APIRouter()
 async def get_market_stocks(
     sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
     limit: int = 10,
-    db: DatabaseDep = Depends(),
+    container: ContainerDep = None,
 ) -> dict:
     """
     거래대금/거래량 기준 TOP 종목 조회.
@@ -48,9 +48,10 @@ async def get_market_stocks(
         }
     """
     # 최신 타임스탬프 조회
-    latest = await db.fetchone(
+    async with container.store.conn.execute(
         "SELECT MAX(timestamp) FROM market_data"
-    )
+    ) as cursor:
+        latest = await cursor.fetchone()
 
     if not latest or not latest[0]:
         raise HTTPException(
@@ -80,7 +81,8 @@ async def get_market_stocks(
         LIMIT ?
     """
 
-    rows = await db.fetchall(query, (latest_timestamp, limit))
+    async with container.store.conn.execute(query, (latest_timestamp, limit)) as cursor:
+        rows = await cursor.fetchall()
 
     if not rows:
         raise HTTPException(
@@ -109,12 +111,13 @@ async def get_market_stocks(
 
 @router.get("/market-stocks/summary")
 async def get_market_summary(
-    db: DatabaseDep = Depends(),
+    container: ContainerDep = None,
 ) -> dict:
     """마켓 데이터 요약 (TOP 5 각 카테고리)."""
-    latest = await db.fetchone(
+    async with container.store.conn.execute(
         "SELECT MAX(timestamp) FROM market_data"
-    )
+    ) as cursor:
+        latest = await cursor.fetchone()
 
     if not latest or not latest[0]:
         raise HTTPException(
@@ -147,10 +150,12 @@ async def get_market_summary(
     }
 
     for key, (col, label) in categories.items():
-        rows = await db.fetchall(
+        async with container.store.conn.execute(
             query_template.format(col),
             (latest_timestamp,),
-        )
+        ) as cursor:
+            rows = await cursor.fetchall()
+
         result["categories"][key] = {
             "label": label,
             "stocks": [

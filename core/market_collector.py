@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from core.adapters.base import BrokerAdapter
-from core.store.db import Database
+from core.store.db import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class MarketDataCollector:
     def __init__(
         self,
         broker: BrokerAdapter,
-        db: Database,
+        db: StateStore,
         poll_interval_minutes: int = 5,
     ):
         self.broker = broker
@@ -103,7 +103,7 @@ class MarketDataCollector:
                 continue
 
             try:
-                await self.db.execute(
+                await self.db.conn.execute(
                     """
                     INSERT OR REPLACE INTO market_data
                     (symbol, price, change_rate, trading_volume, trading_value, timestamp)
@@ -118,6 +118,7 @@ class MarketDataCollector:
                         timestamp,
                     ),
                 )
+                await self.db.conn.commit()
                 stored_count += 1
             except Exception as e:
                 logger.error(f"[{symbol}] DB 저장 실패: {e}")
@@ -156,11 +157,10 @@ class MarketDataCollector:
     async def _get_screened_symbols(self) -> list[str]:
         """Stock Miner 추천 종목 조회."""
         try:
-            # info.screener 모듈의 추천 종목 조회
-            # 현재는 미니멀 구현 (향후 Stock Miner와 통합)
-            result = await self.db.fetchall(
+            async with self.db.conn.execute(
                 "SELECT symbol FROM watchlist WHERE source = 'screener' LIMIT 100"
-            )
+            ) as cursor:
+                result = await cursor.fetchall()
             return [row[0] for row in result]
         except Exception:
             return []
@@ -168,13 +168,14 @@ class MarketDataCollector:
     async def _get_cached_active_symbols(self) -> list[str]:
         """이전 세션의 활성 종목 캐시."""
         try:
-            result = await self.db.fetchall(
+            async with self.db.conn.execute(
                 """
                 SELECT symbol FROM active_symbols
                 WHERE last_seen > datetime('now', '-3 days')
                 LIMIT 200
                 """
-            )
+            ) as cursor:
+                result = await cursor.fetchall()
             return [row[0] for row in result]
         except Exception:
             return []
@@ -182,13 +183,14 @@ class MarketDataCollector:
     async def _get_recent_trade_symbols(self, hours: int = 24) -> list[str]:
         """최근 거래 기록에서 활성 종목 추출."""
         try:
-            result = await self.db.fetchall(
-                """
+            async with self.db.conn.execute(
+                f"""
                 SELECT DISTINCT symbol FROM fills
-                WHERE filled_at > datetime('now', f'-{hours} hours')
+                WHERE filled_at > datetime('now', '-{hours} hours')
                 LIMIT 200
                 """
-            )
+            ) as cursor:
+                result = await cursor.fetchall()
             return [row[0] for row in result]
         except Exception:
             return []
@@ -202,12 +204,13 @@ class MarketDataCollector:
         timestamp = datetime.utcnow().isoformat()
         for symbol in self.active_symbols:
             try:
-                await self.db.execute(
+                await self.db.conn.execute(
                     """
                     INSERT OR REPLACE INTO active_symbols (symbol, last_seen)
                     VALUES (?, ?)
                     """,
                     (symbol, timestamp),
                 )
+                await self.db.conn.commit()
             except Exception as e:
                 logger.debug(f"캐시 저장 실패 [{symbol}]: {e}")
