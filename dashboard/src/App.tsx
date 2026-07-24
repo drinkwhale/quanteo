@@ -25,7 +25,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"ops" | "chart">("ops");
 
   const { status, refetch: refetchStatus } = useStatus(3000);
-  const { positions, total: posTotal, error: posError } = usePositions(5000);
+  const { positions } = usePositions(5000);
   const {
     balance,
     error: balanceError,
@@ -81,48 +81,72 @@ export default function App() {
               <IndicesStrip indices={indices} error={indicesError} />
             </Panel>
 
-            <Panel
-              title="주요 종목"
-              headerExtra={
-                <div className="flex gap-1">
-                  {(
-                    [
-                      { id: "trading_value", label: "거래대금" },
-                      { id: "volume", label: "거래량" },
-                      { id: "uptrend", label: "급상승" },
-                      { id: "downtrend", label: "급하락" },
-                    ] as const
-                  ).map((btn) => (
-                    <button
-                      key={btn.id}
-                      type="button"
-                      onClick={() =>
-                        setMarketSortBy(
-                          btn.id as
-                            | "trading_value"
-                            | "volume"
-                            | "uptrend"
-                            | "downtrend",
-                        )
-                      }
-                      className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                        marketSortBy === btn.id
-                          ? "bg-accent text-surface"
-                          : "bg-muted/10 text-muted hover:bg-muted/20"
-                      }`}
-                    >
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-              }
+            {/* 주요 종목 + 계좌요약 (좌우 2단) */}
+            <section
+              aria-labelledby="market-summary-heading"
+              className="flex flex-col lg:flex-row gap-4"
             >
-              <MarketStocksTable
-                stocks={marketStocks}
-                error={marketError}
-                isLoading={marketLoading}
-              />
-            </Panel>
+              <h2 id="market-summary-heading" className="sr-only">
+                시장 요약
+              </h2>
+
+              {/* 좌측: 주요 종목 */}
+              <Panel
+                title="주요 종목"
+                headerExtra={
+                  <div className="flex gap-1 flex-wrap">
+                    {(
+                      [
+                        { id: "trading_value", label: "거래대금" },
+                        { id: "volume", label: "거래량" },
+                        { id: "uptrend", label: "급상승" },
+                        { id: "downtrend", label: "급하락" },
+                      ] as const
+                    ).map((btn) => (
+                      <button
+                        key={btn.id}
+                        type="button"
+                        onClick={() =>
+                          setMarketSortBy(
+                            btn.id as
+                              | "trading_value"
+                              | "volume"
+                              | "uptrend"
+                              | "downtrend",
+                          )
+                        }
+                        className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                          marketSortBy === btn.id
+                            ? "bg-accent text-surface"
+                            : "bg-muted/10 text-muted hover:bg-muted/20"
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                }
+                className="flex-1 min-w-0 lg:max-h-96"
+              >
+                <div className="overflow-y-auto max-h-80 lg:max-h-64">
+                  <MarketStocksTable
+                    stocks={marketStocks}
+                    error={marketError}
+                    isLoading={marketLoading}
+                    stockNames={stockNames}
+                  />
+                </div>
+              </Panel>
+
+              {/* 우측: 계좌요약 */}
+              <Panel title="계좌 요약" className="w-full lg:w-80 flex-shrink-0">
+                <AccountSummary
+                  balance={balance}
+                  error={balanceError}
+                  lastUpdated={balanceUpdatedAt}
+                />
+              </Panel>
+            </section>
 
             {/* 운영 현황 — 포지션·주문·체결·이벤트를 탭 전환 없이 동시 노출 */}
             <section
@@ -174,15 +198,7 @@ export default function App() {
                 왼쪽 컬럼과 같은 높이까지 늘어나고, 안의 내용만 sticky로 위쪽에 고정된다.
               */}
               <aside className="w-full xl:w-80 xl:flex-shrink-0 xl:border-l xl:border-border xl:pl-4">
-                <div className="space-y-4 xl:sticky xl:top-14">
-                  <Panel title="계좌 요약">
-                    <AccountSummary
-                      balance={balance}
-                      error={balanceError}
-                      lastUpdated={balanceUpdatedAt}
-                    />
-                  </Panel>
-
+                <div className="xl:sticky xl:top-14">
                   <Panel title="봇 제어">
                     <ControlPanel status={status} onAction={refetchStatus} />
                   </Panel>
