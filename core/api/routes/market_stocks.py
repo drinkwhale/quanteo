@@ -27,7 +27,7 @@ ALLOWED_ORDER_BY = {
 async def get_market_stocks(
     sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
     limit: int = Field(default=10, ge=1, le=100),
-    container: ContainerDep = None,  # FastAPI 자동 의존성 주입
+    container: ContainerDep,
 ) -> dict:
     """
     거래대금/거래량 기준 TOP 종목 조회.

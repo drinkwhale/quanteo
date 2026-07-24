@@ -205,11 +205,12 @@ class MarketDataCollector:
         """최근 거래 기록에서 활성 종목 추출."""
         try:
             async with self.db.conn.execute(
-                f"""
-                SELECT DISTINCT symbol FROM fills
-                WHERE filled_at > datetime('now', '-{hours} hours')
-                LIMIT 200
                 """
+                SELECT DISTINCT symbol FROM fills
+                WHERE filled_at > datetime('now', ? || ' hours')
+                LIMIT 200
+                """,
+                (f"-{hours}",),
             ) as cursor:
                 result = await cursor.fetchall()
             return [row[0] for row in result]
@@ -221,17 +222,18 @@ class MarketDataCollector:
         self.active_symbols = await self.discover_symbols()
         logger.info(f"활성 종목 갱신: {len(self.active_symbols)}")
 
-        # DB 캐시 업데이트
+        # DB 캐시 업데이트 (배치 처리)
         timestamp = datetime.utcnow().isoformat()
-        for symbol in self.active_symbols:
-            try:
-                await self.db.conn.execute(
-                    """
-                    INSERT OR REPLACE INTO active_symbols (symbol, last_seen)
-                    VALUES (?, ?)
-                    """,
-                    (symbol, timestamp),
-                )
-                await self.db.conn.commit()
-            except Exception as e:
-                logger.debug(f"캐시 저장 실패 [{symbol}]: {e}")
+        batch_data = [(symbol, timestamp) for symbol in self.active_symbols]
+
+        try:
+            await self.db.conn.executemany(
+                """
+                INSERT OR REPLACE INTO active_symbols (symbol, last_seen)
+                VALUES (?, ?)
+                """,
+                batch_data,
+            )
+            await self.db.conn.commit()
+        except Exception as e:
+            logger.error(f"활성 종목 캐시 저장 실패: {e}")
