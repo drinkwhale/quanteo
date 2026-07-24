@@ -3,6 +3,7 @@ import { RotateCw } from "lucide-react";
 import { AccountSummary } from "./components/AccountSummary";
 import { ControlPanel } from "./components/ControlPanel";
 import { IndicesStrip } from "./components/IndicesStrip";
+import { MarketStocksTable } from "./components/MarketStocksTable";
 import { OrdersAndFillsPanel } from "./components/OrdersAndFillsPanel";
 import { Panel } from "./components/Panel";
 import { StatusBar } from "./components/StatusBar";
@@ -11,6 +12,7 @@ import { TabNav } from "./components/TabNav";
 import { useBalance } from "./hooks/useBalance";
 import { useFills } from "./hooks/useFills";
 import { useIndices } from "./hooks/useIndices";
+import { useMarketStocks } from "./hooks/useMarketStocks";
 import { useOrders } from "./hooks/useOrders";
 import { usePositions } from "./hooks/usePositions";
 import { useStatus } from "./hooks/useStatus";
@@ -30,6 +32,13 @@ export default function App() {
     lastUpdated: balanceUpdatedAt,
   } = useBalance(2000);
   const { indices, error: indicesError } = useIndices(30000);
+  const {
+    stocks: marketStocks,
+    sortBy: marketSortBy,
+    setSortBy: setMarketSortBy,
+    isLoading: marketLoading,
+    error: marketError,
+  } = useMarketStocks(30000);
   const {
     orders,
     total: ordTotal,
@@ -70,6 +79,49 @@ export default function App() {
           <>
             <Panel title="주요 지수·환율">
               <IndicesStrip indices={indices} error={indicesError} />
+            </Panel>
+
+            <Panel
+              title="주요 종목"
+              headerExtra={
+                <div className="flex gap-1">
+                  {(
+                    [
+                      { id: "trading_value", label: "거래대금" },
+                      { id: "volume", label: "거래량" },
+                      { id: "uptrend", label: "급상승" },
+                      { id: "downtrend", label: "급하락" },
+                    ] as const
+                  ).map((btn) => (
+                    <button
+                      key={btn.id}
+                      type="button"
+                      onClick={() =>
+                        setMarketSortBy(
+                          btn.id as
+                            | "trading_value"
+                            | "volume"
+                            | "uptrend"
+                            | "downtrend",
+                        )
+                      }
+                      className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
+                        marketSortBy === btn.id
+                          ? "bg-accent text-surface"
+                          : "bg-muted/10 text-muted hover:bg-muted/20"
+                      }`}
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              <MarketStocksTable
+                stocks={marketStocks}
+                error={marketError}
+                isLoading={marketLoading}
+              />
             </Panel>
 
             {/* 운영 현황 — 포지션·주문·체결·이벤트를 탭 전환 없이 동시 노출 */}

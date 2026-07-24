@@ -20,6 +20,7 @@ from core.api.routes import (
     control,
     indices,
     market,
+    market_stocks,
     orders,
     positions,
     status,
@@ -60,6 +61,7 @@ def create_app(container: AppContainer) -> FastAPI:
     app.include_router(orders.router, tags=["모니터링"])
     app.include_router(trades.router, tags=["모니터링"])
     app.include_router(market.router, tags=["마켓"])
+    app.include_router(market_stocks.router, tags=["마켓"])
     app.include_router(indices.router, tags=["마켓"])
     app.include_router(candles.router, tags=["차트"])
     app.include_router(control.router, prefix="/control", tags=["제어"])
