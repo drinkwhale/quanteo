@@ -132,3 +132,88 @@
     box-shadow: var(--glow-emerald);
   }
 }
+
+/* React Grid Layout 스타일 */
+.react-grid-layout {
+  position: relative;
+  width: 100%;
+}
+
+.react-grid-item {
+  touch-action: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.react-grid-item img {
+  pointer-events: none;
+  user-select: none;
+}
+
+.react-grid-item.cssTransforms {
+  transition: all 200ms ease;
+}
+
+.react-grid-item.static {
+  background: #ccc;
+  opacity: 0.2;
+  z-index: 1;
+  resize: none;
+  border-radius: 2px;
+  margin-bottom: 10px;
+  touch-action: none;
+}
+
+.react-grid-item.text {
+  padding: 0;
+  background: none;
+  color: rgba(0, 0, 0, 0.87);
+  font-size: 24px;
+  font-weight: bold;
+  line-height: 1.2;
+  overflow: hidden;
+  padding: 10px;
+  font-family: arial;
+  font-weight: 700;
+  color: #444;
+}
+
+.react-grid-item.minMax {
+  font-size: 12px;
+}
+
+.react-grid-item.add {
+  cursor: pointer;
+  background: none;
+}
+
+.react-draggable-dragging {
+  transition: none;
+  z-index: 3;
+}
+
+.react-grid-placeholder {
+  background: rgba(16, 185, 129, 0.2);
+  opacity: 0.2;
+  border-radius: 2px;
+  z-index: 2;
+  border: 2px solid rgba(16, 185, 129, 0.5);
+  touch-action: none;
+}
+
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  background: rgba(16, 185, 129, 0.5);
+  border-radius: 1px;
+}
