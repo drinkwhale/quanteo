@@ -1,4 +1,9 @@
-import { createChart } from "lightweight-charts";
+import {
+  createChart,
+  CandlestickSeries,
+  HistogramSeries,
+  UTCTimestamp,
+} from "lightweight-charts";
 import { useEffect, useRef } from "react";
 import { CandleItem } from "../../api/candles";
 
@@ -51,34 +56,44 @@ export function PriceChart({ candles, isLoading, error }: PriceChartProps) {
     chartRef.current = chart;
 
     // 캔들 시리즈
-    const candleSeries = (chart as any).addCandlestickSeries({
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
       borderVisible: false,
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
     });
-
-    // 거래량 시리즈
-    const volumeSeries = (chart as any).addHistogramSeries({
-      color: "#6b7280",
-      priceFormat: {
-        type: "volume" as any,
-      },
+    candleSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.1, bottom: 0.3 },
     });
 
-    // 데이터 변환 및 설정
+    // 거래량 시리즈 (가격과 별도 스케일에 하단 오버레이로 표시)
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      color: "#6b7280",
+      priceFormat: {
+        type: "volume",
+      },
+      priceScaleId: "volume",
+    });
+    volumeSeries.priceScale().applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
+    // 데이터 변환 및 설정 (lightweight-charts는 시간 오름차순 정렬 필수)
     if (candles.length > 0) {
-      const candleData = candles.map((c) => ({
-        time: new Date(c.timestamp).getTime() / 1000,
+      const sortedCandles = [...candles].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
+      const candleData = sortedCandles.map((c) => ({
+        time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp,
         open: c.open,
         high: c.high,
         low: c.low,
         close: c.close,
       }));
 
-      const volumeData = candles.map((c) => ({
-        time: new Date(c.timestamp).getTime() / 1000,
+      const volumeData = sortedCandles.map((c) => ({
+        time: (new Date(c.timestamp).getTime() / 1000) as UTCTimestamp,
         value: c.volume,
         color: c.close >= c.open ? "#22c55e" : "#ef4444",
       }));
