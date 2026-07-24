@@ -47,17 +47,17 @@ class MarketDataCollector:
 
         # 2. 최근 주문 종목
         try:
-            orders = await self.broker.get_orders()
-            order_symbols = {o.symbol for o in orders}
+            open_orders, _ = await self.broker.list_orders(status="OPEN", limit=100)
+            order_symbols = {o.symbol for o in open_orders}
             symbols.update(order_symbols)
-            logger.info(f"최근 주문: {len(order_symbols)} 종목 추가")
+            logger.info(f"미체결 주문: {len(order_symbols)} 종목 추가")
         except Exception as e:
-            logger.warning(f"주문 조회 실패: {e}")
+            logger.warning(f"미체결 주문 조회 실패: {e}")
 
         # 3. 현재 보유 종목
         try:
-            holdings = await self.broker.get_holdings()
-            holding_symbols = {h.symbol for h in holdings}
+            balance = await self.broker.get_balance()
+            holding_symbols = {item.symbol for item in balance.items}
             symbols.update(holding_symbols)
             logger.info(f"보유 종목: {len(holding_symbols)} 종목 추가")
         except Exception as e:
@@ -104,17 +104,18 @@ class MarketDataCollector:
                 continue
 
             try:
+                raw = result.raw if hasattr(result, 'raw') else {}
                 batch_data.append(
                     (
                         symbol,
-                        float(result.get("price", 0)),
-                        float(result.get("change_rate", 0)),
-                        int(result.get("trading_volume", 0)),
-                        int(result.get("trading_value", 0)),
+                        result.current_price,
+                        float(raw.get("changeRate", 0)),
+                        result.volume,
+                        int(raw.get("tradingValue", 0)),
                         timestamp,
                     )
                 )
-            except (ValueError, KeyError, TypeError) as e:
+            except (ValueError, KeyError, TypeError, AttributeError) as e:
                 logger.error(f"[{symbol}] 데이터 파싱 실패: {e}")
 
         # 배치로 한 번에 삽입
