@@ -47,15 +47,17 @@ def _make_job(**overrides) -> tuple[DailyJob, dict]:
     dart.fetch_recent_disclosures = AsyncMock(return_value=[])
 
     analyst = AsyncMock()
-    analyst.summarize = AsyncMock(
-        return_value=StockSummary(
-            ticker="005930",
-            name="삼성전자",
-            one_line_thesis="테스트",
-            protips=[],
-            risk_flags=[],
-            score_breakdown={},
-        )
+    analyst.summarize_batch = AsyncMock(
+        return_value={
+            "005930": StockSummary(
+                ticker="005930",
+                name="삼성전자",
+                one_line_thesis="테스트",
+                protips=[],
+                risk_flags=[],
+                score_breakdown={},
+            )
+        }
     )
 
     notifier = AsyncMock()
@@ -84,7 +86,7 @@ class TestDailyJobRun:
         await job.run("20260721")
 
         mocks["notifier"].send_daily_report_with_summaries.assert_called_once()
-        mocks["analyst"].summarize.assert_called_once()
+        mocks["analyst"].summarize_batch.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_empty_universe_skips_pipeline(self) -> None:

@@ -257,3 +257,110 @@ class TestSummarize:
             summary = await agent.summarize(_stock(), disclosures=[])
 
         assert summary.risk_flags == []
+
+
+class TestSummarizeBatch:
+    @pytest.mark.asyncio
+    async def test_empty_items_returns_empty_dict(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        assert await agent.summarize_batch([]) == {}
+
+    @pytest.mark.asyncio
+    async def test_batch_success_parses_all_results(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {
+            "one_line_thesis": "메모리 업턴 초입",
+            "protips": ["영업이익률 개선"],
+            "risk_flags": [],
+        }
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "메모리 업턴 초입"
+        mock_client.post.assert_called_once()
+        assert (
+            mock_client.post.call_args.args[0]
+            == "https://api.anthropic.com/v1/messages/batches"
+        )
+
+    @pytest.mark.asyncio
+    async def test_batch_creation_failure_falls_back_all(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=Exception("network down"))
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summaries[stock.ticker].risk_flags)
+
+    @pytest.mark.asyncio
+    async def test_batch_item_error_falls_back_single_ticker(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {"type": "errored", "error": {"type": "invalid_request"}},
+            }
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"

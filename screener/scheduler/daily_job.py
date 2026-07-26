@@ -186,15 +186,16 @@ class DailyJob:
             candles = candles_from_history(history, ticker)
             bbc_signals[ticker] = assess_buy_principle(candles)
 
-        # 5) AnalystAgent — 상위 report_top_n개만 LLM 요약 (비용 통제)
-        summaries: dict[str, StockSummary] = {}
-        for _, row in ranked.head(self._report_top_n).iterrows():
-            stock = RankedStock.from_row(row)
-            summaries[stock.ticker] = await self._analyst.summarize(
-                stock,
-                disclosures.get(stock.ticker, []),
-                bbc_signal=bbc_signals.get(stock.ticker),
+        # 5) AnalystAgent — 상위 report_top_n개만 LLM 요약 (비용 통제 + Batches API 50% 할인)
+        batch_items = [
+            (
+                RankedStock.from_row(row),
+                disclosures.get(row["ticker"], []),
+                bbc_signals.get(row["ticker"]),
             )
+            for _, row in ranked.head(self._report_top_n).iterrows()
+        ]
+        summaries: dict[str, StockSummary] = await self._analyst.summarize_batch(batch_items)
         self.last_summaries = summaries
 
         # 6) Reporter
