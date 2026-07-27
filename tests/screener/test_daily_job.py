@@ -47,15 +47,17 @@ def _make_job(**overrides) -> tuple[DailyJob, dict]:
     dart.fetch_recent_disclosures = AsyncMock(return_value=[])
 
     analyst = AsyncMock()
-    analyst.summarize = AsyncMock(
-        return_value=StockSummary(
-            ticker="005930",
-            name="삼성전자",
-            one_line_thesis="테스트",
-            protips=[],
-            risk_flags=[],
-            score_breakdown={},
-        )
+    analyst.summarize_batch = AsyncMock(
+        return_value={
+            "005930": StockSummary(
+                ticker="005930",
+                name="삼성전자",
+                one_line_thesis="테스트",
+                protips=[],
+                risk_flags=[],
+                score_breakdown={},
+            )
+        }
     )
 
     notifier = AsyncMock()
@@ -84,7 +86,22 @@ class TestDailyJobRun:
         await job.run("20260721")
 
         mocks["notifier"].send_daily_report_with_summaries.assert_called_once()
-        mocks["analyst"].summarize.assert_called_once()
+        mocks["analyst"].summarize_batch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_items_built_correctly_per_ticker(self) -> None:
+        job, mocks = _make_job()
+
+        await job.run("20260721")
+
+        mocks["analyst"].summarize_batch.assert_called_once()
+        batch_items = mocks["analyst"].summarize_batch.call_args.args[0]
+        assert len(batch_items) == 1
+        stock, disclosures, bbc_signal = batch_items[0]
+        assert stock.ticker == "005930"
+        assert stock.name == "삼성전자"
+        assert disclosures == []  # dart.fetch_recent_disclosures가 [] 반환
+        assert bbc_signal is None  # 히스토리 없음 → assess_buy_principle이 None 반환
 
     @pytest.mark.asyncio
     async def test_empty_universe_skips_pipeline(self) -> None:
