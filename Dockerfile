@@ -48,6 +48,11 @@ COPY --from=builder /build/screener/ ./screener/
 # pyproject.toml은 패키지 메타데이터용으로 포함
 COPY pyproject.toml ./
 
+# screener/data/cache/는 pykrx 일별 조회 결과를 parquet으로 캐싱하는 유일한
+# 런타임 쓰기 경로다 — COPY는 기본적으로 root 소유로 복사하므로, USER quanteo로
+# 전환하기 전에 이 디렉터리만 chown해 실제 실행 유저가 쓸 수 있게 한다.
+RUN chown -R quanteo:quanteo /app/screener/data/cache
+
 # 가상 환경 바이너리를 PATH에 추가
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \
