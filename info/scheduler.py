@@ -1,7 +1,8 @@
 """
 info 서브시스템 APScheduler 스케줄러.
 
-AsyncIOScheduler(timezone="Asia/Seoul") 기반으로 7개 잡을 등록한다.
+AsyncIOScheduler(timezone="Asia/Seoul") 기반으로 7개 잡 중 5개를 등록한다
+(국내/미국 뉴스 폴링 2개는 Claude API 비용 급증으로 비활성화됨).
 잡 내부 예외는 try/except로 격리하여 스케줄러 중단을 방지한다.
 """
 
@@ -44,7 +45,7 @@ def _in_us_session() -> bool:
 
 
 class InfoScheduler:
-    """APScheduler 기반 정보 수집·알람 스케줄러 (7개 잡)."""
+    """APScheduler 기반 정보 수집·알람 스케줄러 (5개 잡 활성, 뉴스 폴링 2개 비활성)."""
 
     def __init__(self, system: "InfoSystem") -> None:
         self._system = system
@@ -63,13 +64,15 @@ class InfoScheduler:
             **defaults,
         )
 
-        # ② 5분 간격 (09:00~15:30 내부 가드) — 국내 RSS 폴링
-        self._scheduler.add_job(
-            self._job_domestic_rss,
-            IntervalTrigger(minutes=5, timezone=kst),
-            id="domestic_rss",
-            **defaults,
-        )
+        # ② 국내 RSS 폴링 — Claude API 비용 급증으로 비활성화(뉴스 필터 사전 키워드가
+        # 지나치게 광범위해 신규 기사 대부분이 실제 호출로 이어짐). 재활성화 전
+        # CRITICAL_KEYWORDS(info/ai_filter/claude_filter.py) 재검토 필요.
+        # self._scheduler.add_job(
+        #     self._job_domestic_rss,
+        #     IntervalTrigger(minutes=5, timezone=kst),
+        #     id="domestic_rss",
+        #     **defaults,
+        # )
 
         # ③ 30분 간격 (09:00~15:30 내부 가드) — USD/KRW 환율 체크
         self._scheduler.add_job(
@@ -95,13 +98,13 @@ class InfoScheduler:
             **defaults,
         )
 
-        # ⑥ 10분 간격 (22:00~06:00 내부 가드) — 미국 뉴스 폴링
-        self._scheduler.add_job(
-            self._job_us_news,
-            IntervalTrigger(minutes=10, timezone=kst),
-            id="us_news",
-            **defaults,
-        )
+        # ⑥ 미국 뉴스 폴링 — Claude API 비용 급증으로 비활성화(②와 동일 사유).
+        # self._scheduler.add_job(
+        #     self._job_us_news,
+        #     IntervalTrigger(minutes=10, timezone=kst),
+        #     id="us_news",
+        #     **defaults,
+        # )
 
         # ⑦ 매월 1일 00:00 KST — 다음 달 캘린더 자동 저장
         self._scheduler.add_job(
@@ -129,14 +132,13 @@ class InfoScheduler:
     # ──────────────────────────────────────────────────────────────────────────
 
     async def _job_morning_brief(self) -> None:
-        """① 08:00 KST: 장전 뉴스 수집 + 당일 일정 브리핑."""
+        """① 08:00 KST: 당일 일정 브리핑.
+
+        장전 뉴스 수집·Claude 분류는 Claude API 비용 급증으로 비활성화했다
+        (②/⑥과 동일 사유).
+        """
         try:
             sys = self._system
-            items = await sys.rss_collector.fetch()
-            for item in items:
-                result = await sys.claude_filter.classify(item.title, item.raw_body)
-                if result.score in ("HIGH", "CRITICAL"):
-                    await sys.notifier.send_news_alert(item, result)
             from info.calendar.earnings_data import next_events as next_earn
             from info.calendar.macro_events import next_macro_events
             today_events = next_earn(days=1) + next_macro_events(days=1)
@@ -222,7 +224,7 @@ class InfoScheduler:
 
     def start(self) -> None:
         self._scheduler.start()
-        logger.info("InfoScheduler 시작 (잡 7개 등록)")
+        logger.info("InfoScheduler 시작 (잡 5개 등록, 뉴스 폴링 2개 비활성)")
 
     def stop(self) -> None:
         if self._scheduler.running:

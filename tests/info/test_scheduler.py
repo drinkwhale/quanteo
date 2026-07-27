@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 
 
 def _make_mock_system() -> MagicMock:
@@ -47,9 +46,10 @@ def _make_scheduler(mock_sys=None):
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_seven_jobs_registered():
+def test_five_jobs_registered():
+    """뉴스 폴링 2개(domestic_rss/us_news)는 Claude API 비용 급증으로 비활성화됨."""
     _, mock_sched = _make_scheduler()
-    assert mock_sched.add_job.call_count == 7
+    assert mock_sched.add_job.call_count == 5
 
 
 def test_scheduler_timezone():
@@ -75,12 +75,12 @@ def test_morning_brief_cron_trigger():
     assert isinstance(trigger, CronTrigger)
 
 
-def test_domestic_rss_interval_trigger():
+def test_news_polling_jobs_not_registered():
+    """domestic_rss/us_news는 비활성화되어 스케줄러에 등록되지 않아야 한다."""
     _, mock_sched = _make_scheduler()
-    calls = mock_sched.add_job.call_args_list
-    rss = next(c for c in calls if c.kwargs.get("id") == "domestic_rss")
-    trigger = rss.args[1]
-    assert isinstance(trigger, IntervalTrigger)
+    job_ids = [call.kwargs.get("id") for call in mock_sched.add_job.call_args_list]
+    assert "domestic_rss" not in job_ids
+    assert "us_news" not in job_ids
 
 
 def test_monthly_calendar_cron_trigger():
