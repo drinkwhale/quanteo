@@ -126,16 +126,20 @@ class DailyJob:
         logger.info("Stock Miner 파이프라인 시작: %s", date)
 
         # 1) Screener — 유니버스 필터
+        # fetch_universe는 내부적으로 최대 7영업일 폴백을 이미 시도하므로, 그 뒤에도
+        # 비어 있다면 실제 휴장일일 가능성은 사실상 없다(주중 7영업일 연속 휴장은
+        # 없음) — KRX 응답 실패(로그인 차단 등)로 보고 예외로 올려 알림이 가도록 한다.
         universe = await self._pykrx.fetch_universe(date)
         if universe.empty:
-            logger.warning("유니버스가 비어 있습니다(%s) — 휴장일일 수 있음, 파이프라인 스킵", date)
-            return
+            raise RuntimeError(
+                f"유니버스 조회 결과가 비어 있습니다({date}) — KRX 응답 실패(로그인 차단 등) 의심, "
+                "휴장일 폴백(최대 7영업일)까지 시도했으나 데이터 없음"
+            )
 
         avg_trading_value = await compute_avg_trading_value_20d(self._pykrx, date)
         filtered = filter_universe(universe, self._config, avg_trading_value_20d=avg_trading_value)
         if filtered.empty:
-            logger.warning("필터 통과 종목이 없습니다(%s)", date)
-            return
+            raise RuntimeError(f"필터 통과 종목이 없습니다({date}) — 필터 조건 또는 데이터 이상 의심")
 
         tickers: list[str] = filtered["ticker"].tolist()
 

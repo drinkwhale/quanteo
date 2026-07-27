@@ -104,17 +104,23 @@ class TestDailyJobRun:
         assert bbc_signal is None  # 히스토리 없음 → assess_buy_principle이 None 반환
 
     @pytest.mark.asyncio
-    async def test_empty_universe_skips_pipeline(self) -> None:
+    async def test_empty_universe_alerts_instead_of_silent_skip(self, monkeypatch) -> None:
+        # fetch_universe는 내부적으로 최대 7영업일 폴백을 이미 시도한 뒤에도 비어
+        # 있다면 실제 휴장일이 아니라 KRX 응답 실패(로그인 차단 등)일 가능성이 높다
+        # — 조용히 스킵하면 리포트 누락이 사용자에게 전혀 알려지지 않으므로, 예외로
+        # 올려 기존 재시도+알림 경로를 타도록 한다.
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
         job, mocks = _make_job()
         mocks["pykrx"].fetch_universe = AsyncMock(return_value=pd.DataFrame())
 
         await job.run("20260721")
 
         mocks["notifier"].send_daily_report_with_summaries.assert_not_called()
-        mocks["notifier"].send_error_alert.assert_not_called()
+        mocks["notifier"].send_error_alert.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_empty_after_filter_skips_pipeline(self) -> None:
+    async def test_empty_after_filter_alerts_instead_of_silent_skip(self, monkeypatch) -> None:
+        monkeypatch.setattr(asyncio, "sleep", AsyncMock())
         _, mocks = _make_job()
         job = DailyJob(
             pykrx_client=mocks["pykrx"],
@@ -129,6 +135,7 @@ class TestDailyJobRun:
         await job.run("20260721")
 
         mocks["notifier"].send_daily_report_with_summaries.assert_not_called()
+        mocks["notifier"].send_error_alert.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_retries_on_failure_then_alerts(self, monkeypatch) -> None:
