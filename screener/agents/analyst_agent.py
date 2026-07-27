@@ -48,9 +48,14 @@ _FORBIDDEN_PHRASES: tuple[str, ...] = (
 
 _FALLBACK_THESIS = "정량 지표 기준 상위 랭크"
 
-# 배치 폴링 설정 — report_top_n(기본 10)건 배치는 통상 수 분 내 완료된다.
+# 배치 폴링 설정 — report_top_n(기본 10)건 배치 처리 시간은 Anthropic 큐 상태에 따라
+# 달라질 수 있어 20분 상한을 넉넉히 잡는다.
 _BATCH_POLL_INTERVAL_SECONDS = 10.0
 _BATCH_MAX_WAIT_SECONDS = 1200.0  # 20분
+# 배치가 이미 완료(ended)된 뒤 결과 조회 자체가 일시적으로 실패하는 경우를 위한 재시도.
+# 여기서 실패하면 이미 완료·과금된 배치 전체가 헛되이 폴백되므로 최소한의 재시도를 둔다.
+_RESULTS_FETCH_MAX_RETRIES = 3
+_RESULTS_FETCH_RETRY_DELAY_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -159,7 +164,12 @@ class AnalystAgent:
         try:
             texts = await self._run_batch(items)
         except Exception as exc:
-            logger.error("Claude Batches API 실패, 전체 정량 폴백: %s", exc)
+            logger.error(
+                "Claude Batches API 실패, 전체 정량 폴백(%d건): %s",
+                len(items),
+                exc,
+                exc_info=True,
+            )
             return {
                 stock.ticker: self._fallback_summary(stock, bbc_signal)
                 for stock, _, bbc_signal in items
@@ -186,7 +196,12 @@ class AnalystAgent:
                     bbc_reason=bbc_signal.reason if bbc_signal else None,
                 )
             except Exception as exc:
-                logger.error("Claude 배치 응답 파싱 실패(%s): %s — 정량 폴백", stock.ticker, exc)
+                logger.error(
+                    "Claude 배치 응답 파싱 실패(%s): %s — 정량 폴백",
+                    stock.ticker,
+                    exc,
+                    exc_info=True,
+                )
                 summaries[stock.ticker] = self._fallback_summary(stock, bbc_signal)
 
         return summaries
@@ -195,7 +210,13 @@ class AnalystAgent:
         self,
         items: list[tuple[RankedStock, list[Disclosure], BbcBuySignal | None]],
     ) -> dict[str, str]:
-        """배치를 생성·폴링하고 custom_id(ticker) → 원문 응답 텍스트 매핑을 반환한다."""
+        """배치를 생성·폴링하고 custom_id(ticker) → 원문 응답 텍스트 매핑을 반환한다.
+
+        배치 생성 자체가 실패하면 예외를 그대로 전파해 전체 폴백을 유도한다.
+        생성 이후 단계(상태 폴링, 결과 조회, 개별 라인 파싱)에서의 일시적 오류는
+        여기서 흡수한다 — 폴링 도중 한 번의 네트워크 오류로 이미 완료된(또는
+        완료 예정인) 배치 전체를 헛되이 폴백시키지 않기 위함이다.
+        """
         requests = [
             {
                 "custom_id": stock.ticker,
@@ -231,13 +252,21 @@ class AnalystAgent:
 
             elapsed = 0.0
             while elapsed < _BATCH_MAX_WAIT_SECONDS:
-                status_resp = await client.get(
-                    f"https://api.anthropic.com/v1/messages/batches/{batch_id}",
-                    headers=headers,
-                )
-                status_resp.raise_for_status()
-                if status_resp.json()["processing_status"] == "ended":
-                    break
+                try:
+                    status_resp = await client.get(
+                        f"https://api.anthropic.com/v1/messages/batches/{batch_id}",
+                        headers=headers,
+                    )
+                    status_resp.raise_for_status()
+                    if status_resp.json()["processing_status"] == "ended":
+                        break
+                except httpx.HTTPError as exc:
+                    # 상태 조회 자체의 일시적 실패(타임아웃/5xx 등)는 배치가 아직
+                    # 끝나지 않은 것으로 간주하고 계속 폴링한다 — 여기서 즉시
+                    # 실패시키면 이미 완료됐을 수도 있는 배치 전체가 헛되이 폴백된다.
+                    logger.warning(
+                        "Claude 배치(%s) 상태 조회 일시 실패, 계속 폴링: %s", batch_id, exc
+                    )
                 await asyncio.sleep(_BATCH_POLL_INTERVAL_SECONDS)
                 elapsed += _BATCH_POLL_INTERVAL_SECONDS
             else:
@@ -246,24 +275,55 @@ class AnalystAgent:
                     "완료되지 않았습니다"
                 )
 
-            results_resp = await client.get(
-                f"https://api.anthropic.com/v1/messages/batches/{batch_id}/results",
-                headers=headers,
-            )
-            results_resp.raise_for_status()
+            results_resp = None
+            last_exc: httpx.HTTPError | None = None
+            for attempt in range(_RESULTS_FETCH_MAX_RETRIES):
+                try:
+                    results_resp = await client.get(
+                        f"https://api.anthropic.com/v1/messages/batches/{batch_id}/results",
+                        headers=headers,
+                    )
+                    results_resp.raise_for_status()
+                    break
+                except httpx.HTTPError as exc:
+                    last_exc = exc
+                    logger.warning(
+                        "Claude 배치(%s) 결과 조회 실패(%d/%d), 재시도: %s",
+                        batch_id,
+                        attempt + 1,
+                        _RESULTS_FETCH_MAX_RETRIES,
+                        exc,
+                    )
+                    if attempt < _RESULTS_FETCH_MAX_RETRIES - 1:
+                        await asyncio.sleep(_RESULTS_FETCH_RETRY_DELAY_SECONDS)
+            else:
+                raise RuntimeError(
+                    f"Claude 배치({batch_id}) 결과 조회가 {_RESULTS_FETCH_MAX_RETRIES}회 "
+                    "재시도 후에도 실패했습니다"
+                ) from last_exc
 
         texts: dict[str, str] = {}
         for line in results_resp.text.splitlines():
             if not line.strip():
                 continue
-            entry = json.loads(line)
-            result = entry.get("result", {})
-            if result.get("type") != "succeeded":
+            try:
+                entry = json.loads(line)
+                result = entry.get("result", {})
+                if result.get("type") != "succeeded":
+                    logger.warning(
+                        "Claude 배치(%s) 항목 실패(%s): %s",
+                        batch_id,
+                        entry.get("custom_id"),
+                        result.get("type"),
+                    )
+                    continue
+                texts[entry["custom_id"]] = result["message"]["content"][0]["text"].strip()
+            except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+                # 한 줄만 깨져도 나머지 결과가 이미 존재한다 — 해당 줄만
+                # 건너뛰고, 대응하는 종목은 이후 정량 폴백으로 처리된다.
                 logger.warning(
-                    "Claude 배치 항목 실패(%s): %s", entry.get("custom_id"), result.get("type")
+                    "Claude 배치(%s) 결과 라인 파싱 실패, 해당 줄 건너뜀: %s", batch_id, exc
                 )
-                continue
-            texts[entry["custom_id"]] = result["message"]["content"][0]["text"].strip()
 
         return texts
 
@@ -336,7 +396,9 @@ class AnalystAgent:
         if stock.volume_surge_ratio is not None:
             lines.append(f"거래량 급증 배수: {stock.volume_surge_ratio:.1f}배")
         if bbc_signal is not None:
-            lines.append(f"박병창 매수 원칙 판정: 제{bbc_signal.principle}원칙 해당 — {bbc_signal.reason}")
+            lines.append(
+                f"박병창 매수 원칙 판정: 제{bbc_signal.principle}원칙 해당 — {bbc_signal.reason}"
+            )
         else:
             lines.append("박병창 매수 원칙 판정: 현재 해당하는 원칙 없음")
         if disclosures:
