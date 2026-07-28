@@ -6,11 +6,21 @@ Phase 17: GET /api/market-stocks?sort_by=trading_value&limit=10
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+import logging
 from typing import Literal
 
-from core.api.deps import ContainerDep
+from fastapi import APIRouter, HTTPException, Query
 
+from core.api.deps import AppContainer, ContainerDep
+from core.api.models import (
+    MarketStockCategory,
+    MarketStockItem,
+    MarketStockList,
+    MarketStockSummary,
+    MarketStockSummaryItem,
+)
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # SQL 주입 방지: 화이트리스트 매핑
@@ -22,14 +32,41 @@ ALLOWED_ORDER_BY = {
 }
 
 
-@router.get("/market-stocks")
+async def _get_latest_timestamp(container: AppContainer) -> str:
+    """market_data 테이블의 최신 타임스탬프를 조회한다.
+
+    Raises:
+        HTTPException(404): 마켓 데이터가 아직 수집되지 않음.
+        HTTPException(503): DB 조회 실패(store 미오픈, I/O 오류 등).
+    """
+    try:
+        async with container.store.conn.execute("SELECT MAX(timestamp) FROM market_data") as cursor:
+            latest = await cursor.fetchone()
+    except Exception as exc:
+        logger.exception("마켓 데이터 최신 타임스탬프 조회 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="마켓 데이터 조회에 실패했습니다.",
+        ) from exc
+
+    if not latest or not latest[0]:
+        raise HTTPException(
+            status_code=404,
+            detail="마켓 데이터가 없습니다",
+        )
+
+    return latest[0]
+
+
+@router.get(
+    "/market-stocks", response_model=MarketStockList, summary="거래대금/거래량 TOP 종목 조회"
+)
 async def get_market_stocks(
     container: ContainerDep,
     sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
-    limit: int = Query(default=10, ge=1, le=100),
-) -> dict:
-    """
-    거래대금/거래량 기준 TOP 종목 조회.
+    limit: int = Query(default=10, ge=1, le=100, description="조회할 종목 수 (1~100)"),
+) -> MarketStockList:
+    """거래대금/거래량 기준 TOP 종목을 조회한다.
 
     Args:
         sort_by: 정렬 기준
@@ -39,37 +76,14 @@ async def get_market_stocks(
             - downtrend: 하락률 높은 순
         limit: 조회할 종목 수 (1~100, 기본값 10)
 
-    Returns:
-        {
-            "data": [
-                {
-                    "symbol": "005930",
-                    "price": 70500,
-                    "change_rate": 0.71,
-                    "trading_volume": 17500000,
-                    "trading_value": 1234567890,
-                    "timestamp": "2024-07-24T10:30:00"
-                },
-                ...
-            ],
-            "timestamp": "2024-07-24T10:30:00"
-        }
+    Raises:
+        HTTPException(404): 마켓 데이터가 없거나 조회된 종목이 없을 때
+        HTTPException(503): DB 조회 실패
     """
-    # 최신 타임스탬프 조회
-    async with container.store.conn.execute(
-        "SELECT MAX(timestamp) FROM market_data"
-    ) as cursor:
-        latest = await cursor.fetchone()
+    latest_timestamp = await _get_latest_timestamp(container)
 
-    if not latest or not latest[0]:
-        raise HTTPException(
-            status_code=404,
-            detail="마켓 데이터가 없습니다",
-        )
-
-    latest_timestamp = latest[0]
-
-    # 정렬 쿼리 구성 (화이트리스트 사용)
+    # 정렬 쿼리 구성 (화이트리스트 사용) — sort_by는 Literal로 이미 제한되지만
+    # 향후 Literal에 값이 추가되고 화이트리스트 갱신을 누락하는 경우를 방어한다.
     order_by = ALLOWED_ORDER_BY.get(sort_by)
     if not order_by:
         raise HTTPException(
@@ -88,8 +102,15 @@ async def get_market_stocks(
         LIMIT ?
     """
 
-    async with container.store.conn.execute(query, (latest_timestamp, limit)) as cursor:
-        rows = await cursor.fetchall()
+    try:
+        async with container.store.conn.execute(query, (latest_timestamp, limit)) as cursor:
+            rows = await cursor.fetchall()
+    except Exception as exc:
+        logger.exception("마켓 스톡 조회 실패: sort_by=%s, limit=%s", sort_by, limit)
+        raise HTTPException(
+            status_code=503,
+            detail="마켓 데이터 조회에 실패했습니다.",
+        ) from exc
 
     if not rows:
         raise HTTPException(
@@ -97,42 +118,34 @@ async def get_market_stocks(
             detail="조회된 종목이 없습니다",
         )
 
-    # 응답 구성
     data = [
-        {
-            "symbol": row[0],
-            "price": row[1],
-            "change_rate": row[2],
-            "trading_volume": row[3],
-            "trading_value": row[4],
-            "timestamp": row[5],
-        }
+        MarketStockItem(
+            symbol=row[0],
+            price=row[1],
+            change_rate=row[2],
+            trading_volume=row[3],
+            trading_value=row[4],
+            timestamp=row[5],
+        )
         for row in rows
     ]
 
-    return {
-        "data": data,
-        "timestamp": latest_timestamp,
-    }
+    return MarketStockList(data=data, timestamp=latest_timestamp)
 
 
-@router.get("/market-stocks/summary")
-async def get_market_summary(
-    container: ContainerDep,
-) -> dict:
-    """마켓 데이터 요약 (TOP 5 각 카테고리)."""
-    async with container.store.conn.execute(
-        "SELECT MAX(timestamp) FROM market_data"
-    ) as cursor:
-        latest = await cursor.fetchone()
+@router.get(
+    "/market-stocks/summary",
+    response_model=MarketStockSummary,
+    summary="마켓 데이터 요약 (카테고리별 TOP 5)",
+)
+async def get_market_summary(container: ContainerDep) -> MarketStockSummary:
+    """마켓 데이터 요약(거래대금·거래량·상승률 각 TOP 5)을 조회한다.
 
-    if not latest or not latest[0]:
-        raise HTTPException(
-            status_code=404,
-            detail="마켓 데이터가 없습니다",
-        )
-
-    latest_timestamp = latest[0]
+    Raises:
+        HTTPException(404): 마켓 데이터가 없을 때
+        HTTPException(503): DB 조회 실패
+    """
+    latest_timestamp = await _get_latest_timestamp(container)
 
     # 각 카테고리별 TOP 5
     query_template = """
@@ -151,30 +164,34 @@ async def get_market_summary(
         "top_gainers": ("change_rate", "급상승"),
     }
 
-    result = {
-        "timestamp": latest_timestamp,
-        "categories": {},
-    }
+    result_categories: dict[str, MarketStockCategory] = {}
 
     for key, (col, label) in categories.items():
-        async with container.store.conn.execute(
-            query_template.format(col),
-            (latest_timestamp,),
-        ) as cursor:
-            rows = await cursor.fetchall()
+        try:
+            async with container.store.conn.execute(
+                query_template.format(col),
+                (latest_timestamp,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+        except Exception as exc:
+            logger.exception("마켓 요약 조회 실패: category=%s", key)
+            raise HTTPException(
+                status_code=503,
+                detail="마켓 데이터 조회에 실패했습니다.",
+            ) from exc
 
-        result["categories"][key] = {
-            "label": label,
-            "stocks": [
-                {
-                    "symbol": row[0],
-                    "price": row[1],
-                    "change_rate": row[2],
-                    "trading_volume": row[3],
-                    "trading_value": row[4],
-                }
+        result_categories[key] = MarketStockCategory(
+            label=label,
+            stocks=[
+                MarketStockSummaryItem(
+                    symbol=row[0],
+                    price=row[1],
+                    change_rate=row[2],
+                    trading_volume=row[3],
+                    trading_value=row[4],
+                )
                 for row in rows
             ],
-        }
+        )
 
-    return result
+    return MarketStockSummary(timestamp=latest_timestamp, categories=result_categories)
