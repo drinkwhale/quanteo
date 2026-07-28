@@ -462,7 +462,7 @@ info/
 ├── fx/              FxRateMonitor, FxDailyReporter, rate_rule
 ├── calendar/        GoogleCalendarClient, earnings_data, macro_events
 ├── telegram/        InfoNotifier — 5개 포맷 함수 + DLQ
-├── scheduler.py     InfoScheduler — AsyncIOScheduler 7개 잡
+├── scheduler.py     InfoScheduler — AsyncIOScheduler 7개 잡 (뉴스 관련 3개는 _NEWS_POLLING_ENABLED=False로 비활성 — 12.2절 참고)
 └── main.py          InfoSystem — 전체 컴포넌트 DI 조립
 ```
 
@@ -476,17 +476,18 @@ info/
 | **DLQ 패턴** | asyncio.Queue(max 100), 3회 실패 시 적재, 5분 간격 재시도 |
 | **KST 타임존 필수** | `AsyncIOScheduler(timezone="Asia/Seoul")` — 미설정 시 9시간 오차 |
 | **0.0 가드** | yfinance 조회 실패 시 0.0 반환 → 급변 알람 오발 방지 |
+| **뉴스 폴링 비용 통제** | `info/scheduler.py`의 `_NEWS_POLLING_ENABLED` 플래그(기본 `False`) — CRITICAL_KEYWORDS 사전 필터가 지나치게 광범위해 Claude API 호출이 급증, `domestic_rss`/`us_news`/`morning_brief` 뉴스 파트를 임시 비활성화. 잡 등록 자체는 유지되고 본문에서 조기 반환하는 방식이라 재활성화는 플래그만 `True`로 되돌리면 됨(CRITICAL_KEYWORDS 재검토 선행 필요) |
 
 ### 12.3 스케줄러 잡 목록
 
 | 잡 ID | 트리거 | 역할 |
 |-------|--------|------|
-| `morning_brief` | 08:00 KST | 장전 뉴스 + 당일 일정 브리핑 |
-| `domestic_rss` | 5분 간격 (장중) | 국내 RSS 폴링 + HIGH 알람 |
+| `morning_brief` | 08:00 KST | 당일 일정 브리핑 (뉴스 파트는 12.2절 플래그로 비활성) |
+| `domestic_rss` | 5분 간격 (장중) | 국내 RSS 폴링 + HIGH 알람 (12.2절 플래그로 비활성) |
 | `fx_check` | 30분 간격 (장중) | USD/KRW 급변 알람 |
 | `us_earnings_alert` | 15:30 KST | 오늘 미국 장후 실적 Telegram |
 | `fx_daily_report` | 16:00 KST | 환율 일일 마감 리포트 |
-| `us_news` | 10분 간격 (야간) | Finnhub·Yahoo 뉴스 폴링 |
+| `us_news` | 10분 간격 (야간) | Finnhub·Yahoo 뉴스 폴링 (12.2절 플래그로 비활성) |
 | `monthly_calendar` | 매월 1일 00:00 | 다음 달 Google Calendar 저장 |
 
 ### 12.4 활성화 방법

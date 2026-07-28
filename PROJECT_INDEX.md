@@ -116,7 +116,7 @@ quanteo/
 │   │   └── macro_events.py   # MacroEvent + MACRO_SCHEDULE (FOMC/CPI/NFP/BOK/PMI 30개)
 │   ├── telegram/
 │   │   └── info_notifier.py  # InfoNotifier (5개 포맷 함수, DLQ, 3회 재시도)
-│   ├── scheduler.py          # InfoScheduler (AsyncIOScheduler KST, 7개 잡)
+│   ├── scheduler.py          # InfoScheduler (AsyncIOScheduler KST, 7개 잡 — 뉴스 관련 3개는 _NEWS_POLLING_ENABLED=False로 비활성, Claude API 비용 급증 대응)
 │   └── main.py               # InfoSystem (DI 조립, start/stop, DLQ 재시도 루프)
 ├── dashboard/                # TypeScript 웹 대시보드
 │   ├── src/
