@@ -1,13 +1,13 @@
 """
 info 서브시스템 APScheduler 스케줄러.
 
-AsyncIOScheduler(timezone="Asia/Seoul") 기반으로 7개 잡 중 5개를 등록한다
-(국내/미국 뉴스 폴링 2개는 Claude API 비용 급증으로 비활성화됨).
+AsyncIOScheduler(timezone="Asia/Seoul") 기반으로 7개 잡을 등록한다.
 잡 내부 예외는 try/except로 격리하여 스케줄러 중단을 방지한다.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import time
 from typing import TYPE_CHECKING
@@ -31,6 +31,13 @@ _MARKET_CLOSE = time(15, 30)
 _US_SESSION_START = time(22, 0)
 _US_SESSION_END = time(6, 0)
 
+# 뉴스 폴링(국내 RSS·미국 뉴스·모닝브리핑 뉴스 파트)이 Claude API를 과도하게
+# 호출해 비용이 급증했다 — CRITICAL_KEYWORDS(info/ai_filter/claude_filter.py)
+# 사전 필터가 지나치게 광범위해 신규 기사 대부분이 실제 호출로 이어짐.
+# 재검토 전까지 이 플래그 하나로 뉴스 관련 3개 잡 본문을 전부 비활성화한다
+# (잡 등록 자체는 유지 — 재활성화는 이 값을 True로 되돌리기만 하면 된다).
+_NEWS_POLLING_ENABLED = False
+
 
 def _in_kr_market_hours() -> bool:
     from datetime import datetime
@@ -45,7 +52,7 @@ def _in_us_session() -> bool:
 
 
 class InfoScheduler:
-    """APScheduler 기반 정보 수집·알람 스케줄러 (5개 잡 활성, 뉴스 폴링 2개 비활성)."""
+    """APScheduler 기반 정보 수집·알람 스케줄러 (7개 잡, 뉴스 관련 3개는 플래그로 비활성)."""
 
     def __init__(self, system: "InfoSystem") -> None:
         self._system = system
@@ -56,7 +63,7 @@ class InfoScheduler:
         kst = "Asia/Seoul"
         defaults: dict = {"misfire_grace_time": 60, "coalesce": True}
 
-        # ① 08:00 KST — 장전 뉴스 수집 + 당일 일정 브리핑
+        # ① 08:00 KST — 당일 일정 브리핑 (뉴스 파트는 _NEWS_POLLING_ENABLED로 가드)
         self._scheduler.add_job(
             self._job_morning_brief,
             CronTrigger(hour=8, minute=0, timezone=kst),
@@ -64,15 +71,14 @@ class InfoScheduler:
             **defaults,
         )
 
-        # ② 국내 RSS 폴링 — Claude API 비용 급증으로 비활성화(뉴스 필터 사전 키워드가
-        # 지나치게 광범위해 신규 기사 대부분이 실제 호출로 이어짐). 재활성화 전
-        # CRITICAL_KEYWORDS(info/ai_filter/claude_filter.py) 재검토 필요.
-        # self._scheduler.add_job(
-        #     self._job_domestic_rss,
-        #     IntervalTrigger(minutes=5, timezone=kst),
-        #     id="domestic_rss",
-        #     **defaults,
-        # )
+        # ② 5분 간격 (09:00~15:30 내부 가드) — 국내 RSS 폴링
+        # (_NEWS_POLLING_ENABLED=False면 잡은 등록되되 본문에서 즉시 반환)
+        self._scheduler.add_job(
+            self._job_domestic_rss,
+            IntervalTrigger(minutes=5, timezone=kst),
+            id="domestic_rss",
+            **defaults,
+        )
 
         # ③ 30분 간격 (09:00~15:30 내부 가드) — USD/KRW 환율 체크
         self._scheduler.add_job(
@@ -98,13 +104,14 @@ class InfoScheduler:
             **defaults,
         )
 
-        # ⑥ 미국 뉴스 폴링 — Claude API 비용 급증으로 비활성화(②와 동일 사유).
-        # self._scheduler.add_job(
-        #     self._job_us_news,
-        #     IntervalTrigger(minutes=10, timezone=kst),
-        #     id="us_news",
-        #     **defaults,
-        # )
+        # ⑥ 10분 간격 (22:00~06:00 내부 가드) — 미국 뉴스 폴링
+        # (_NEWS_POLLING_ENABLED=False면 잡은 등록되되 본문에서 즉시 반환)
+        self._scheduler.add_job(
+            self._job_us_news,
+            IntervalTrigger(minutes=10, timezone=kst),
+            id="us_news",
+            **defaults,
+        )
 
         # ⑦ 매월 1일 00:00 KST — 다음 달 캘린더 자동 저장
         self._scheduler.add_job(
@@ -127,18 +134,39 @@ class InfoScheduler:
         except Exception:
             pass  # 에스컬레이션 자체 실패는 무시
 
+    async def _notify_news_polling_disabled(self) -> None:
+        """뉴스 폴링이 비활성 상태로 기동됐음을 Telegram으로 1회 알린다(베스트에포트).
+
+        로그만으로는 "뉴스가 없어서 조용한 것"과 "기능이 꺼져서 조용한 것"을
+        구분할 수 없어, 기동 시점에 운영자에게 명시적으로 알린다.
+        """
+        try:
+            await self._system.notifier._send_text(
+                "ℹ️ [InfoScheduler] 뉴스 폴링(국내 RSS·미국 뉴스·모닝브리핑 뉴스 파트) "
+                "비활성 상태로 기동됨 — Claude API 비용 급증으로 임시 비활성화됨"
+                "(_NEWS_POLLING_ENABLED=False). CRITICAL_KEYWORDS 재검토 후 재활성화 예정."
+            )
+        except Exception:
+            pass  # 알림 자체 실패는 무시
+
     # ──────────────────────────────────────────────────────────────────────────
     # 잡 구현
     # ──────────────────────────────────────────────────────────────────────────
 
     async def _job_morning_brief(self) -> None:
-        """① 08:00 KST: 당일 일정 브리핑.
+        """① 08:00 KST: 장전 뉴스 수집 + 당일 일정 브리핑.
 
-        장전 뉴스 수집·Claude 분류는 Claude API 비용 급증으로 비활성화했다
-        (②/⑥과 동일 사유).
+        뉴스 수집·Claude 분류 파트는 _NEWS_POLLING_ENABLED가 False면 스킵된다
+        (②/⑥과 동일 사유 — Claude API 비용 급증).
         """
         try:
             sys = self._system
+            if _NEWS_POLLING_ENABLED:
+                items = await sys.rss_collector.fetch()
+                for item in items:
+                    result = await sys.claude_filter.classify(item.title, item.raw_body)
+                    if result.score in ("HIGH", "CRITICAL"):
+                        await sys.notifier.send_news_alert(item, result)
             from info.calendar.earnings_data import next_events as next_earn
             from info.calendar.macro_events import next_macro_events
             today_events = next_earn(days=1) + next_macro_events(days=1)
@@ -148,7 +176,12 @@ class InfoScheduler:
             await self._escalate("morning_brief", exc)
 
     async def _job_domestic_rss(self) -> None:
-        """② 5분 간격 (09:00~15:30): 국내 RSS 폴링 + HIGH 알람."""
+        """② 5분 간격 (09:00~15:30): 국내 RSS 폴링 + HIGH 알람.
+
+        _NEWS_POLLING_ENABLED가 False면 즉시 반환한다(Claude API 비용 급증으로 비활성화).
+        """
+        if not _NEWS_POLLING_ENABLED:
+            return
         if not _in_kr_market_hours():
             return
         try:
@@ -193,7 +226,12 @@ class InfoScheduler:
             await self._escalate("fx_daily_report", exc)
 
     async def _job_us_news(self) -> None:
-        """⑥ 10분 간격 (22:00~06:00): 미국 뉴스 폴링 (Finnhub·Yahoo)."""
+        """⑥ 10분 간격 (22:00~06:00): 미국 뉴스 폴링 (Finnhub·Yahoo).
+
+        _NEWS_POLLING_ENABLED가 False면 즉시 반환한다(Claude API 비용 급증으로 비활성화).
+        """
+        if not _NEWS_POLLING_ENABLED:
+            return
         if not _in_us_session():
             return
         try:
@@ -224,7 +262,12 @@ class InfoScheduler:
 
     def start(self) -> None:
         self._scheduler.start()
-        logger.info("InfoScheduler 시작 (잡 5개 등록, 뉴스 폴링 2개 비활성)")
+        logger.info(
+            "InfoScheduler 시작 (잡 7개 등록, 뉴스 폴링 %s)",
+            "활성" if _NEWS_POLLING_ENABLED else "비활성",
+        )
+        if not _NEWS_POLLING_ENABLED:
+            asyncio.create_task(self._notify_news_polling_disabled())
 
     def stop(self) -> None:
         if self._scheduler.running:

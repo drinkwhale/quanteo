@@ -120,7 +120,12 @@ async def test_scheduler_continues_after_job_failure():
         scheduler = InfoScheduler(mock_sys)
 
     # morning_brief 잡 내부 예외 → 외부 전파 없음
-    await scheduler._job_morning_brief()
+    # (뉴스 파트는 _NEWS_POLLING_ENABLED=False가 기본값이라 rss_collector.fetch가
+    # 호출되지 않으므로, 이 테스트가 실제로 예외 경로를 exercise하려면 활성화 필요)
+    with patch("info.scheduler._NEWS_POLLING_ENABLED", True):
+        await scheduler._job_morning_brief()
+
+    mock_sys.rss_collector.fetch.assert_called_once()
 
     # 스케줄러 인스턴스 유지
     assert scheduler.scheduler is mock_sched
