@@ -6,8 +6,7 @@ Phase 17: GET /api/market-stocks?sort_by=trading_value&limit=10
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from pydantic import Field
+from fastapi import APIRouter, HTTPException, Query
 from typing import Literal
 
 from core.api.deps import ContainerDep
@@ -25,9 +24,9 @@ ALLOWED_ORDER_BY = {
 
 @router.get("/market-stocks")
 async def get_market_stocks(
-    sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
-    limit: int = Field(default=10, ge=1, le=100),
     container: ContainerDep,
+    sort_by: Literal["trading_value", "volume", "uptrend", "downtrend"] = "trading_value",
+    limit: int = Query(default=10, ge=1, le=100),
 ) -> dict:
     """
     거래대금/거래량 기준 TOP 종목 조회.
