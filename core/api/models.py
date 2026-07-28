@@ -330,3 +330,51 @@ class CandleList(BaseModel):
     """캔들 목록 응답."""
 
     items: list[CandleItem]
+
+
+# ---------------------------------------------------------------------------
+# /market-stocks — 거래대금/거래량 기준 TOP 종목 (Phase 17)
+# ---------------------------------------------------------------------------
+
+
+class MarketStockItem(BaseModel):
+    """마켓 스톡 1종목 — /market-stocks 응답 항목."""
+
+    symbol: str
+    price: float
+    change_rate: float
+    trading_volume: int
+    trading_value: int
+    timestamp: str
+
+
+class MarketStockList(BaseModel):
+    """/market-stocks 응답. 필드명(data)은 기존 대시보드(useMarketStocks.ts)
+    계약을 그대로 유지한다 — 다른 목록 응답의 관례인 `items`가 아니다."""
+
+    data: list[MarketStockItem]
+    timestamp: str
+
+
+class MarketStockSummaryItem(BaseModel):
+    """/market-stocks/summary 카테고리 내 종목 1건 (timestamp 없음)."""
+
+    symbol: str
+    price: float
+    change_rate: float
+    trading_volume: int
+    trading_value: int
+
+
+class MarketStockCategory(BaseModel):
+    """/market-stocks/summary 카테고리 1개(거래대금/거래량/상승률 등) TOP 5."""
+
+    label: str
+    stocks: list[MarketStockSummaryItem]
+
+
+class MarketStockSummary(BaseModel):
+    """/market-stocks/summary 응답."""
+
+    timestamp: str
+    categories: dict[str, MarketStockCategory]
