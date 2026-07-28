@@ -145,8 +145,10 @@ gh pr create --base main --head phase/1-bootstrap
 > 2. 변경사항 전체 commit & push (`phase/*` 브랜치)
 > 3. `gh pr create --base main` — PR 생성 (이미 존재하면 skip)
 >
-> Stop hook (`settings.local.json`)이 미커밋 변경사항을 자동 commit+push하지만,
-> **index 업데이트는 AI가 직접 실행해야 하므로** Claude가 세션 내에서 처리한다.
+> Stop hook (`.claude/settings.local.json`, 개인 로컬 설정)이 세션 종료 시
+> `main`이 아닌 브랜치의 미커밋 변경사항을 자동 commit한다(push는 하지 않음 —
+> 원격 반영·PR 생성은 위 3단계처럼 항상 사람이나 Claude가 세션 내에서 명시적으로
+> 수행). **index 업데이트는 AI가 직접 실행해야 하므로** Claude가 세션 내에서 처리한다.
 
 ### 커밋 메시지 형식 (Conventional Commits)
 
