@@ -226,17 +226,13 @@ export default function App() {
             </div>
           )}
 
-          {/* 레이아웃이 로드되지 않은 경우 또는 Chart 탭 */}
-          {(!mounted || activeTab !== "ops") && (
+          {/* Chart 탭 */}
+          {activeTab === "chart" && (
             <div className="p-4">
-              {activeTab === "chart" && (
-                <StockDetail recentSymbols={allSymbols} />
-              )}
+              <StockDetail recentSymbols={allSymbols} />
             </div>
           )}
         </div>
-
-        {activeTab === "chart" && <StockDetail recentSymbols={allSymbols} />}
       </main>
     </div>
   );

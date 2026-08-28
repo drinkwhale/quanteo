@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export interface PanelPosition {
   x: number | string;
@@ -9,6 +9,13 @@ export interface PanelPosition {
 
 export interface PanelPositions {
   [key: string]: PanelPosition;
+}
+
+interface UseGridLayoutReturn {
+  positions: PanelPositions;
+  updatePosition: (panelId: string, newPosition: PanelPosition) => void;
+  resetLayout: () => void;
+  mounted: boolean;
 }
 
 const STORAGE_KEY = "dashboard-panel-positions";
@@ -32,21 +39,24 @@ const DEFAULT_POSITIONS: PanelPositions = {
   strategy: { x: 0, y: 910, width: "100%", height: 300 },
 };
 
-export function useGridLayout() {
-  const [positions, setPositions] = useState<PanelPositions>(DEFAULT_POSITIONS);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        setPositions(JSON.parse(saved));
-      }
-    } catch (err) {
-      console.warn("Failed to load saved positions:", err);
+const loadSavedPositions = (): PanelPositions => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
     }
-    setMounted(true);
-  }, []);
+  } catch {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("Failed to load saved positions from localStorage");
+    }
+  }
+  return DEFAULT_POSITIONS;
+};
+
+export function useGridLayout(): UseGridLayoutReturn {
+  const [positions, setPositions] =
+    useState<PanelPositions>(loadSavedPositions);
+  const [mounted] = useState(true);
 
   const updatePosition = (panelId: string, newPosition: PanelPosition) => {
     setPositions((prev) => {
@@ -54,7 +64,9 @@ export function useGridLayout() {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch (err) {
-        console.warn("Failed to save position:", err);
+        if (process.env.NODE_ENV === "development") {
+          console.error("Failed to persist panel position:", panelId, err);
+        }
       }
       return updated;
     });
@@ -65,7 +77,9 @@ export function useGridLayout() {
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (err) {
-      console.warn("Failed to reset layout:", err);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to reset layout storage:", err);
+      }
     }
   };
 

@@ -20,40 +20,71 @@ export function RndPanel({
   headerExtra,
 }: RndPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
+
   const x = typeof position.x === "number" ? position.x : 0;
   const y = typeof position.y === "number" ? position.y : 0;
+  const width =
+    typeof position.width === "number"
+      ? position.width
+      : parseInt(String(position.width), 10) || 300;
+  const height =
+    typeof position.height === "number"
+      ? position.height
+      : parseInt(String(position.height), 10) || 200;
 
   return (
     <Rnd
-      key={id}
       default={{
         x,
         y,
-        width: position.width,
-        height: position.height,
+        width,
+        height,
       }}
       position={{ x, y }}
       size={{
-        width: position.width,
-        height: position.height,
+        width,
+        height,
       }}
       onDragStart={() => setIsDragging(true)}
       onDragStop={(_e, d) => {
-        setIsDragging(false);
-        onPositionChange(id, {
-          x: d.x,
-          y: d.y,
-          width: position.width,
-          height: position.height,
-        });
+        try {
+          onPositionChange(id, {
+            x: d.x,
+            y: d.y,
+            width,
+            height,
+          });
+        } catch (err) {
+          if (process.env.NODE_ENV === "development") {
+            console.error("Failed to update position on drag:", err);
+          }
+        } finally {
+          setIsDragging(false);
+        }
       }}
       onResizeStop={(_e, _direction, ref, _delta, pos) => {
-        onPositionChange(id, {
-          x: pos.x,
-          y: pos.y,
-          width: ref.offsetWidth,
-          height: ref.offsetHeight,
-        });
+        if (!ref || !ref.offsetWidth || !ref.offsetHeight) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn("Invalid ref dimensions for resize:", {
+              offsetWidth: ref?.offsetWidth,
+              offsetHeight: ref?.offsetHeight,
+            });
+          }
+          return;
+        }
+
+        try {
+          onPositionChange(id, {
+            x: pos.x,
+            y: pos.y,
+            width: ref.offsetWidth,
+            height: ref.offsetHeight,
+          });
+        } catch (err) {
+          if (process.env.NODE_ENV === "development") {
+            console.error("Failed to update position on resize:", err);
+          }
+        }
       }}
       minWidth={200}
       minHeight={80}
