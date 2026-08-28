@@ -1,72 +1,67 @@
 import { useState, useEffect } from "react";
 
-interface GridLayouts {
-  lg?: any[];
-  md?: any[];
-  sm?: any[];
+export interface PanelPosition {
+  x: number | string;
+  y: number | string;
+  width: number | string;
+  height: number | string;
 }
 
-const STORAGE_KEY = "dashboard-layout";
+export interface PanelPositions {
+  [key: string]: PanelPosition;
+}
 
-const DEFAULT_LAYOUT: GridLayouts = {
-  lg: [
-    { x: 0, y: 0, w: 12, h: 1, i: "indices" },
-    { x: 0, y: 1, w: 7, h: 3, i: "market-stocks" },
-    { x: 7, y: 1, w: 5, h: 3, i: "account-summary" },
-    { x: 0, y: 4, w: 8, h: 4, i: "operations" },
-    { x: 8, y: 4, w: 4, h: 4, i: "control" },
-    { x: 0, y: 8, w: 12, h: 3, i: "strategy" },
-  ],
-  md: [
-    { x: 0, y: 0, w: 10, h: 1, i: "indices" },
-    { x: 0, y: 1, w: 10, h: 3, i: "market-stocks" },
-    { x: 0, y: 4, w: 10, h: 3, i: "account-summary" },
-    { x: 0, y: 7, w: 10, h: 4, i: "operations" },
-    { x: 0, y: 11, w: 10, h: 3, i: "control" },
-    { x: 0, y: 14, w: 10, h: 3, i: "strategy" },
-  ],
-  sm: [
-    { x: 0, y: 0, w: 12, h: 1, i: "indices" },
-    { x: 0, y: 1, w: 12, h: 3, i: "market-stocks" },
-    { x: 0, y: 4, w: 12, h: 3, i: "account-summary" },
-    { x: 0, y: 7, w: 12, h: 4, i: "operations" },
-    { x: 0, y: 11, w: 12, h: 3, i: "control" },
-    { x: 0, y: 14, w: 12, h: 3, i: "strategy" },
-  ],
+const STORAGE_KEY = "dashboard-panel-positions";
+
+const DEFAULT_POSITIONS: PanelPositions = {
+  indices: { x: 0, y: 0, width: "100%", height: 100 },
+  "market-stocks": { x: 0, y: 120, width: "calc(50% - 8px)", height: 350 },
+  "account-summary": {
+    x: "calc(50% + 8px)",
+    y: 120,
+    width: "calc(50% - 8px)",
+    height: 350,
+  },
+  operations: { x: 0, y: 490, width: "calc(65% - 8px)", height: 400 },
+  control: {
+    x: "calc(65% + 8px)",
+    y: 490,
+    width: "calc(35% - 8px)",
+    height: 400,
+  },
+  strategy: { x: 0, y: 910, width: "100%", height: 300 },
 };
 
 export function useGridLayout() {
-  const [layouts, setLayouts] = useState<GridLayouts>(DEFAULT_LAYOUT);
+  const [positions, setPositions] = useState<PanelPositions>(DEFAULT_POSITIONS);
   const [mounted, setMounted] = useState(false);
 
-  // 로컬스토리지에서 레이아웃 로드
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        setLayouts(JSON.parse(saved));
+        setPositions(JSON.parse(saved));
       }
     } catch (err) {
-      console.warn("Failed to load saved layout:", err);
+      console.warn("Failed to load saved positions:", err);
     }
     setMounted(true);
   }, []);
 
-  // 레이아웃 변경 시 저장
-  const handleLayoutChange = (_newLayout: any[], newLayouts?: GridLayouts) => {
-    if (newLayouts) {
-      setLayouts(newLayouts);
+  const updatePosition = (panelId: string, newPosition: PanelPosition) => {
+    setPositions((prev) => {
+      const updated = { ...prev, [panelId]: newPosition };
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newLayouts));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       } catch (err) {
-        console.warn("Failed to save layout:", err);
+        console.warn("Failed to save position:", err);
       }
-    }
+      return updated;
+    });
   };
 
-  // 레이아웃 리셋
   const resetLayout = () => {
-    setLayouts(DEFAULT_LAYOUT);
+    setPositions(DEFAULT_POSITIONS);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (err) {
@@ -75,8 +70,8 @@ export function useGridLayout() {
   };
 
   return {
-    layouts,
-    handleLayoutChange,
+    positions,
+    updatePosition,
     resetLayout,
     mounted,
   };
