@@ -1,6 +1,4 @@
-import { useState } from "react";
 import { fmtPrice } from "../lib/format";
-import { TIMESTAMP_CELL_CLASS } from "../lib/utils";
 
 interface MarketStock {
   symbol: string;
@@ -15,9 +13,22 @@ interface Props {
   stocks: MarketStock[];
   error?: string | null;
   isLoading?: boolean;
+  stockNames?: Map<string, string> | Record<string, string>;
 }
 
-export function MarketStocksTable({ stocks, error, isLoading }: Props) {
+export function MarketStocksTable({
+  stocks,
+  error,
+  isLoading,
+  stockNames,
+}: Props) {
+  const getStockName = (symbol: string): string => {
+    if (!stockNames) return symbol;
+    return stockNames instanceof Map
+      ? stockNames.get(symbol) || symbol
+      : stockNames[symbol] || symbol;
+  };
+
   return (
     <>
       {error && (
@@ -54,7 +65,9 @@ export function MarketStocksTable({ stocks, error, isLoading }: Props) {
                   key={stock.symbol}
                   className="border-b border-border last:border-0 hover:bg-surface transition-colors"
                 >
-                  <td className="px-4 py-2 font-medium">{stock.symbol}</td>
+                  <td className="px-4 py-2 font-medium">
+                    {getStockName(stock.symbol)}
+                  </td>
                   <td className="px-4 py-2 text-right text-white tabular-nums">
                     {fmtPrice(stock.price, "domestic")}
                   </td>
