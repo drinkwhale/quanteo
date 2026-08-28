@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pandas as pd
 import pytest
 
@@ -257,3 +258,344 @@ class TestSummarize:
             summary = await agent.summarize(_stock(), disclosures=[])
 
         assert summary.risk_flags == []
+
+
+class TestSummarizeBatch:
+    @pytest.mark.asyncio
+    async def test_empty_items_returns_empty_dict(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        assert await agent.summarize_batch([]) == {}
+
+    @pytest.mark.asyncio
+    async def test_batch_success_parses_all_results(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {
+            "one_line_thesis": "메모리 업턴 초입",
+            "protips": ["영업이익률 개선"],
+            "risk_flags": [],
+        }
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "메모리 업턴 초입"
+        mock_client.post.assert_called_once()
+        assert (
+            mock_client.post.call_args.args[0]
+            == "https://api.anthropic.com/v1/messages/batches"
+        )
+
+    @pytest.mark.asyncio
+    async def test_batch_creation_failure_falls_back_all(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=Exception("network down"))
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summaries[stock.ticker].risk_flags)
+
+    @pytest.mark.asyncio
+    async def test_batch_item_error_falls_back_single_ticker(self) -> None:
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {"type": "errored", "error": {"type": "invalid_request"}},
+            }
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"
+
+    @pytest.mark.asyncio
+    async def test_poll_loop_continues_until_ended(self) -> None:
+        """상태가 in_progress → ended로 전이할 때 폴링 루프가 실제로 반복되는지 검증."""
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp_in_progress = MagicMock()
+        status_resp_in_progress.raise_for_status = MagicMock()
+        status_resp_in_progress.json.return_value = {
+            "id": "msgbatch_1",
+            "processing_status": "in_progress",
+        }
+
+        status_resp_ended = MagicMock()
+        status_resp_ended.raise_for_status = MagicMock()
+        status_resp_ended.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {"one_line_thesis": "메모리 업턴 초입", "protips": [], "risk_flags": []}
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(
+            side_effect=[status_resp_in_progress, status_resp_ended, results_resp]
+        )
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("screener.agents.analyst_agent.asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "메모리 업턴 초입"
+        assert mock_client.get.call_count == 3  # in_progress → ended → results
+        mock_sleep.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_poll_timeout_falls_back_to_degraded(self) -> None:
+        """상태가 계속 in_progress면 _BATCH_MAX_WAIT_SECONDS 도달 후 TimeoutError → 전체 폴백."""
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(return_value=status_resp)  # 항상 in_progress
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("screener.agents.analyst_agent._BATCH_MAX_WAIT_SECONDS", 20.0),
+            patch("screener.agents.analyst_agent.asyncio.sleep", new=AsyncMock()),
+        ):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        assert summaries[stock.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summaries[stock.ticker].risk_flags)
+        assert mock_client.get.call_count == 2  # 20.0초 / 기본 10.0초 간격
+
+    @pytest.mark.asyncio
+    async def test_transient_status_poll_error_recovers(self) -> None:
+        """폴링 중 일시적 네트워크 오류가 발생해도 이어서 폴링해 배치를 완료한다."""
+        agent = AnalystAgent(api_key="test-key")
+        stock = _stock()
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp_ended = MagicMock()
+        status_resp_ended.raise_for_status = MagicMock()
+        status_resp_ended.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {"one_line_thesis": "메모리 업턴 초입", "protips": [], "risk_flags": []}
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(
+            side_effect=[httpx.ReadTimeout("boom"), status_resp_ended, results_resp]
+        )
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("screener.agents.analyst_agent.asyncio.sleep", new=AsyncMock()),
+        ):
+            summaries = await agent.summarize_batch([(stock, [], None)])
+
+        # 첫 폴링이 실패해도 전체 폴백되지 않고 배치가 정상 완료되어야 한다.
+        assert summaries[stock.ticker].one_line_thesis == "메모리 업턴 초입"
+
+    @pytest.mark.asyncio
+    async def test_mixed_batch_isolates_per_ticker_failure(self) -> None:
+        """배치 내 한 종목은 성공, 다른 종목은 결과에서 완전히 누락되어도 서로 격리된다."""
+        agent = AnalystAgent(api_key="test-key")
+        stock_a = _stock(ticker="005930", name="삼성전자")
+        stock_b = _stock(ticker="000660", name="SK하이닉스")
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {"one_line_thesis": "메모리 업턴 초입", "protips": [], "risk_flags": []}
+        # stock_b는 결과 JSONL에 아예 등장하지 않는다 (개별 항목 완전 누락 시나리오).
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = json.dumps(
+            {
+                "custom_id": stock_a.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock_a, [], None), (stock_b, [], None)])
+
+        assert summaries[stock_a.ticker].one_line_thesis == "메모리 업턴 초입"
+        assert summaries[stock_b.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"
+        assert any("DEGRADED MODE" in flag for flag in summaries[stock_b.ticker].risk_flags)
+
+    @pytest.mark.asyncio
+    async def test_malformed_result_line_does_not_abort_other_results(self) -> None:
+        """결과 JSONL 한 줄이 깨져도 나머지 정상 라인의 결과는 그대로 사용된다."""
+        agent = AnalystAgent(api_key="test-key")
+        stock_a = _stock(ticker="005930", name="삼성전자")
+        stock_b = _stock(ticker="000660", name="SK하이닉스")
+
+        create_resp = MagicMock()
+        create_resp.raise_for_status = MagicMock()
+        create_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "in_progress"}
+
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"id": "msgbatch_1", "processing_status": "ended"}
+
+        result_obj = {"one_line_thesis": "메모리 업턴 초입", "protips": [], "risk_flags": []}
+        valid_line = json.dumps(
+            {
+                "custom_id": stock_a.ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": json.dumps(result_obj, ensure_ascii=False)}
+                        ]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+        malformed_line = "{not valid json"
+
+        results_resp = MagicMock()
+        results_resp.raise_for_status = MagicMock()
+        results_resp.text = "\n".join([malformed_line, valid_line])
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=create_resp)
+        mock_client.get = AsyncMock(side_effect=[status_resp, results_resp])
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            summaries = await agent.summarize_batch([(stock_a, [], None), (stock_b, [], None)])
+
+        # 깨진 줄과 무관하게 stock_a의 정상 결과는 살아남는다.
+        assert summaries[stock_a.ticker].one_line_thesis == "메모리 업턴 초입"
+        # stock_b는 결과가 없으므로(깨진 줄이 어느 종목인지 알 수 없음) 정량 폴백된다.
+        assert summaries[stock_b.ticker].one_line_thesis == "정량 지표 기준 상위 랭크"

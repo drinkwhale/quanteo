@@ -59,6 +59,10 @@ export default function App() {
     [portfolioPositions, orders, fills],
   );
   const stockNames = useStockNames(allSymbols);
+  const uniqueRecentSymbols = useMemo(
+    () => Array.from(new Set(allSymbols)),
+    [allSymbols],
+  );
 
   const tabs = [
     { id: "ops", label: "운용현황" },
@@ -229,7 +233,7 @@ export default function App() {
           {/* Chart 탭 */}
           {activeTab === "chart" && (
             <div className="p-4">
-              <StockDetail recentSymbols={allSymbols} />
+              <StockDetail recentSymbols={uniqueRecentSymbols} />
             </div>
           )}
         </div>

@@ -81,10 +81,26 @@ def _finstate_df() -> pd.DataFrame:
     )
 
 
-def _claude_response(obj: dict) -> MagicMock:
+def _claude_batch_results(obj: dict, tickers: list[str]) -> MagicMock:
+    """Batches API 결과(JSONL) mock — tickers 각각에 동일한 요약을 매핑."""
     resp = MagicMock()
     resp.raise_for_status = MagicMock()
-    resp.json.return_value = {"content": [{"text": json.dumps(obj, ensure_ascii=False)}]}
+    lines = [
+        json.dumps(
+            {
+                "custom_id": ticker,
+                "result": {
+                    "type": "succeeded",
+                    "message": {
+                        "content": [{"type": "text", "text": json.dumps(obj, ensure_ascii=False)}]
+                    },
+                },
+            },
+            ensure_ascii=False,
+        )
+        for ticker in tickers
+    ]
+    resp.text = "\n".join(lines)
     return resp
 
 
@@ -113,15 +129,26 @@ async def test_full_pipeline_sends_report_with_llm_summary(tmp_path: Path) -> No
     mock_dart_reader.finstate_all.return_value = _finstate_df()
     mock_dart_reader.list.return_value = pd.DataFrame()  # 공시 없음
 
-    mock_claude_resp = _claude_response(
+    mock_batch_create = MagicMock()
+    mock_batch_create.raise_for_status = MagicMock()
+    mock_batch_create.json.return_value = {"id": "msgbatch_test", "processing_status": "in_progress"}
+
+    mock_batch_status = MagicMock()
+    mock_batch_status.raise_for_status = MagicMock()
+    mock_batch_status.json.return_value = {"id": "msgbatch_test", "processing_status": "ended"}
+
+    mock_batch_results = _claude_batch_results(
         {
             "one_line_thesis": "메모리 업턴 초입",
             "protips": ["영업이익률 개선"],
             "risk_flags": [],
-        }
+        },
+        TICKERS,
     )
+
     mock_httpx_client = AsyncMock()
-    mock_httpx_client.post = AsyncMock(return_value=mock_claude_resp)
+    mock_httpx_client.post = AsyncMock(return_value=mock_batch_create)
+    mock_httpx_client.get = AsyncMock(side_effect=[mock_batch_status, mock_batch_results])
     mock_httpx_client.__aenter__.return_value = mock_httpx_client
     mock_httpx_client.__aexit__.return_value = None
 

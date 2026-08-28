@@ -188,10 +188,10 @@ async def get_candles(
             try:
                 item = CandleItem(
                     timestamp=c.timestamp,
-                    open=float(c.open),
-                    high=float(c.high),
-                    low=float(c.low),
-                    close=float(c.close),
+                    open=float(c.open_price),
+                    high=float(c.high_price),
+                    low=float(c.low_price),
+                    close=float(c.close_price),
                     volume=float(c.volume),
                 )
                 items.append(item)
