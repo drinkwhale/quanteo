@@ -10,12 +10,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
+from core.config import Settings
 from screener.data.collectors.dart_client import DartClient
 from screener.data.collectors.pykrx_client import PykrxClient
 from screener.pipeline.watchlist_filter import (
@@ -38,18 +40,26 @@ def setup_logging() -> None:
 async def build_watchlist(
     date: str | None = None,
     output_dir: Path = _DEFAULT_OUTPUT_DIR,
+    settings: Settings | None = None,
 ) -> list[dict]:
     """관심종목 리스트 생성.
 
     Args:
         date: 기준일 (YYYY-MM-DD). None이면 어제. 휴장일이면 직전 영업일 자동 폴백.
         output_dir: 결과 저장 디렉토리 (자동 생성)
+        settings: 설정 (None이면 기본 설정 로드)
 
     Returns:
         WatchlistCandidate 객체 리스트 (dict 변환)
+
+    Raises:
+        ValueError: 유니버스 또는 재무 데이터 수집 실패
     """
     if date is None:
         date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    if settings is None:
+        settings = Settings.load()
 
     logger.info(f"관심종목 필터링 시작 — 기준일: {date}")
 
@@ -60,19 +70,21 @@ async def build_watchlist(
     pykrx = PykrxClient()
     universe_df = pykrx.fetch_universe(date)
     if universe_df.empty:
-        logger.error(f"유니버스 데이터 없음 (날짜: {date})")
-        return []
+        msg = f"유니버스 데이터 없음 (날짜: {date})"
+        logger.error(msg)
+        raise ValueError(msg)
 
     logger.info(f"총 {len(universe_df)}개 종목 수집")
 
     # 2. 재무 데이터 수집 (3년간 자산/영업이익/매출)
     logger.info("Step 2: DART 재무제표 수집 중...")
-    dart = DartClient()
+    dart = DartClient(api_key=settings.screener.dart_api_key)
 
     financials_list = []
+    failed_count = 0
     for ticker in universe_df["ticker"]:
         try:
-            stmt = dart.fetch_financials(ticker, years=3)
+            stmt = await dart.fetch_financials(ticker, years=3)
             if not stmt.years:
                 logger.debug(f"{ticker}: 재무제표 없음")
                 continue
@@ -94,16 +106,26 @@ async def build_watchlist(
                 "revenue_current_year": current_year.revenue,
                 "revenue_prior_year": prior_year.revenue,
             })
+        except AttributeError as e:
+            logger.error(f"{ticker}: 타입 오류 (async 함수 await 누락?) — {e}", exc_info=True)
+            failed_count += 1
+        except (TimeoutError, ConnectionError) as e:
+            logger.error(f"{ticker}: 네트워크 오류 — {e}", exc_info=True)
+            failed_count += 1
+            if failed_count > 5:
+                logger.error("연속된 네트워크 오류 발생 — 수집 중단")
+                raise
         except Exception as e:
-            logger.warning(f"{ticker}: 재무 수집 실패 — {e}")
+            logger.debug(f"{ticker}: 재무 수집 실패 — {e}")
             continue
 
     if not financials_list:
-        logger.error("재무 데이터 수집 실패")
-        return []
+        msg = f"재무 데이터 수집 실패 (수집 시도: {len(universe_df)}, 성공: 0)"
+        logger.error(msg)
+        raise ValueError(msg)
 
     financials_df = pd.DataFrame(financials_list).set_index("ticker")
-    logger.info(f"재무 데이터 수집: {len(financials_df)}개 종목")
+    logger.info(f"재무 데이터 수집: {len(financials_df)}개 종목 (성공률 {len(financials_df)/len(universe_df)*100:.1f}%)")
 
     # 3. 증가율 계산
     logger.info("Step 3: 연간 증가율 계산 중...")
@@ -183,9 +205,14 @@ def main():
 
     setup_logging()
 
-    results = asyncio.run(
-        build_watchlist(date=args.date, output_dir=args.output_dir)
-    )
+    try:
+        results = asyncio.run(
+            build_watchlist(date=args.date, output_dir=args.output_dir)
+        )
+    except (ValueError, Exception) as e:
+        logger.error(f"관심종목 생성 실패: {e}", exc_info=True)
+        print(f"❌ 관심종목 생성 실패: {e}")
+        sys.exit(1)
 
     if results:
         print(f"\n✅ 관심종목 {len(results)}개 생성 완료")
@@ -198,8 +225,11 @@ def main():
                 f"영업↑{r['oi_growth_pct']:.1f}% "
                 f"매출↑{r['revenue_growth_pct']:.1f}%"
             )
+        sys.exit(0)
     else:
+        logger.error("관심종목 생성 실패 — 결과 없음")
         print("❌ 관심종목 생성 실패")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

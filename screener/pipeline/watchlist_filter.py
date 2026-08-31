@@ -149,34 +149,34 @@ def filter_by_market_cap(df: pd.DataFrame, min_market_cap: float) -> pd.DataFram
 
 
 def build_watchlist_candidates(
-    universe_df: pd.DataFrame,
-    financials_df: pd.DataFrame,
+    merged_df: pd.DataFrame,
 ) -> list[WatchlistCandidate]:
     """관심종목 후보 조립.
 
     Args:
-        universe_df: 시장 데이터 (ticker, name, market_cap)
-        financials_df: 재무 데이터 (ticker, 연간 增減率 컬럼)
+        merged_df: 시장 데이터와 재무 데이터가 병합된 DataFrame
+                   (ticker, name, market_cap, asset_growth, operating_income_growth, revenue_growth)
 
     Returns:
         WatchlistCandidate 리스트
     """
-    # 통합: ticker 기준 left join
-    merged = universe_df.merge(
-        financials_df, on="ticker", how="left"
-    )
-
     candidates = []
-    for _, row in merged.iterrows():
+    for _, row in merged_df.iterrows():
+        def safe_float(val):
+            """NaN/None을 0.0으로 변환."""
+            if pd.isna(val):
+                return 0.0
+            return float(val)
+
         candidate = WatchlistCandidate(
             ticker=row["ticker"],
             name=row.get("name", ""),
-            market_cap=float(row.get("market_cap", 0)),
-            asset_growth=float(row.get("asset_growth", 0.0) or 0.0),
-            operating_income_growth=float(
-                row.get("operating_income_growth", 0.0) or 0.0
+            market_cap=safe_float(row.get("market_cap", 0)),
+            asset_growth=safe_float(row.get("asset_growth", 0.0)),
+            operating_income_growth=safe_float(
+                row.get("operating_income_growth", 0.0)
             ),
-            revenue_growth=float(row.get("revenue_growth", 0.0) or 0.0),
+            revenue_growth=safe_float(row.get("revenue_growth", 0.0)),
         )
         candidates.append(candidate)
 
@@ -218,29 +218,34 @@ def apply_watchlist_filters(
     )
 
     # 1단계: 자산 증가율 top
-    if "asset_growth" in financials_df.columns:
-        filtered = filter_by_metric_top_n(
-            financials_df.reset_index(), "asset_growth", top_n_asset
-        ).set_index("ticker")
-    else:
-        logger.warning("asset_growth 컬럼 없음 — 필터링 건너뜀")
-        filtered = financials_df.copy()
+    if "asset_growth" not in financials_df.columns:
+        raise ValueError(
+            "필수 컬럼 누락: asset_growth. "
+            "financials_df는 calculate_yoy_growth()로 asset_growth를 미리 계산해야 함"
+        )
+    filtered = filter_by_metric_top_n(
+        financials_df.reset_index(), "asset_growth", top_n_asset
+    ).set_index("ticker")
 
     # 2단계: 영업이익 증가율 top
-    if "operating_income_growth" in filtered.columns:
-        filtered = filter_by_metric_top_n(
-            filtered.reset_index(), "operating_income_growth", top_n_oi
-        ).set_index("ticker")
-    else:
-        logger.warning("operating_income_growth 컬럼 없음 — 필터링 건너뜀")
+    if "operating_income_growth" not in filtered.columns:
+        raise ValueError(
+            "필수 컬럼 누락: operating_income_growth. "
+            "financials_df는 calculate_yoy_growth()로 operating_income_growth를 미리 계산해야 함"
+        )
+    filtered = filter_by_metric_top_n(
+        filtered.reset_index(), "operating_income_growth", top_n_oi
+    ).set_index("ticker")
 
     # 3단계: 매출 증가율 top
-    if "revenue_growth" in filtered.columns:
-        filtered = filter_by_metric_top_n(
-            filtered.reset_index(), "revenue_growth", top_n_revenue
-        ).set_index("ticker")
-    else:
-        logger.warning("revenue_growth 컬럼 없음 — 필터링 건너뜀")
+    if "revenue_growth" not in filtered.columns:
+        raise ValueError(
+            "필수 컬럼 누락: revenue_growth. "
+            "financials_df는 calculate_yoy_growth()로 revenue_growth를 미리 계산해야 함"
+        )
+    filtered = filter_by_metric_top_n(
+        filtered.reset_index(), "revenue_growth", top_n_revenue
+    ).set_index("ticker")
 
     # universe와 재병합 (시총 포함)
     universe_reset = universe_df.reset_index()
@@ -268,10 +273,7 @@ def apply_watchlist_filters(
 
     logger.info(f"최종 관심종목: {len(filtered)}개")
 
-    # 최종 후보 조립
-    candidates = build_watchlist_candidates(
-        filtered,
-        filtered,
-    )
+    # 최종 후보 조립 (이미 병합된 데이터 전달)
+    candidates = build_watchlist_candidates(filtered)
 
     return candidates

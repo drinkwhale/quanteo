@@ -11,6 +11,7 @@ from screener.pipeline.watchlist_filter import (
     calculate_yoy_growth,
     filter_by_metric_top_n,
     filter_by_market_cap,
+    build_watchlist_candidates,
     apply_watchlist_filters,
 )
 
@@ -139,11 +140,65 @@ class TestFilterByMarketCap:
         assert len(result) == 0
 
 
+class TestBuildWatchlistCandidates:
+    """관심종목 후보 조립 테스트."""
+
+    def test_normal_merge(self):
+        """정상 병합."""
+        merged_df = pd.DataFrame({
+            "ticker": ["A", "B"],
+            "name": ["종목A", "종목B"],
+            "market_cap": [500e9, 400e9],
+            "asset_growth": [50.0, 40.0],
+            "operating_income_growth": [45.0, 35.0],
+            "revenue_growth": [40.0, 30.0],
+        })
+
+        candidates = build_watchlist_candidates(merged_df)
+        assert len(candidates) == 2
+        assert candidates[0].ticker == "A"
+        assert candidates[0].name == "종목A"
+        assert candidates[0].market_cap == 500e9
+        assert candidates[0].asset_growth == 50.0
+        assert candidates[0].operating_income_growth == 45.0
+        assert candidates[0].revenue_growth == 40.0
+
+    def test_nan_to_zero_conversion(self):
+        """NaN 값을 0.0으로 변환."""
+        merged_df = pd.DataFrame({
+            "ticker": ["A"],
+            "name": ["종목A"],
+            "market_cap": [500e9],
+            "asset_growth": [float("nan")],
+            "operating_income_growth": [45.0],
+            "revenue_growth": [40.0],
+        })
+
+        candidates = build_watchlist_candidates(merged_df)
+        assert candidates[0].asset_growth == 0.0
+        assert not pd.isna(candidates[0].asset_growth)
+
+    def test_missing_values_default(self):
+        """누락된 값은 기본값 사용."""
+        merged_df = pd.DataFrame({
+            "ticker": ["A"],
+            "market_cap": [500e9],
+            "asset_growth": [50.0],
+            "operating_income_growth": [45.0],
+            "revenue_growth": [40.0],
+            # name 누락
+        })
+
+        candidates = build_watchlist_candidates(merged_df)
+        assert candidates[0].name == ""
+        assert candidates[0].market_cap == 500e9
+
+
 class TestApplyWatchlistFilters:
     """다단계 필터링 테스트."""
 
     def test_sequential_filtering(self):
-        """순차 필터링."""
+        """순차 필터링 — 출력값 검증."""
         universe_df = pd.DataFrame({
             "ticker": ["A", "B", "C", "D", "E"],
             "name": ["종목A", "종목B", "종목C", "종목D", "종목E"],
@@ -170,10 +225,15 @@ class TestApplyWatchlistFilters:
         # 2단계: oi_growth top 2 = [A(45), B(35)]
         # 3단계: revenue_growth top 1 = [A(40)]
         # 4단계: market_cap >= 300B = [A(500B)] → 통과
-        assert len(candidates) >= 0  # A만 통과 가능
+        assert [c.ticker for c in candidates] == ["A"]
+        assert candidates[0].name == "종목A"
+        assert candidates[0].market_cap == 500e9
+        assert candidates[0].asset_growth == 50
+        assert candidates[0].operating_income_growth == 45
+        assert candidates[0].revenue_growth == 40
 
     def test_missing_financials_column(self):
-        """재무 컬럼 누락."""
+        """필수 재무 컬럼 누락 — ValueError 발생."""
         universe_df = pd.DataFrame({
             "ticker": ["A"],
             "name": ["종목A"],
@@ -185,13 +245,12 @@ class TestApplyWatchlistFilters:
             # asset_growth 등 컬럼 누락
         }).set_index("ticker")
 
-        # 컬럼이 없어도 에러 없이 진행
-        candidates = apply_watchlist_filters(
-            universe_df.set_index("ticker"),
-            financials_df,
-        )
-        # 결과는 빌 수 있음
-        assert isinstance(candidates, list)
+        # 필수 컬럼이 없으면 ValueError 발생
+        with pytest.raises(ValueError, match="필수 컬럼 누락"):
+            apply_watchlist_filters(
+                universe_df.set_index("ticker"),
+                financials_df,
+            )
 
     def test_empty_inputs(self):
         """빈 입력."""
