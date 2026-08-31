@@ -21,16 +21,19 @@ export function RndPanel({
 }: RndPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const x = typeof position.x === "number" ? position.x : 0;
-  const y = typeof position.y === "number" ? position.y : 0;
-  const width =
-    typeof position.width === "number"
-      ? position.width
-      : parseInt(String(position.width), 10) || 300;
-  const height =
-    typeof position.height === "number"
-      ? position.height
-      : parseInt(String(position.height), 10) || 200;
+  const parseNumericValue = (
+    val: number | string,
+    fallback: number,
+  ): number => {
+    if (typeof val === "number") return val;
+    const parsed = parseInt(String(val), 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  const x = parseNumericValue(position.x, 0);
+  const y = parseNumericValue(position.y, 0);
+  const width = parseNumericValue(position.width, 400);
+  const height = parseNumericValue(position.height, 250);
 
   return (
     <Rnd
