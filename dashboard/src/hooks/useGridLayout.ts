@@ -21,22 +21,22 @@ interface UseGridLayoutReturn {
 const STORAGE_KEY = "dashboard-panel-positions";
 
 const DEFAULT_POSITIONS: PanelPositions = {
-  indices: { x: 0, y: 0, width: "100%", height: 100 },
-  "market-stocks": { x: 0, y: 120, width: "calc(50% - 8px)", height: 350 },
+  indices: { x: 0, y: 0, width: 1920, height: 100 },
+  "market-stocks": { x: 0, y: 120, width: 950, height: 350 },
   "account-summary": {
-    x: "calc(50% + 8px)",
+    x: 966,
     y: 120,
-    width: "calc(50% - 8px)",
+    width: 950,
     height: 350,
   },
-  operations: { x: 0, y: 490, width: "calc(65% - 8px)", height: 400 },
+  operations: { x: 0, y: 490, width: 1240, height: 400 },
   control: {
-    x: "calc(65% + 8px)",
+    x: 1256,
     y: 490,
-    width: "calc(35% - 8px)",
+    width: 670,
     height: 400,
   },
-  strategy: { x: 0, y: 910, width: "100%", height: 300 },
+  strategy: { x: 0, y: 910, width: 1920, height: 300 },
 };
 
 const loadSavedPositions = (): PanelPositions => {
