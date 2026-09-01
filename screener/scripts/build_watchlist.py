@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.config import Settings
+from core.config.settings import load_settings, Settings
 from screener.data.collectors.dart_client import DartClient
 from screener.data.collectors.pykrx_client import PykrxClient
 from screener.pipeline.watchlist_filter import (
@@ -59,7 +59,7 @@ async def build_watchlist(
         date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     if settings is None:
-        settings = Settings.load()
+        settings = load_settings()
 
     logger.info(f"관심종목 필터링 시작 — 기준일: {date}")
 
@@ -68,7 +68,7 @@ async def build_watchlist(
     # 1. 시장 데이터 수집 (시총, 시세)
     logger.info("Step 1: 코스피/코스닥 시장 데이터 수집 중...")
     pykrx = PykrxClient()
-    universe_df = pykrx.fetch_universe(date)
+    universe_df = await pykrx.fetch_universe(date)
     if universe_df.empty:
         msg = f"유니버스 데이터 없음 (날짜: {date})"
         logger.error(msg)

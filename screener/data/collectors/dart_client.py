@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import OpenDartReader
+import opendartreader as OpenDartReader
 import pandas as pd
 import pytz
 
