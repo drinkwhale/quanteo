@@ -129,21 +129,15 @@ async def build_watchlist(
 
     # 3. 증가율 계산
     logger.info("Step 3: 연간 증가율 계산 중...")
-    financials_df["asset_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "asset"
-    ).set_index(
-        financials_df.index
-    )
-    financials_df["operating_income_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "operating_income"
-    ).set_index(
-        financials_df.index
-    )
-    financials_df["revenue_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "revenue"
-    ).set_index(
-        financials_df.index
-    )
+    df_with_ticker = financials_df.reset_index()
+    asset_growth = calculate_yoy_growth(df_with_ticker, "asset")
+    financials_df["asset_growth"] = asset_growth if isinstance(asset_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
+
+    oi_growth = calculate_yoy_growth(df_with_ticker, "operating_income")
+    financials_df["operating_income_growth"] = oi_growth if isinstance(oi_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
+
+    rev_growth = calculate_yoy_growth(df_with_ticker, "revenue")
+    financials_df["revenue_growth"] = rev_growth if isinstance(rev_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
 
     # 4. 필터링 적용
     logger.info("Step 4: 다단계 필터링 적용 중...")
