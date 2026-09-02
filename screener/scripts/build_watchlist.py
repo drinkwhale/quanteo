@@ -67,8 +67,24 @@ async def build_watchlist(
 
     # 1. 시장 데이터 수집 (시총, 시세)
     logger.info("Step 1: 코스피/코스닥 시장 데이터 수집 중...")
-    pykrx = PykrxClient()
-    universe_df = await pykrx.fetch_universe(date)
+
+    # KRX Open API 우선, 실패하면 pykrx 폴백
+    universe_df = pd.DataFrame()
+    if settings.screener.krx_openapi_key:
+        try:
+            from screener.data.collectors.krx_openapi_client import KrxOpenApiClient
+            logger.info("KRX Open API 사용 중...")
+            krx_api = KrxOpenApiClient(api_key=settings.screener.krx_openapi_key)
+            universe_df = await krx_api.fetch_universe(date)
+            if not universe_df.empty:
+                logger.info("✅ KRX Open API 성공")
+        except Exception as exc:
+            logger.warning("KRX Open API 실패(%s) — pykrx로 폴백", exc)
+
+    # KRX Open API 미설정 또는 실패 시 pykrx 사용
+    if universe_df.empty:
+        pykrx = PykrxClient(krx_id=settings.screener.krx_id, krx_pw=settings.screener.krx_pw)
+        universe_df = await pykrx.fetch_universe(date)
     if universe_df.empty:
         msg = f"유니버스 데이터 없음 (날짜: {date})"
         logger.error(msg)
