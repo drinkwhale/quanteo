@@ -1,10 +1,10 @@
 """KRX Open API 기반 시세 수집기 (공식 API).
 
-유가증권 일별매매정보 API를 사용하여
+KRX 정보데이터시스템(openapi.krx.co.kr)을 통해
 코스피/코스닥 전 종목의 시세 데이터를 조회합니다.
 
-Spec: specs/유가증권.docx
-Endpoint: https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd
+Reference: https://openapi.krx.co.kr/
+Auth: AUTH_KEY 헤더에 API 인증키 포함
 """
 
 from __future__ import annotations
@@ -12,24 +12,37 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+import urllib3
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import requests
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CACHE_DIR = Path("screener/data/cache")
-_KRX_API_BASE = "https://data-dbg.krx.co.kr/svc/apis/sto"
+_KRX_API_BASE = "https://openapi.krx.co.kr/api"
+_REQUEST_TIMEOUT = 10
 
 
 class KrxOpenApiClient:
-    """KRX 유가증권 API 클라이언트."""
+    """KRX 공식 Open API 클라이언트.
+
+    Attrs:
+        api_key: AUTH_KEY 헤더에 사용할 인증키.
+        cache_dir: 조회 결과 캐시 디렉토리.
+    """
 
     def __init__(self, api_key: str, cache_dir: Path | str = _DEFAULT_CACHE_DIR) -> None:
-        self._api_key = api_key  # 현재 미사용 (공개 API)
+        if not api_key:
+            raise ValueError("api_key must not be empty")
+        self._api_key = api_key
         self._cache_dir = Path(cache_dir)
+        self._session = requests.Session()
+        self._session.headers.update({"AUTH_KEY": self._api_key, "Content-Type": "application/json"})
 
     async def fetch_universe(self, date: str) -> pd.DataFrame:
         """코스피+코스닥 전 종목의 일별 매매 정보를 조회한다.
@@ -38,10 +51,11 @@ class KrxOpenApiClient:
             date: 조회 일자 (YYYYMMDD).
 
         Returns:
-            DataFrame with columns: ticker, name, market, close, volume, market_cap, shares_outstanding
+            DataFrame with columns: ticker, name, market, close, volume, market_cap, shares_outstanding.
         """
         cache_path = self._cache_dir / f"{date}_krx_universe.parquet"
         if cache_path.exists():
+            logger.info(f"KRX universe cache hit: {cache_path}")
             return pd.read_parquet(cache_path)
 
         loop = asyncio.get_running_loop()
@@ -50,36 +64,54 @@ class KrxOpenApiClient:
         if not df.empty:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             df.to_parquet(cache_path)
+            logger.info(f"KRX universe cached: {cache_path}")
         return df
 
-    def _fetch_universe_sync(self, date: str) -> pd.DataFrame:
-        """KRX API에서 코스피/코스닥 일별매매정보를 동기로 조회."""
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    async def fetch_stock_info(self, ticker: str, date: str) -> dict[str, Any] | None:
+        """단일 종목의 시세 정보를 조회한다.
 
+        Args:
+            ticker: 종목 코드 (예: "005930").
+            date: 조회 일자 (YYYYMMDD).
+
+        Returns:
+            Dict with keys: ticker, name, market, close, volume, market_cap, shares_outstanding.
+                None if not found.
+        """
+        df = await self.fetch_universe(date)
+        if df.empty:
+            return None
+
+        row = df[df["ticker"] == ticker]
+        if row.empty:
+            logger.warning(f"Ticker not found: {ticker}")
+            return None
+
+        return row.iloc[0].to_dict()
+
+    def _fetch_universe_sync(self, date: str) -> pd.DataFrame:
+        """KRX Open API에서 코스피/코스닥 일별매매정보를 동기로 조회.
+
+        Args:
+            date: 조회 일자 (YYYYMMDD).
+
+        Returns:
+            DataFrame with columns: ticker, name, market, close, volume, market_cap, shares_outstanding.
+                Empty DataFrame if all markets fail.
+        """
         frames = []
         endpoints = [
-            ("stk_bydd_trd", "KOSPI"),  # 유가증권(코스피)
-            ("ksq_bydd_trd", "KOSDAQ"),  # 코스닥
+            ("sto/stk_bydd_trd", "KOSPI"),
+            ("sto/ksq_bydd_trd", "KOSDAQ"),
         ]
 
         for endpoint, market_name in endpoints:
             try:
                 url = f"{_KRX_API_BASE}/{endpoint}"
                 payload = {"basDd": date}
-                headers = {"Content-Type": "application/json"}
 
-                resp = requests.post(
-                    url,
-                    data=json.dumps(payload),
-                    headers=headers,
-                    timeout=10,
-                    verify=False
-                )
-
-                if resp.status_code != 200:
-                    logger.warning(f"KRX API 요청 실패({market_name}): {resp.status_code}")
-                    continue
+                resp = self._session.post(url, data=json.dumps(payload), timeout=_REQUEST_TIMEOUT, verify=False)
+                resp.raise_for_status()
 
                 data = resp.json()
                 if not data.get("OutBlock_1"):
@@ -90,7 +122,6 @@ class KrxOpenApiClient:
                 if df.empty:
                     continue
 
-                # 컬럼명 매핑
                 df = df.rename(columns={
                     "ISU_CD": "ticker",
                     "ISU_NM": "name",
@@ -99,23 +130,21 @@ class KrxOpenApiClient:
                     "MKTCAP": "market_cap",
                     "LIST_SHRS": "shares_outstanding",
                 })
-
-                # 시장 정보 추가
                 df["market"] = market_name
 
-                # 필요한 컬럼만 선택
                 required_cols = ["ticker", "name", "market", "close", "volume", "market_cap", "shares_outstanding"]
                 df = df[[col for col in required_cols if col in df.columns]]
                 frames.append(df)
 
-                logger.info(f"✅ KRX API {market_name} 성공: {len(df)}개 종목")
+                logger.info(f"✅ KRX {market_name}: {len(df)} stocks")
 
-            except Exception as exc:
-                logger.warning(f"KRX API 조회 실패({market_name}): {exc}")
-                continue
+            except requests.RequestException as exc:
+                logger.warning(f"KRX API request error ({market_name}): {exc}")
+            except (KeyError, ValueError) as exc:
+                logger.warning(f"KRX API parse error ({market_name}): {exc}")
 
         if not frames:
-            logger.error("KRX API 전체 조회 실패")
+            logger.error("KRX API all markets failed")
             return pd.DataFrame()
 
         return pd.concat(frames, ignore_index=True)
