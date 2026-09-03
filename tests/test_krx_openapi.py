@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import pytest
+import pandas as pd
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from screener.data.collectors.krx_openapi_client import KrxOpenApiClient
 
@@ -28,7 +29,6 @@ class TestKrxOpenApiClient:
     async def test_fetch_stock_info_not_found(self, client: KrxOpenApiClient) -> None:
         """Test fetch_stock_info returns None for missing ticker."""
         with patch.object(client, "_fetch_universe_sync") as mock_fetch:
-            import pandas as pd
             mock_fetch.return_value = pd.DataFrame()
 
             result = await client.fetch_stock_info("INVALID", "20260903")
@@ -38,7 +38,6 @@ class TestKrxOpenApiClient:
     async def test_fetch_universe_calls_sync(self, client: KrxOpenApiClient) -> None:
         """Test fetch_universe delegates to sync method."""
         with patch.object(client, "_fetch_universe_sync") as mock_fetch:
-            import pandas as pd
             mock_fetch.return_value = pd.DataFrame({"ticker": ["005930"], "close": [100]})
 
             df = await client.fetch_universe("20260903")
