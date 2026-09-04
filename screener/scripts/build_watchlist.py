@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.config import Settings
+from core.config.settings import load_settings, Settings
 from screener.data.collectors.dart_client import DartClient
 from screener.data.collectors.pykrx_client import PykrxClient
 from screener.pipeline.watchlist_filter import (
@@ -59,7 +59,7 @@ async def build_watchlist(
         date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     if settings is None:
-        settings = Settings.load()
+        settings = load_settings()
 
     logger.info(f"관심종목 필터링 시작 — 기준일: {date}")
 
@@ -67,8 +67,24 @@ async def build_watchlist(
 
     # 1. 시장 데이터 수집 (시총, 시세)
     logger.info("Step 1: 코스피/코스닥 시장 데이터 수집 중...")
-    pykrx = PykrxClient()
-    universe_df = pykrx.fetch_universe(date)
+
+    # KRX Open API 우선, 실패하면 pykrx 폴백
+    universe_df = pd.DataFrame()
+    if settings.screener.krx_openapi_key:
+        try:
+            from screener.data.collectors.krx_openapi_client import KrxOpenApiClient
+            logger.info("KRX Open API 사용 중...")
+            krx_api = KrxOpenApiClient(api_key=settings.screener.krx_openapi_key)
+            universe_df = await krx_api.fetch_universe(date)
+            if not universe_df.empty:
+                logger.info("✅ KRX Open API 성공")
+        except Exception as exc:
+            logger.warning("KRX Open API 실패(%s) — pykrx로 폴백", exc)
+
+    # KRX Open API 미설정 또는 실패 시 pykrx 사용
+    if universe_df.empty:
+        pykrx = PykrxClient(krx_id=settings.screener.krx_id, krx_pw=settings.screener.krx_pw)
+        universe_df = await pykrx.fetch_universe(date)
     if universe_df.empty:
         msg = f"유니버스 데이터 없음 (날짜: {date})"
         logger.error(msg)
@@ -116,8 +132,11 @@ async def build_watchlist(
                 logger.error("연속된 네트워크 오류 발생 — 수집 중단")
                 raise
         except Exception as e:
-            logger.debug(f"{ticker}: 재무 수집 실패 — {e}")
-            continue
+            logger.warning(f"{ticker}: 재무 수집 실패 (타입: {type(e).__name__}) — {e}")
+            failed_count += 1
+            if failed_count > 10:
+                logger.error("과도한 재무 수집 실패 — 중단 (실패 횟수: %d)", failed_count)
+                raise
 
     if not financials_list:
         msg = f"재무 데이터 수집 실패 (수집 시도: {len(universe_df)}, 성공: 0)"
@@ -129,21 +148,15 @@ async def build_watchlist(
 
     # 3. 증가율 계산
     logger.info("Step 3: 연간 증가율 계산 중...")
-    financials_df["asset_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "asset"
-    ).set_index(
-        financials_df.index
-    )
-    financials_df["operating_income_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "operating_income"
-    ).set_index(
-        financials_df.index
-    )
-    financials_df["revenue_growth"] = calculate_yoy_growth(
-        financials_df.reset_index(), "revenue"
-    ).set_index(
-        financials_df.index
-    )
+    df_with_ticker = financials_df.reset_index()
+    asset_growth = calculate_yoy_growth(df_with_ticker, "asset")
+    financials_df["asset_growth"] = asset_growth if isinstance(asset_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
+
+    oi_growth = calculate_yoy_growth(df_with_ticker, "operating_income")
+    financials_df["operating_income_growth"] = oi_growth if isinstance(oi_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
+
+    rev_growth = calculate_yoy_growth(df_with_ticker, "revenue")
+    financials_df["revenue_growth"] = rev_growth if isinstance(rev_growth, pd.Series) else pd.Series(0.0, index=financials_df.index)
 
     # 4. 필터링 적용
     logger.info("Step 4: 다단계 필터링 적용 중...")
