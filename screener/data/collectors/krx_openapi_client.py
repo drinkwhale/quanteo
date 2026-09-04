@@ -12,14 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import urllib3
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import requests
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +52,7 @@ class KrxOpenApiClient:
         """
         cache_path = self._cache_dir / f"{date}_krx_universe.parquet"
         if cache_path.exists():
-            logger.info(f"KRX universe cache hit: {cache_path}")
+            logger.info("KRX universe cache hit: %s", cache_path)
             return pd.read_parquet(cache_path)
 
         loop = asyncio.get_running_loop()
@@ -64,7 +61,7 @@ class KrxOpenApiClient:
         if not df.empty:
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             df.to_parquet(cache_path)
-            logger.info(f"KRX universe cached: {cache_path}")
+            logger.info("KRX universe cached: %s", cache_path)
         return df
 
     async def fetch_stock_info(self, ticker: str, date: str) -> dict[str, Any] | None:
@@ -84,7 +81,7 @@ class KrxOpenApiClient:
 
         row = df[df["ticker"] == ticker]
         if row.empty:
-            logger.warning(f"Ticker not found: {ticker}")
+            logger.warning("Ticker not found: %s", ticker)
             return None
 
         return row.iloc[0].to_dict()
@@ -110,12 +107,12 @@ class KrxOpenApiClient:
                 url = f"{_KRX_API_BASE}/{endpoint}"
                 payload = {"basDd": date}
 
-                resp = self._session.post(url, data=json.dumps(payload), timeout=_REQUEST_TIMEOUT, verify=False)
+                resp = self._session.post(url, data=json.dumps(payload), timeout=_REQUEST_TIMEOUT)
                 resp.raise_for_status()
 
                 data = resp.json()
                 if not data.get("OutBlock_1"):
-                    logger.warning(f"KRX API 응답 빈 데이터({market_name})")
+                    logger.warning("KRX API 응답 빈 데이터(%s)", market_name)
                     continue
 
                 df = pd.DataFrame(data["OutBlock_1"])
@@ -136,12 +133,12 @@ class KrxOpenApiClient:
                 df = df[[col for col in required_cols if col in df.columns]]
                 frames.append(df)
 
-                logger.info(f"✅ KRX {market_name}: {len(df)} stocks")
+                logger.info("KRX %s: %d stocks", market_name, len(df))
 
             except requests.RequestException as exc:
-                logger.warning(f"KRX API request error ({market_name}): {exc}")
+                logger.warning("KRX API request error (%s): %s", market_name, exc)
             except (KeyError, ValueError) as exc:
-                logger.warning(f"KRX API parse error ({market_name}): {exc}")
+                logger.warning("KRX API parse error (%s): %s", market_name, exc)
 
         if not frames:
             logger.error("KRX API all markets failed")
