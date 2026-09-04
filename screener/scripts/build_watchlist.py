@@ -132,8 +132,11 @@ async def build_watchlist(
                 logger.error("연속된 네트워크 오류 발생 — 수집 중단")
                 raise
         except Exception as e:
-            logger.debug(f"{ticker}: 재무 수집 실패 — {e}")
-            continue
+            logger.warning(f"{ticker}: 재무 수집 실패 (타입: {type(e).__name__}) — {e}")
+            failed_count += 1
+            if failed_count > 10:
+                logger.error("과도한 재무 수집 실패 — 중단 (실패 횟수: %d)", failed_count)
+                raise
 
     if not financials_list:
         msg = f"재무 데이터 수집 실패 (수집 시도: {len(universe_df)}, 성공: 0)"

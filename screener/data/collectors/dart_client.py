@@ -158,24 +158,25 @@ class DartClient:
     def _fetch_financials_sync(self, corp_code: str, years: int) -> FinancialStatement:
         try:
             dart = OpenDartReader(self._api_key)
-            current_year = datetime.now(tz=KST).year
-
-            results: list[YearlyFinancials] = []
-            for offset in range(1, years + 1):
-                year = current_year - offset
-                try:
-                    df = dart.finstate_all(corp_code, str(year))
-                except Exception as exc:
-                    logger.warning("DART finstate_all 조회 실패(%s, %s년): %s", corp_code, year, exc)
-                    continue
-                if df is None or df.empty:
-                    continue
-                results.append(self._parse_year(year, df))
-
-            return FinancialStatement(corp_code=corp_code, years=results)
         except Exception as exc:
-            logger.warning("DART 클라이언트 초기화 실패(%s): %s — 테스트 데이터 사용", corp_code, exc)
-            return self._generate_test_financials(corp_code, years)
+            logger.error("DART 클라이언트 초기화 실패(%s): %s", corp_code, exc)
+            return FinancialStatement(corp_code=corp_code, years=[])
+
+        current_year = datetime.now(tz=KST).year
+        results: list[YearlyFinancials] = []
+
+        for offset in range(1, years + 1):
+            year = current_year - offset
+            try:
+                df = dart.finstate_all(corp_code, str(year))
+            except Exception as exc:
+                logger.warning("DART finstate_all 조회 실패(%s, %s년): %s", corp_code, year, exc)
+                continue
+            if df is None or df.empty:
+                continue
+            results.append(self._parse_year(year, df))
+
+        return FinancialStatement(corp_code=corp_code, years=results)
 
     def _parse_year(self, year: int, df: pd.DataFrame) -> YearlyFinancials:
         def lookup(field: str) -> float | None:

@@ -95,12 +95,16 @@ class PykrxClient:
     def _fetch_universe_sync(self, date: str) -> pd.DataFrame:
         from pykrx import stock
 
-        try:
-            frames: list[pd.DataFrame] = []
-            for market in _MARKETS:
+        frames: list[pd.DataFrame] = []
+        failed_markets = []
+
+        for market in _MARKETS:
+            try:
                 ohlcv = stock.get_market_ohlcv(date, market=market)
                 if ohlcv is None or ohlcv.empty:
+                    logger.warning("pykrx %s 조회 결과 비어있음 (휴장일 가능성)", market)
                     continue
+
                 cap = stock.get_market_cap(date, market=market)
                 fund = stock.get_market_fundamental(date, market=market)
 
@@ -113,41 +117,47 @@ class PykrxClient:
                     merged = merged.join(fund.reindex(columns=["PER", "PBR", "DIV"]), how="left")
                 merged["market"] = market
                 frames.append(merged)
+            except Exception as exc:
+                logger.warning("pykrx %s 시장 조회 실패: %s", market, exc)
+                failed_markets.append(market)
+                continue
 
-            if not frames:
-                logger.warning("KRX API 실패 — 테스트 데이터로 대체")
-                return self._generate_test_universe()
+        if not frames:
+            logger.error("pykrx 모든 시장 조회 실패 (%s)", date)
+            return pd.DataFrame()
 
-            combined = pd.concat(frames)
-            combined.index.name = "ticker"
-            combined = combined.reset_index()
-            combined = combined.rename(
-                columns={
-                    "종가": "close",
-                    "거래량": "volume",
-                    "거래대금": "trading_value",
-                    "등락률": "change_pct",
-                    "시가총액": "market_cap",
-                    "상장주식수": "shares_outstanding",
-                    "PER": "per",
-                    "PBR": "pbr",
-                    "DIV": "div_yield",
-                }
-            )
-            if "trading_value" not in combined.columns:
-                combined["trading_value"] = combined.get("close", 0) * combined.get("volume", 0)
-            try:
-                combined["name"] = combined["ticker"].map(stock.get_market_ticker_name)
-            except Exception as exc:  # pragma: no cover - 네트워크 의존
-                logger.warning("종목명 매핑 실패, 빈 값으로 대체: %s", exc)
-                combined["name"] = ""
+        combined = pd.concat(frames)
+        combined.index.name = "ticker"
+        combined = combined.reset_index()
+        combined = combined.rename(
+            columns={
+                "종가": "close",
+                "거래량": "volume",
+                "거래대금": "trading_value",
+                "등락률": "change_pct",
+                "시가총액": "market_cap",
+                "상장주식수": "shares_outstanding",
+                "PER": "per",
+                "PBR": "pbr",
+                "DIV": "div_yield",
+            }
+        )
+        if "trading_value" not in combined.columns:
+            combined["trading_value"] = combined.get("close", 0) * combined.get("volume", 0)
 
-            combined["sector"] = combined["ticker"].map(self._sector_map(date))
-            combined["sector"] = combined["sector"].fillna("UNKNOWN")
-            return combined
-        except Exception as exc:
-            logger.error("KRX API 오류: %s — 테스트 데이터로 대체", exc)
-            return self._generate_test_universe()
+        try:
+            combined["name"] = combined["ticker"].map(stock.get_market_ticker_name)
+        except Exception as exc:  # pragma: no cover - 네트워크 의존
+            logger.warning("종목명 매핑 실패, 빈 값으로 대체: %s", exc)
+            combined["name"] = ""
+
+        combined["sector"] = combined["ticker"].map(self._sector_map(date))
+        combined["sector"] = combined["sector"].fillna("UNKNOWN")
+
+        if failed_markets:
+            logger.warning("pykrx 부분 실패: %s 시장 누락 (일부 데이터만 반환)", ",".join(failed_markets))
+
+        return combined
 
     def _sector_map(self, date: str) -> dict[str, str]:
         """티커 → 업종명 매핑. 실패 시 빈 매핑(전부 UNKNOWN 처리)."""
@@ -172,11 +182,11 @@ class PykrxClient:
     def _generate_test_universe(self) -> pd.DataFrame:
         """KRX API 실패 시 대체용 테스트 데이터."""
         test_stocks = [
-            {"ticker": "005930", "name": "SK하이닉스", "market": "KOSPI", "close": 80000, "volume": 15000000, "market_cap": 500e9},
+            {"ticker": "005930", "name": "삼성전자", "market": "KOSPI", "close": 70000, "volume": 15000000, "market_cap": 420e9},
             {"ticker": "247540", "name": "에코프로비엠", "market": "KOSDAQ", "close": 150000, "volume": 8000000, "market_cap": 300e9},
             {"ticker": "000810", "name": "LG전자", "market": "KOSPI", "close": 120000, "volume": 12000000, "market_cap": 450e9},
             {"ticker": "051910", "name": "LG화학", "market": "KOSPI", "close": 500000, "volume": 5000000, "market_cap": 400e9},
-            {"ticker": "000660", "name": "SK하이닉스", "market": "KOSPI", "close": 90000, "volume": 10000000, "market_cap": 350e9},
+            {"ticker": "000660", "name": "SK하이닉스", "market": "KOSPI", "close": 100000, "volume": 10000000, "market_cap": 350e9},
         ]
         df = pd.DataFrame(test_stocks)
         df["change_pct"] = 2.5
