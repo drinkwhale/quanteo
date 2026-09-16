@@ -26,6 +26,7 @@ from core.api.routes import (
     status,
     stream,
     trades,
+    watchlist,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,5 +68,6 @@ def create_app(container: AppContainer) -> FastAPI:
     app.include_router(control.router, prefix="/control", tags=["제어"])
     app.include_router(stream.router, tags=["스트림"])
     app.include_router(backtest.router, tags=["백테스트"])
+    app.include_router(watchlist.router, tags=["관심종목"])
 
     return app

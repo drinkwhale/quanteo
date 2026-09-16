@@ -378,3 +378,26 @@ class MarketStockSummary(BaseModel):
 
     timestamp: str
     categories: dict[str, MarketStockCategory]
+
+
+# ---------------------------------------------------------------------------
+# /watchlist — Stock Miner(screener)가 선정한 관심종목 (독립 서브시스템 결과물)
+# ---------------------------------------------------------------------------
+
+
+class WatchlistItem(BaseModel):
+    """관심종목 1종목 — screener/scripts/build_watchlist.py 필터링 결과 1건."""
+
+    ticker: str
+    name: str
+    market_cap_billion: float
+    asset_growth_pct: float
+    oi_growth_pct: float
+    revenue_growth_pct: float
+
+
+class WatchlistResponse(BaseModel):
+    """/watchlist 응답. Stock Miner가 생성한 가장 최근 날짜의 관심종목 리스트."""
+
+    date: str
+    items: list[WatchlistItem]

@@ -160,3 +160,18 @@ export interface IndexQuoteItem {
 export interface IndexQuoteResponse {
   items: IndexQuoteItem[];
 }
+
+// 관심종목 — Stock Miner(screener)가 선정한 결과물 (독립 서브시스템, 파일 기반)
+export interface WatchlistItem {
+  ticker: string;
+  name: string;
+  market_cap_billion: number;
+  asset_growth_pct: number;
+  oi_growth_pct: number;
+  revenue_growth_pct: number;
+}
+
+export interface WatchlistResponse {
+  date: string;
+  items: WatchlistItem[];
+}
