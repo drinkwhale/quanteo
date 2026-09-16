@@ -1,7 +1,7 @@
 import { RotateCw } from "lucide-react";
 import { Panel } from "../components/Panel";
 import { useWatchlist } from "../hooks/useWatchlist";
-import { pnlColorClass } from "../lib/format";
+import { fmtMarketCapBillion, pnlColorClass } from "../lib/format";
 
 function GrowthCell({ pct }: { pct: number }) {
   const sign = pct > 0 ? "+" : "";
@@ -84,7 +84,7 @@ export function WatchlistPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right text-white tabular-nums">
-                    {item.market_cap_billion.toLocaleString("ko-KR")}억
+                    {fmtMarketCapBillion(item.market_cap_billion)}
                   </td>
                   <GrowthCell pct={item.asset_growth_pct} />
                   <GrowthCell pct={item.oi_growth_pct} />
