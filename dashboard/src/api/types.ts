@@ -161,17 +161,17 @@ export interface IndexQuoteResponse {
   items: IndexQuoteItem[];
 }
 
-// 관심종목 — Stock Miner(screener)가 선정한 결과물 (독립 서브시스템, 파일 기반)
+// 관심종목 — 사용자가 Telegram에서 승인한 종목만 StateStore에 기록된다
+// (core/store/db.py WatchlistEntry 미러). score_snapshot은 등록 시점 스코어
+// 스냅샷이라 축 구성이 바뀔 수 있어 고정 스키마 대신 자유 형식으로 둔다.
 export interface WatchlistItem {
-  ticker: string;
+  symbol: string;
   name: string;
-  market_cap_billion: number;
-  asset_growth_pct: number;
-  oi_growth_pct: number;
-  revenue_growth_pct: number;
+  added_at: string;
+  source: string;
+  score_snapshot: Record<string, number>;
 }
 
 export interface WatchlistResponse {
-  date: string;
   items: WatchlistItem[];
 }

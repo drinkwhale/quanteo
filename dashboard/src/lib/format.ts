@@ -8,19 +8,6 @@ export function toNumber(n: number | string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/**
- * screener(build_watchlist.py)의 market_cap_billion은 이름 그대로 "10억원"
- * 단위(market_cap_원 / 1e9)다 — "억"(1억원) 단위가 아니다. 대형주는 조 단위로
- * 넘어가므로(1조원 = 1000 × 10억원) 억으로만 표시하면 자릿수가 과하게 길어져
- * 조/억으로 나눠 표시한다.
- */
-export function fmtMarketCapBillion(billionKrw: number): string {
-  const jo = Math.floor(billionKrw / 1000);
-  const eok = Math.round(billionKrw % 1000) * 10;
-  if (jo <= 0) return `${eok.toLocaleString("ko-KR")}억`;
-  return eok > 0 ? `${jo}조 ${eok.toLocaleString("ko-KR")}억` : `${jo}조`;
-}
-
 /** 종목명이 캐시에 있으면 종목명을, 없으면 심볼 코드로 폴백한다. */
 export function stockLabel(symbol: string, names: Map<string, string>): string {
   return names.get(symbol) ?? symbol;

@@ -1,27 +1,37 @@
 import { RotateCw } from "lucide-react";
 import { Panel } from "../components/Panel";
 import { useWatchlist } from "../hooks/useWatchlist";
-import { fmtMarketCapBillion, pnlColorClass } from "../lib/format";
 
-function GrowthCell({ pct }: { pct: number }) {
-  const sign = pct > 0 ? "+" : "";
+/** ISO 문자열을 그대로 보여주면 가독성이 떨어져 로컬 표기로 변환한다 —
+ * 파싱 실패 시(예상 밖 포맷) 원본 문자열을 그대로 보여준다. */
+function formatAddedAt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ko-KR");
+}
+
+/**
+ * score_snapshot은 등록 시점 스코어 축 구성이 고정돼 있지 않아(analyst_agent의
+ * score_breakdown 축이 바뀔 수 있음) 특정 키를 하드코딩하지 않고 있는 그대로
+ * 나열한다.
+ */
+function ScoreSnapshot({ snapshot }: { snapshot: Record<string, number> }) {
+  const entries = Object.entries(snapshot);
+  if (entries.length === 0) return <span className="text-muted">-</span>;
   return (
-    <td
-      className={`px-4 py-2 text-right font-semibold tabular-nums ${pnlColorClass(pct)}`}
-    >
-      {sign}
-      {pct.toFixed(2)}%
-    </td>
+    <span className="text-xs text-muted">
+      {entries.map(([key, value]) => `${key} ${value}`).join(" · ")}
+    </span>
   );
 }
 
 export function WatchlistPage() {
-  const { watchlist, error, notFound, isLoading, refetch } = useWatchlist();
+  const { watchlist, error, isLoading, refetch } = useWatchlist();
+  const items = watchlist?.items ?? [];
 
   return (
     <Panel
       title="관심종목"
-      badge={watchlist ? `${watchlist.date} 기준` : undefined}
+      badge={watchlist ? `${items.length}건` : undefined}
       headerExtra={
         <button
           type="button"
@@ -46,49 +56,43 @@ export function WatchlistPage() {
         </p>
       )}
 
-      {!isLoading && notFound && (
+      {!isLoading && !error && items.length === 0 && (
         <p className="px-4 py-6 text-muted text-sm font-sans text-center">
-          아직 생성된 관심종목이 없습니다. Stock Miner가 매일 실행되면 여기에
-          결과가 표시됩니다.
+          아직 등록된 관심종목이 없습니다. Telegram 리포트에서 &quot;워치리스트
+          등록&quot; 버튼을 누르면 여기 표시됩니다.
         </p>
       )}
 
-      {!isLoading && watchlist && watchlist.items.length === 0 && (
-        <p className="px-4 py-6 text-muted text-sm font-sans text-center">
-          조건을 충족한 종목이 없습니다.
-        </p>
-      )}
-
-      {!isLoading && watchlist && watchlist.items.length > 0 && (
+      {!isLoading && items.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm font-sans">
             <thead>
               <tr className="text-muted text-xs border-b border-border">
                 <th className="px-4 py-2 text-left">종목</th>
-                <th className="px-4 py-2 text-right">시가총액</th>
-                <th className="px-4 py-2 text-right">자산증가율</th>
-                <th className="px-4 py-2 text-right">영업이익증가율</th>
-                <th className="px-4 py-2 text-right">매출증가율</th>
+                <th className="px-4 py-2 text-left">등록일</th>
+                <th className="px-4 py-2 text-left">출처</th>
+                <th className="px-4 py-2 text-left">스코어</th>
               </tr>
             </thead>
             <tbody>
-              {watchlist.items.map((item) => (
+              {items.map((item) => (
                 <tr
-                  key={item.ticker}
+                  key={item.symbol}
                   className="border-b border-border last:border-0 hover:bg-surface transition-colors"
                 >
                   <td className="px-4 py-2 font-medium">
                     {item.name}
                     <span className="ml-1.5 text-xs text-muted">
-                      {item.ticker}
+                      {item.symbol}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-right text-white tabular-nums">
-                    {fmtMarketCapBillion(item.market_cap_billion)}
+                  <td className="px-4 py-2 text-muted tabular-nums">
+                    {formatAddedAt(item.added_at)}
                   </td>
-                  <GrowthCell pct={item.asset_growth_pct} />
-                  <GrowthCell pct={item.oi_growth_pct} />
-                  <GrowthCell pct={item.revenue_growth_pct} />
+                  <td className="px-4 py-2 text-muted">{item.source}</td>
+                  <td className="px-4 py-2">
+                    <ScoreSnapshot snapshot={item.score_snapshot} />
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -3,14 +3,13 @@ import { api } from "../api/client";
 import type { WatchlistResponse } from "../api/types";
 
 /**
- * Stock Miner(screener)는 하루 한 번만 관심종목을 갱신하는 독립 서브시스템이라
- * 짧은 폴링이 무의미하다 — 기본 5분 간격 + 수동 새로고침 버튼으로 충분하다.
+ * 관심종목은 사용자가 Telegram에서 "워치리스트 등록" 버튼을 눌러야만 갱신되는
+ * 이벤트 기반 데이터라 짧은 폴링이 무의미하다 — 기본 5분 간격 + 수동 새로고침
+ * 버튼으로 충분하다.
  */
 export function useWatchlist(intervalMs = 300000) {
   const [watchlist, setWatchlist] = useState<WatchlistResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 아직 생성된 관심종목이 없는 정상 상태(404)는 에러가 아니라 빈 상태로 다룬다.
-  const [notFound, setNotFound] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(() => {
@@ -19,18 +18,10 @@ export function useWatchlist(intervalMs = 300000) {
       .then((res) => {
         setWatchlist(res);
         setError(null);
-        setNotFound(false);
       })
-      .catch((e: unknown) => {
-        const message = e instanceof Error ? e.message : String(e);
-        if (message.startsWith("404")) {
-          setWatchlist(null);
-          setNotFound(true);
-          setError(null);
-        } else {
-          setError(message);
-        }
-      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : String(e)),
+      )
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -40,5 +31,5 @@ export function useWatchlist(intervalMs = 300000) {
     return () => clearInterval(id);
   }, [refresh, intervalMs]);
 
-  return { watchlist, error, notFound, isLoading, refetch: refresh };
+  return { watchlist, error, isLoading, refetch: refresh };
 }

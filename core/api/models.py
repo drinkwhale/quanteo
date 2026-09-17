@@ -381,23 +381,23 @@ class MarketStockSummary(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# /watchlist — Stock Miner(screener)가 선정한 관심종목 (독립 서브시스템 결과물)
+# /watchlist — 사용자가 Telegram에서 승인한 관심종목 (core/store/db.py WatchlistEntry 미러)
 # ---------------------------------------------------------------------------
 
 
 class WatchlistItem(BaseModel):
-    """관심종목 1종목 — screener/scripts/build_watchlist.py 필터링 결과 1건."""
+    """관심종목 1건. score_snapshot은 등록 시점 StockSummary.score_breakdown
+    스냅샷(예: {"growth": 4, "valuation": 2, ...})을 그대로 반영하며, 축 구성이
+    바뀔 수 있어 고정 스키마 대신 자유 형식 dict로 둔다."""
 
-    ticker: str
+    symbol: str
     name: str
-    market_cap_billion: float
-    asset_growth_pct: float
-    oi_growth_pct: float
-    revenue_growth_pct: float
+    added_at: str
+    source: str
+    score_snapshot: dict[str, Any]
 
 
 class WatchlistResponse(BaseModel):
-    """/watchlist 응답. Stock Miner가 생성한 가장 최근 날짜의 관심종목 리스트."""
+    """/watchlist 응답. 등록된 종목이 없으면 items가 빈 배열이다(404 아님)."""
 
-    date: str
     items: list[WatchlistItem]

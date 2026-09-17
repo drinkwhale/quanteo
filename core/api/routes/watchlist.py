@@ -1,64 +1,41 @@
-"""GET /watchlist — Stock Miner(screener)가 선정한 관심종목 리스트 조회.
+"""GET /watchlist — 사용자가 Telegram에서 승인한 관심종목 조회.
 
-core.app(매매 코어)과 screener는 런타임이 완전히 분리돼 있다(CLAUDE.md) —
-여기서는 screener가 파일로 남긴 결과물(JSON)만 읽는다. screener 모듈을
-import하거나 실행하지 않는다.
+Stock Miner(screener)가 매일 후보를 Telegram 리포트로 보내면, 사용자가
+인라인 버튼("워치리스트 등록")을 눌러야만 StateStore의 watchlist 테이블에
+기록된다(screener/notify/callback_handler.py). core.app(이 Control API가
+속한 프로세스)과 screener는 런타임이 분리된 별도 Docker 컨테이너이지만,
+둘 다 같은 SQLite 파일(~/quanteo/data/quanteo.db)을 공유하도록 배포되어
+있어(docker-compose.yml) StateStore를 통해서만 두 프로세스 간에 안전하게
+공유된다. screener가 파일로 남기는 산출물(screener/data/watchlist/*.json)은
+컨테이너 로컬 파일이라 공유되지 않으므로 여기서 읽지 않는다.
 """
 
 from __future__ import annotations
 
-import json
-import logging
-from pathlib import Path
+from fastapi import APIRouter
 
-from fastapi import APIRouter, HTTPException
-
+from core.api.deps import ContainerDep
 from core.api.models import WatchlistItem, WatchlistResponse
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# screener/scripts/build_watchlist.py의 _DEFAULT_OUTPUT_DIR과 동일한 경로.
-# 두 프로세스 모두 저장소 루트에서 실행된다는 전제(README 실행 커맨드 기준).
-_WATCHLIST_DIR = Path("screener/data/watchlist")
-_FILENAME_PREFIX = "watchlist_"
-_FILENAME_SUFFIX = ".json"
 
+@router.get("/watchlist", response_model=WatchlistResponse, summary="관심종목 조회")
+async def get_watchlist(container: ContainerDep) -> WatchlistResponse:
+    """사용자가 승인한 관심종목 전체를 등록일 순으로 반환한다.
 
-def _latest_watchlist_file() -> Path | None:
-    """가장 최근 날짜의 watchlist_YYYY-MM-DD.json 파일을 찾는다.
-
-    파일명이 YYYY-MM-DD 형식이라 문자열 정렬이 곧 날짜순 정렬이다 — mtime은
-    파일이 재복사/재생성될 때 날짜와 어긋날 수 있어 신뢰하지 않는다.
+    아직 등록된 종목이 없으면 빈 목록을 반환한다(404가 아니다) — watchlist
+    테이블 자체는 항상 존재하고, "비어 있음"은 정상 상태이기 때문이다.
     """
-    if not _WATCHLIST_DIR.is_dir():
-        return None
-    files = sorted(_WATCHLIST_DIR.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"))
-    return files[-1] if files else None
-
-
-@router.get("/watchlist", response_model=WatchlistResponse, summary="관심종목 리스트 조회")
-async def get_watchlist() -> WatchlistResponse:
-    """Stock Miner(screener)가 선정한 가장 최근 관심종목 리스트를 조회한다.
-
-    Raises:
-        HTTPException(404): 아직 생성된 관심종목 파일이 없을 때.
-        HTTPException(502): 파일이 있으나 읽기·파싱에 실패했을 때(손상된 결과물).
-    """
-    latest_file = _latest_watchlist_file()
-    if latest_file is None:
-        raise HTTPException(status_code=404, detail="아직 생성된 관심종목이 없습니다.")
-
-    try:
-        raw = json.loads(latest_file.read_text(encoding="utf-8"))
-        items = [WatchlistItem(**row) for row in raw]
-    except Exception as exc:
-        logger.exception("관심종목 파일 파싱 실패: %s", latest_file)
-        raise HTTPException(
-            status_code=502, detail="관심종목 데이터를 읽는 데 실패했습니다."
-        ) from exc
-
-    # watchlist_YYYY-MM-DD.json → YYYY-MM-DD
-    date = latest_file.stem.removeprefix(_FILENAME_PREFIX)
-
-    return WatchlistResponse(date=date, items=items)
+    entries = await container.store.get_watchlist()
+    items = [
+        WatchlistItem(
+            symbol=e.symbol,
+            name=e.name,
+            added_at=e.added_at,
+            source=e.source,
+            score_snapshot=e.score_snapshot,
+        )
+        for e in entries
+    ]
+    return WatchlistResponse(items=items)

@@ -1,8 +1,6 @@
-"""Control API /watchlist 엔드포인트 테스트 — 실제 파일시스템 대신 tmp_path 사용."""
+"""Control API /watchlist 엔드포인트 테스트 — StateStore의 watchlist 테이블 기반."""
 
 from __future__ import annotations
-
-import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +24,7 @@ async def store(tmp_path):
 def container(store):
     bus = EventBus()
     risk = RiskManager(bus=bus)
-    # 브로커 없이도 /watchlist는 동작해야 한다 — screener 파일 결과물만 읽는다.
+    # 브로커 없이도 /watchlist는 동작해야 한다 — StateStore만 읽는다.
     return AppContainer(store=store, risk=risk, bus=bus, env="vps", market="domestic")
 
 
@@ -35,61 +33,44 @@ def client(container):
     return TestClient(create_app(container))
 
 
-def _write_watchlist(tmp_path, monkeypatch, filename: str, content):
-    watchlist_dir = tmp_path / "watchlist"
-    watchlist_dir.mkdir(exist_ok=True)
-    (watchlist_dir / filename).write_text(
-        json.dumps(content, ensure_ascii=False), encoding="utf-8"
-    )
-    monkeypatch.setattr("core.api.routes.watchlist._WATCHLIST_DIR", watchlist_dir)
-
-
-def test_watchlist_404_when_no_files(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "core.api.routes.watchlist._WATCHLIST_DIR", tmp_path / "empty"
-    )
+def test_watchlist_empty_returns_200_with_empty_items(client):
     res = client.get("/watchlist")
-    assert res.status_code == 404
+    assert res.status_code == 200
+    assert res.json() == {"items": []}
 
 
-def test_watchlist_returns_latest_file(client, monkeypatch, tmp_path):
-    older = [
-        {
-            "ticker": "000001",
-            "name": "구버전종목",
-            "market_cap_billion": 100.0,
-            "asset_growth_pct": 1.0,
-            "oi_growth_pct": 1.0,
-            "revenue_growth_pct": 1.0,
-        }
-    ]
-    newer = [
-        {
-            "ticker": "005930",
-            "name": "삼성전자",
-            "market_cap_billion": 500.0,
-            "asset_growth_pct": 12.3,
-            "oi_growth_pct": 4.5,
-            "revenue_growth_pct": 6.7,
-        }
-    ]
-    _write_watchlist(tmp_path, monkeypatch, "watchlist_2026-08-30.json", older)
-    _write_watchlist(tmp_path, monkeypatch, "watchlist_2026-08-31.json", newer)
+async def test_watchlist_returns_registered_entry(store, client):
+    await store.upsert_watchlist(
+        symbol="005930",
+        name="삼성전자",
+        score_snapshot={"growth": 4, "valuation": 2},
+    )
 
     res = client.get("/watchlist")
     assert res.status_code == 200
-    data = res.json()
-    assert data["date"] == "2026-08-31"
-    assert data["items"] == newer
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["symbol"] == "005930"
+    assert items[0]["name"] == "삼성전자"
+    assert items[0]["source"] == "screener"
+    assert items[0]["score_snapshot"] == {"growth": 4, "valuation": 2}
+    assert items[0]["added_at"]
 
 
-def test_watchlist_502_on_corrupted_file(client, monkeypatch, tmp_path):
-    watchlist_dir = tmp_path / "watchlist"
-    watchlist_dir.mkdir()
-    (watchlist_dir / "watchlist_2026-08-31.json").write_text(
-        "not valid json", encoding="utf-8"
-    )
-    monkeypatch.setattr("core.api.routes.watchlist._WATCHLIST_DIR", watchlist_dir)
+async def test_watchlist_orders_by_added_at(store, client):
+    await store.upsert_watchlist(symbol="000660", name="SK하이닉스", score_snapshot={})
+    await store.upsert_watchlist(symbol="005930", name="삼성전자", score_snapshot={})
 
     res = client.get("/watchlist")
-    assert res.status_code == 502
+    symbols = [item["symbol"] for item in res.json()["items"]]
+    assert symbols == ["000660", "005930"]
+
+
+async def test_watchlist_upsert_updates_existing_entry(store, client):
+    await store.upsert_watchlist(symbol="005930", name="삼성전자", score_snapshot={"growth": 1})
+    await store.upsert_watchlist(symbol="005930", name="삼성전자", score_snapshot={"growth": 5})
+
+    res = client.get("/watchlist")
+    items = res.json()["items"]
+    assert len(items) == 1
+    assert items[0]["score_snapshot"] == {"growth": 5}
