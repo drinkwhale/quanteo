@@ -160,3 +160,18 @@ export interface IndexQuoteItem {
 export interface IndexQuoteResponse {
   items: IndexQuoteItem[];
 }
+
+// 관심종목 — 사용자가 Telegram에서 승인한 종목만 StateStore에 기록된다
+// (core/store/db.py WatchlistEntry 미러). score_snapshot은 등록 시점 스코어
+// 스냅샷이라 축 구성이 바뀔 수 있어 고정 스키마 대신 자유 형식으로 둔다.
+export interface WatchlistItem {
+  symbol: string;
+  name: string;
+  added_at: string;
+  source: string;
+  score_snapshot: Record<string, number>;
+}
+
+export interface WatchlistResponse {
+  items: WatchlistItem[];
+}

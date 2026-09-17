@@ -20,9 +20,12 @@ import { useStream } from "./hooks/useStream";
 import { RndPanel } from "./components/RndPanel";
 import { StrategyPage } from "./pages/Strategy";
 import { StockDetail } from "./pages/StockDetail";
+import { WatchlistPage } from "./pages/WatchlistPage";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"ops" | "chart">("ops");
+  const [activeTab, setActiveTab] = useState<"ops" | "chart" | "watchlist">(
+    "ops",
+  );
   const { positions, updatePosition, resetLayout, mounted } = useGridLayout();
 
   const { status, refetch: refetchStatus } = useStatus(3000);
@@ -67,6 +70,7 @@ export default function App() {
   const tabs = [
     { id: "ops", label: "운용현황" },
     { id: "chart", label: "종목상세" },
+    { id: "watchlist", label: "관심종목" },
   ];
 
   return (
@@ -76,7 +80,7 @@ export default function App() {
       <TabNav
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(id) => setActiveTab(id as "ops" | "chart")}
+        onTabChange={(id) => setActiveTab(id as "ops" | "chart" | "watchlist")}
       />
 
       <main className="flex-1 flex flex-col">
@@ -234,6 +238,13 @@ export default function App() {
           {activeTab === "chart" && (
             <div className="p-4">
               <StockDetail recentSymbols={uniqueRecentSymbols} />
+            </div>
+          )}
+
+          {/* 관심종목 탭 */}
+          {activeTab === "watchlist" && (
+            <div className="p-4">
+              <WatchlistPage />
             </div>
           )}
         </div>

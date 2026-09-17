@@ -10,6 +10,7 @@ import type {
   OrderModifyResponse,
   PositionList,
   StockNameList,
+  WatchlistResponse,
 } from "./types";
 
 const BASE = "/api";
@@ -43,6 +44,7 @@ export const api = {
   getMarketStatus: () => request<MarketStatus>("/market-status"),
   getBalance: () => request<BalanceInfo>("/balance"),
   getIndices: () => request<IndexQuoteResponse>("/indices"),
+  getWatchlist: () => request<WatchlistResponse>("/watchlist"),
   getStockNames: (symbols: string[]) =>
     request<StockNameList>(
       `/stock-names?symbols=${encodeURIComponent(symbols.join(","))}`,

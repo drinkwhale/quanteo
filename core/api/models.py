@@ -378,3 +378,26 @@ class MarketStockSummary(BaseModel):
 
     timestamp: str
     categories: dict[str, MarketStockCategory]
+
+
+# ---------------------------------------------------------------------------
+# /watchlist — 사용자가 Telegram에서 승인한 관심종목 (core/store/db.py WatchlistEntry 미러)
+# ---------------------------------------------------------------------------
+
+
+class WatchlistItem(BaseModel):
+    """관심종목 1건. score_snapshot은 등록 시점 StockSummary.score_breakdown
+    스냅샷(예: {"growth": 4, "valuation": 2, ...})을 그대로 반영하며, 축 구성이
+    바뀔 수 있어 고정 스키마 대신 자유 형식 dict로 둔다."""
+
+    symbol: str
+    name: str
+    added_at: str
+    source: str
+    score_snapshot: dict[str, Any]
+
+
+class WatchlistResponse(BaseModel):
+    """/watchlist 응답. 등록된 종목이 없으면 items가 빈 배열이다(404 아님)."""
+
+    items: list[WatchlistItem]
