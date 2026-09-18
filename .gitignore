@@ -171,3 +171,9 @@ dashboard/dist/
 
 # Claude Code local project settings (personal permissions/hooks, session locks)
 .claude/
+
+# ruflo/claude-flow MCP 플러그인이 세션 중 자동 생성하는 로컬 캐시·벡터DB
+# (커밋 대상 아님 — 저장소 어디서 실행되든 생기므로 경로 무관하게 제외)
+.claude-flow/
+.swarm/
+ruvector.db
