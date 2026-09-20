@@ -159,6 +159,12 @@ htmlcov/
 screener/data/cache/*
 !screener/data/cache/.gitkeep
 
+# Stock Miner 관심종목 결과물 — 실행 시 생성되는 출력물, 커밋 금지
+# (watchlist_2026-08-31.json/csv가 API 장애 폴백 테스트 데이터인 채로 실수로
+# 커밋됐던 사례가 있어 재발 방지)
+screener/data/watchlist/*
+!screener/data/watchlist/.gitkeep
+
 # OpenDartReader corp-code 캐시 (실행 시 cwd에 생성, 커밋 금지)
 docs_cache/
 
