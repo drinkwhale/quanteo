@@ -177,3 +177,5 @@ dashboard/dist/
 .claude-flow/
 .swarm/
 ruvector.db
+agentdb.rvf
+agentdb.rvf.lock
