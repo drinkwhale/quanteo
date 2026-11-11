@@ -92,6 +92,14 @@ export interface MarketStatus {
   markets: MarketDayStatus[];
 }
 
+// Risk Manager 스냅샷 — buying_power는 브로커 조회 실패 시 null (Decimal이라 문자열로 온다)
+export interface RiskMetrics {
+  halt_level: string;
+  daily_order_count: number;
+  buying_power: number | string | null;
+  buying_power_currency: string | null;
+}
+
 // T056 — 주문 취소·정정 응답
 export interface OrderCancelResponse {
   success: boolean;

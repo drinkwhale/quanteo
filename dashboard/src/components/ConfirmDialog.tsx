@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-type ConfirmVariant = "warning" | "danger";
+type ConfirmVariant = "live" | "warn" | "danger";
 
 interface Props {
   open: boolean;
@@ -12,11 +12,10 @@ interface Props {
   onCancel: () => void;
 }
 
-const CONFIRM_STYLE: Record<ConfirmVariant, string> = {
-  warning:
-    "bg-warning/10 text-warning border-warning/30 hover:bg-warning/20 focus-visible:outline-warning",
-  danger:
-    "bg-negative/10 text-negative border-negative/30 hover:bg-negative/20 focus-visible:outline-negative",
+const CONFIRM_CLASS: Record<ConfirmVariant, string> = {
+  live: "btn btn-live",
+  warn: "btn btn-warn",
+  danger: "btn btn-danger",
 };
 
 /**
@@ -60,7 +59,6 @@ export function ConfirmDialog({
       onCancel();
     }
     function handleClose() {
-      // 트리거 버튼으로 포커스 복귀
       if (triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus();
       }
@@ -85,36 +83,28 @@ export function ConfirmDialog({
       role="alertdialog"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
-      className="bg-panel border border-border rounded-lg p-0 text-white backdrop:bg-black/60
-                 animate-[fadeIn_0.15s_ease-out] motion-reduce:animate-none open:motion-reduce:opacity-100"
+      className="rounded-lg border border-line-strong bg-raised p-0 text-ink shadow-2xl shadow-black/60
+                 backdrop:bg-black/60 open:animate-[rise-in_0.18s_var(--ease-out)]"
     >
-      <div className="w-80 max-w-[90vw] p-4 space-y-4 font-sans">
-        <h2
-          id="confirm-dialog-title"
-          className="text-sm font-semibold tracking-wider"
-        >
+      <div className="w-[22rem] max-w-[90vw] space-y-3 p-5">
+        <h2 id="confirm-dialog-title" className="text-base font-semibold">
           {title}
         </h2>
         <p
           id="confirm-dialog-message"
-          className="text-xs text-muted leading-relaxed"
+          className="whitespace-pre-line text-data leading-relaxed text-dim"
         >
           {message}
         </p>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-4 py-2 rounded border border-border text-xs font-semibold text-muted
-                       hover:text-white hover:border-structural-line transition-colors focus-visible:outline-accent"
-          >
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onCancel} className="btn">
             취소
           </button>
           <button
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 rounded border text-xs font-semibold transition-colors ${CONFIRM_STYLE[confirmVariant]}`}
+            className={CONFIRM_CLASS[confirmVariant]}
           >
             {confirmLabel}
           </button>

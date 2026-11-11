@@ -1,3 +1,7 @@
+/** rgb(var(--x) / <alpha-value>) 패턴 필수 — 변수가 hex면 opacity modifier(/40 등)
+ * 유틸이 에러 없이 빌드에서 빠진다. 변수는 R G B 트리플릿(index.css). */
+const token = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
@@ -5,49 +9,55 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Tech Green Dark Mode 팔레트 별칭 — rgb(var(--x) / <alpha-value>) 패턴 필수.
-        // CSS 변수가 hex 문자열이면 Tailwind가 opacity modifier(/40, /10 등) 유틸을
-        // 아예 생성하지 않는다(콘솔 에러 없이 클래스 자체가 빌드에서 빠짐 — 조용히 실패).
-        // 변수는 R G B 트리플릿(index.css)이어야 한다.
-        surface: "rgb(var(--background) / <alpha-value>)",
-        panel: "rgb(var(--card) / <alpha-value>)",
-        border: "rgb(var(--border) / <alpha-value>)",
-        accent: "rgb(var(--accent) / <alpha-value>)",
-        "accent-hover": "rgb(var(--color-emerald-deep) / <alpha-value>)",
-        positive: "rgb(var(--color-live-green) / <alpha-value>)",
-        negative: "rgb(var(--destructive) / <alpha-value>)",
-        warning: "rgb(var(--color-caution-amber) / <alpha-value>)",
-        muted: "rgb(var(--muted-foreground) / <alpha-value>)",
-        ink: "rgb(var(--foreground) / <alpha-value>)",
+        // 레이어: canvas(바닥) → panel → raised(hover·선택·입력)
+        canvas: token("canvas"),
+        panel: token("panel"),
+        raised: token("raised"),
+        line: { DEFAULT: token("line"), strong: token("line-strong") },
+        // 텍스트 3단
+        ink: token("ink"),
+        dim: token("dim"),
+        muted: token("muted"),
+        // 시세 축 (상승=빨강, 하락=파랑)
+        up: token("up"),
+        down: token("down"),
+        // 봇 상태 축
+        live: token("live"),
+        warn: token("warn"),
+        danger: token("danger"),
 
-        // shadcn/ui 시맨틱 슬롯 (컴포넌트 추가 시 자동으로 다크 팔레트 적용)
-        background: "rgb(var(--background) / <alpha-value>)",
-        foreground: "rgb(var(--foreground) / <alpha-value>)",
-        card: {
-          DEFAULT: "rgb(var(--card) / <alpha-value>)",
-          foreground: "rgb(var(--card-foreground) / <alpha-value>)",
-        },
+        // shadcn/ui 시맨틱 슬롯
+        border: token("border"),
+        background: token("background"),
+        foreground: token("foreground"),
+        card: { DEFAULT: token("card"), foreground: token("card-foreground") },
         popover: {
-          DEFAULT: "rgb(var(--popover) / <alpha-value>)",
-          foreground: "rgb(var(--popover-foreground) / <alpha-value>)",
+          DEFAULT: token("popover"),
+          foreground: token("popover-foreground"),
         },
         primary: {
-          DEFAULT: "rgb(var(--primary) / <alpha-value>)",
-          foreground: "rgb(var(--primary-foreground) / <alpha-value>)",
+          DEFAULT: token("primary"),
+          foreground: token("primary-foreground"),
         },
         secondary: {
-          DEFAULT: "rgb(var(--secondary) / <alpha-value>)",
-          foreground: "rgb(var(--secondary-foreground) / <alpha-value>)",
+          DEFAULT: token("secondary"),
+          foreground: token("secondary-foreground"),
         },
         destructive: {
-          DEFAULT: "rgb(var(--destructive) / <alpha-value>)",
-          foreground: "rgb(var(--destructive-foreground) / <alpha-value>)",
+          DEFAULT: token("destructive"),
+          foreground: token("destructive-foreground"),
         },
-        input: "rgb(var(--input) / <alpha-value>)",
-        ring: "rgb(var(--ring) / <alpha-value>)",
+        input: token("input"),
+        ring: token("ring"),
       },
       borderRadius: {
-        DEFAULT: "var(--radius)",
+        DEFAULT: "6px",
+        lg: "var(--radius)",
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+        // 표 본문 전용 13px — 한글 종목명이 12px에선 뭉개지고 14px에선 밀도가 떨어진다
+        data: ["0.8125rem", { lineHeight: "1.25rem" }],
       },
       fontFamily: {
         sans: [
@@ -58,7 +68,7 @@ export default {
           "system-ui",
           "sans-serif",
         ],
-        // 시스템 라벨·타임스탬프·종목코드 전용 — 웹폰트 추가 로드 없이 OS 내장 모노 사용
+        // 종목코드·타임스탬프 전용 — 웹폰트 추가 로드 없이 OS 내장 모노 사용
         mono: [
           "ui-monospace",
           "SFMono-Regular",

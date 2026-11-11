@@ -5,49 +5,54 @@
 
 @layer base {
   :root {
-    /* Tech Green Dark Mode — 디자인 토큰 (단일 진실 공급원: PRODUCT.md, DESIGN.md)
-       타이포그래피는 Pretendard(본문) + mono(시스템 라벨·타임스탬프·코드) 이원 체계.
-       숫자 정렬은 tabular-nums 유틸리티로 담당. */
-    /* R G B 트리플릿 형식 — Tailwind opacity modifier(/40, /10 등)가 동작하려면
-       rgb(var(--x) / <alpha-value>) 패턴이 필요하다. hex 문자열로는 오패시티 유틸이
-       생성되지 않는다(빌드에 클래스 자체가 아예 안 나옴 — 조용히 실패). */
-    --color-void-black: 5 7 10;
-    --color-carbon-panel: 16 20 26;
-    --color-graphite-line: 31 38 48;
-    --color-emerald-signal: 16 185 129;
-    --color-emerald-deep: 5 150 105;
-    --color-live-green: 34 197 94;
-    --color-alert-red: 239 68 68;
-    --color-caution-amber: 245 158 11;
-    --color-ghost-gray: 107 114 128;
-    --color-ink-white: 241 245 249;
+    /* Trading Desk 토큰 — 단일 진실 공급원은 DESIGN.md.
+       원칙: 크롬(셸·버튼·선택 상태)은 무채색, 채도 있는 색은 전부 "데이터"다.
+       R G B 트리플릿이어야 Tailwind opacity modifier(/10, /40)가 생성된다 —
+       hex로 바꾸면 에러 없이 클래스가 빌드에서 빠진다. */
 
-    /* shadcn/ui 시맨틱 슬롯 — 위 토큰에 매핑. 앱 전체가 항상 다크 테마이므로 라이트 변형 없음 */
-    --background: var(--color-void-black);
-    --foreground: var(--color-ink-white);
-    --card: var(--color-carbon-panel);
-    --card-foreground: var(--color-ink-white);
-    --popover: var(--color-carbon-panel);
-    --popover-foreground: var(--color-ink-white);
-    --primary: var(--color-emerald-signal);
-    --primary-foreground: var(--color-void-black);
-    --secondary: var(--color-carbon-panel);
-    --secondary-foreground: var(--color-ink-white);
-    --muted: var(--color-carbon-panel);
-    --muted-foreground: var(--color-ghost-gray);
-    --accent: var(--color-emerald-signal);
-    --accent-foreground: var(--color-void-black);
-    --destructive: var(--color-alert-red);
-    --destructive-foreground: var(--color-ink-white);
-    --border: var(--color-graphite-line);
-    --input: var(--color-graphite-line);
-    --ring: var(--color-emerald-signal);
+    /* 중립 — 푸른 기가 아주 살짝 도는 잉크 3단 레이어 */
+    --canvas: 11 13 17;
+    --panel: 18 21 27;
+    --raised: 26 30 38;
+    --line: 36 41 51;
+    --line-strong: 58 65 80;
+    --ink: 237 239 243;
+    --dim: 168 175 188;
+    --muted: 130 138 153;
+
+    /* 시세 축 — 국내 증시 관례: 상승·매수·이익=빨강, 하락·매도·손실=파랑 */
+    --up: 245 84 97;
+    --down: 79 150 255;
+
+    /* 봇 상태 축 — 시세 축과 절대 섞지 않는다.
+       danger를 주황 쪽으로 뺀 이유: 화면 가득한 "상승 빨강"과 킬스위치가 같은 색이면
+       좋은 소식과 비상 정지가 구분되지 않는다. */
+    --live: 52 211 128;
+    --warn: 245 166 35;
+    --danger: 255 107 53;
+
+    /* shadcn/ui 시맨틱 슬롯 — 컴포넌트를 추가하면 이 팔레트를 그대로 받는다 */
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--panel);
+    --card-foreground: var(--ink);
+    --popover: var(--raised);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--canvas);
+    --secondary: var(--raised);
+    --secondary-foreground: var(--ink);
+    --muted-foreground: var(--muted);
+    --accent: var(--raised);
+    --accent-foreground: var(--ink);
+    --destructive: var(--danger);
+    --destructive-foreground: var(--canvas);
+    --border: var(--line);
+    --input: var(--line-strong);
+    --ring: var(--ink);
     --radius: 8px;
 
-    /* restrained glow — RUNNING 상태·포커스 강조 등 국소적으로만 사용 */
-    --glow-emerald:
-      0 0 0 1px rgb(var(--color-emerald-signal) / 0.18),
-      0 0 20px -6px rgb(var(--color-emerald-signal) / 0.45);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
     /* 시맨틱 z-index 스케일 */
     --z-dropdown: 10;
@@ -56,53 +61,48 @@
     --z-modal: 40;
     --z-toast: 50;
     --z-tooltip: 60;
+
+    color-scheme: dark;
   }
 
   * {
     box-sizing: border-box;
-    @apply border-border;
-  }
-
-  html {
-    @apply font-sans;
+    @apply border-line;
   }
 
   body {
     -webkit-font-smoothing: antialiased;
-    @apply bg-background text-foreground font-sans;
-    /* 매트 블랙 위 극저채도 그리드 텍스처 — 계기판 무드, 콘텐츠보다 항상 뒤로 */
-    background-image:
-      linear-gradient(
-        rgb(var(--color-graphite-line) / 0.35) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        90deg,
-        rgb(var(--color-graphite-line) / 0.35) 1px,
-        transparent 1px
-      );
-    background-size: 32px 32px;
-    background-attachment: fixed;
+    @apply bg-canvas text-ink font-sans text-sm;
+  }
+
+  /* 숫자 화면이라 폭이 흔들리면 안 된다 — 표·수치 전역 고정폭 숫자 */
+  table,
+  .num {
+    font-variant-numeric: tabular-nums;
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-panel;
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-border;
+    @apply bg-line-strong/70;
     border-radius: 4px;
   }
 
-  @keyframes fadeIn {
+  @keyframes rise-in {
     from {
       opacity: 0;
-      transform: translateY(-4px);
+      transform: translateY(-6px);
     }
     to {
       opacity: 1;
@@ -121,99 +121,77 @@
   }
 
   :focus-visible {
-    outline: 2px solid rgb(var(--color-emerald-signal));
+    outline: 2px solid rgb(var(--ink));
     outline-offset: 2px;
   }
 }
 
 @layer utilities {
-  /* 국소적 emerald glow — RUNNING 인디케이터, 강조 패널 헤더 등 소수 지점 전용 */
-  .glow-emerald {
-    box-shadow: var(--glow-emerald);
+  /* 가로로 넘치는 한 줄짜리 띠(지수·세그먼트)는 스크롤은 되되 막대는 숨긴다 */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 
-/* React Grid Layout 스타일 */
-.react-grid-layout {
-  position: relative;
-  width: 100%;
-}
+@layer components {
+  /* 버튼 — 모양은 하나, 위험도만 색으로 구분한다 */
+  .btn {
+    @apply inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-line-strong px-3
+           text-xs font-semibold text-dim transition-colors duration-150
+           hover:bg-raised hover:text-ink active:bg-line
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent;
+  }
+  .btn-primary {
+    @apply border-ink bg-ink text-canvas hover:bg-dim hover:text-canvas active:bg-dim;
+  }
+  .btn-live {
+    @apply border-live/40 bg-live/10 text-live hover:bg-live/20 hover:text-live;
+  }
+  .btn-warn {
+    @apply border-warn/40 bg-warn/10 text-warn hover:bg-warn/20 hover:text-warn;
+  }
+  .btn-danger {
+    @apply border-danger/50 bg-danger/10 text-danger hover:bg-danger/20 hover:text-danger;
+  }
+  .btn-icon {
+    @apply w-8 px-0;
+  }
 
-.react-grid-item {
-  touch-action: none;
-  box-sizing: border-box;
-  overflow: hidden;
-}
+  .field {
+    @apply h-8 w-full rounded-md border border-line-strong bg-canvas px-2.5 text-xs text-ink
+           placeholder:text-muted transition-colors duration-150
+           hover:border-muted focus:border-ink focus:outline-none;
+  }
 
-.react-grid-item img {
-  pointer-events: none;
-  user-select: none;
-}
+  /* 데이터 표 — 헤더는 패널 스크롤 안에서 고정 */
+  .tbl {
+    @apply w-full border-collapse text-data;
+  }
+  .tbl th {
+    @apply sticky top-0 z-[1] whitespace-nowrap border-b border-line bg-panel px-3 py-2
+           text-left text-xs font-medium text-muted;
+  }
+  .tbl td {
+    @apply whitespace-nowrap border-b border-line/60 px-3 py-2 align-middle;
+  }
+  .tbl tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .tbl tbody tr {
+    @apply transition-colors duration-100 hover:bg-raised/60;
+  }
+  .tbl .r {
+    @apply text-right;
+  }
 
-.react-grid-item.cssTransforms {
-  transition: all 200ms ease;
-}
-
-.react-grid-item.static {
-  background: #ccc;
-  opacity: 0.2;
-  z-index: 1;
-  resize: none;
-  border-radius: 2px;
-  margin-bottom: 10px;
-  touch-action: none;
-}
-
-.react-grid-item.text {
-  padding: 0;
-  background: none;
-  color: rgba(0, 0, 0, 0.87);
-  font-size: 24px;
-  font-weight: bold;
-  line-height: 1.2;
-  overflow: hidden;
-  padding: 10px;
-  font-family: arial;
-  font-weight: 700;
-  color: #444;
-}
-
-.react-grid-item.minMax {
-  font-size: 12px;
-}
-
-.react-grid-item.add {
-  cursor: pointer;
-  background: none;
-}
-
-.react-draggable-dragging {
-  transition: none;
-  z-index: 3;
-}
-
-.react-grid-placeholder {
-  background: rgba(16, 185, 129, 0.2);
-  opacity: 0.2;
-  border-radius: 2px;
-  z-index: 2;
-  border: 2px solid rgba(16, 185, 129, 0.5);
-  touch-action: none;
-}
-
-.react-grid-item > .react-resizable-handle {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-}
-
-.react-grid-item > .react-resizable-handle::after {
-  content: "";
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 5px;
-  height: 5px;
-  background: rgba(16, 185, 129, 0.5);
-  border-radius: 1px;
+  /* 패널 본문에 깔리는 상태 문구(빈 상태·로딩·에러) */
+  .state-msg {
+    @apply px-4 py-8 text-center text-xs leading-relaxed text-muted;
+  }
+  .state-err {
+    @apply border-b border-danger/30 bg-danger/10 px-4 py-2 text-xs text-danger;
+  }
 }

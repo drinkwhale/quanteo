@@ -122,7 +122,7 @@ quanteo/
 ├── info/                        # 정보 수집·알람 서브시스템 (뉴스·환율·실적·경제지표·AI필터·Google Calendar)
 ├── dashboard/                   # TypeScript 대시보드 (React + Vite + Tailwind + shadcn/ui)
 │   └── src/
-│       ├── components/          # StatusBar / PositionsTable / OrdersTable / FillsTable / ControlPanel / StreamLog
+│       ├── components/          # AppHeader / BotControls / Panel / AccountSummary / OrdersAndFillsPanel / StreamLog / chart
 │       ├── hooks/                # useStatus / usePositions / useOrders / useFills / useStream
 │       ├── pages/                # Strategy.tsx — CCI·신뢰도 게이지·백테스트 UI
 │       └── api/                  # Control API 클라이언트 + 타입

@@ -1,299 +1,398 @@
 /**
- * 전략 모니터링 페이지
+ * 전략·봇 화면 — "봇이 지금 어떤 규칙으로, 어떤 판단을 하고 있나"를 본다.
  *
- * - CCI 현황 패널 (4개 타임프레임)
- * - 신뢰도 스코어 게이지 (0~8점)
- * - 실시간 시그널 토스트 (WebSocket)
- * - 포지션 진행 바
- * - 백테스트 실행 UI
- * - 킬스위치
+ * - 운용 상태: 단계적 킬스위치(halt level) 사다리 + 운용 조건
+ * - 전략 신호: CCI 멀티 타임프레임, 신뢰도 스코어, 최근 시그널
+ * - 봇 활동: 실시간 이벤트 로그
+ * - 백테스트 실행
+ *
+ * 봇 제어 버튼은 여기 두지 않는다 — 헤더(BotControls) 한 곳에만 있다.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Minus } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   type BacktestMetrics,
   type BacktestStatusResponse,
   backtestApi,
   pollUntilDone,
 } from "../api/backtest";
-import { KillSwitchButton } from "../components/KillSwitchButton";
+import type { BotStatus, RiskMetrics } from "../api/types";
 import { Panel } from "../components/Panel";
-import type { PositionItem } from "../api/types";
+import { StreamLog } from "../components/StreamLog";
 import type { LogEntry } from "../hooks/useStream";
+import {
+  fmtClock,
+  fmtPrice,
+  fmtStamp,
+  fmtUptime,
+  SIDE_LABEL,
+  stockLabel,
+  trendClass,
+} from "../lib/format";
+import { HALT_META, HALT_ORDER, TONE_CLASS } from "../lib/halt";
+import { cn } from "../lib/utils";
 
 // ============================================================================
-// 타입
+// 운용 상태
+// ============================================================================
+
+function Fact({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="num text-right text-data text-ink">{children}</dd>
+    </div>
+  );
+}
+
+function BotStatePanel({
+  status,
+  risk,
+}: {
+  status: BotStatus | null;
+  risk: RiskMetrics | null;
+}) {
+  return (
+    <Panel title="운용 상태">
+      <ol className="p-2">
+        {HALT_ORDER.map((level) => {
+          const meta = HALT_META[level];
+          const isCurrent = status?.halt_level === level;
+          return (
+            <li
+              key={level}
+              aria-current={isCurrent ? "step" : undefined}
+              className={cn(
+                "flex gap-3 rounded-md border px-3 py-2.5",
+                isCurrent
+                  ? TONE_CLASS[meta.tone].pill
+                  : "border-transparent text-muted",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                  isCurrent
+                    ? TONE_CLASS[meta.tone].dot
+                    : "border border-line-strong",
+                )}
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-data font-semibold">
+                  {meta.label}
+                  {isCurrent && (
+                    <span className="text-2xs font-medium opacity-80">
+                      현재 단계
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={cn(
+                    "mt-0.5 text-xs leading-relaxed",
+                    isCurrent ? "text-ink" : "text-muted",
+                  )}
+                >
+                  {meta.desc}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      <dl className="divide-y divide-line/60 border-t border-line px-4 py-1">
+        <Fact label="환경">
+          {status ? (
+            <span
+              className={
+                status.env === "prod" ? "font-semibold text-danger" : ""
+              }
+            >
+              {status.env === "prod" ? "실전투자" : "모의투자"}
+            </span>
+          ) : (
+            "—"
+          )}
+        </Fact>
+        <Fact label="시장">
+          {status ? (status.market === "domestic" ? "국내" : "해외") : "—"}
+        </Fact>
+        <Fact label="가동 시간">
+          {status ? fmtUptime(status.uptime_seconds) : "—"}
+        </Fact>
+        <Fact label="시작 시각">
+          {status?.started_at ? fmtStamp(status.started_at) : "—"}
+        </Fact>
+        <Fact label="오늘 주문">
+          {risk ? `${risk.daily_order_count}건` : "—"}
+        </Fact>
+        <Fact label="주문가능금액">
+          {risk?.buying_power != null
+            ? fmtPrice(risk.buying_power, "domestic")
+            : "—"}
+        </Fact>
+      </dl>
+
+      <p className="border-t border-line px-4 py-3 text-xs leading-relaxed text-muted">
+        리스크 한도와 전략 파라미터는 설정 파일(quanteo.yaml)에서 관리합니다. 이
+        화면에서는 현재 적용 상태만 확인할 수 있습니다.
+      </p>
+    </Panel>
+  );
+}
+
+// ============================================================================
+// 전략 신호 — CCI 멀티 타임프레임 + 신뢰도 스코어 + 최근 시그널
 // ============================================================================
 
 interface CciTimeframe {
+  key: string;
   label: string;
   value: number | null;
   signal: "buy" | "sell" | "neutral";
   cross: "golden" | "dead" | null;
 }
 
-interface SignalToast {
-  id: number;
-  side: "BUY" | "SELL";
-  symbol: string;
-  price: number;
-  reason: string;
-  ts: string;
-}
-
-// ============================================================================
-// 서브 컴포넌트: CCI 패널
-// ============================================================================
-
-function CciPanel({ timeframes }: { timeframes: CciTimeframe[] }) {
-  return (
-    <Panel title="CCI 현황">
-      <div className="p-4 space-y-3">
-        <div className="grid grid-cols-2">
-          {timeframes.map((tf, i) => {
-            const isLastRow =
-              i >= timeframes.length - (timeframes.length % 2 || 2);
-            return (
-              <div
-                key={tf.label}
-                className={`py-2 space-y-1 ${i % 2 === 0 ? "pr-3" : "pl-3"} ${
-                  isLastRow ? "" : "border-b border-border"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-sans text-muted">
-                    {tf.label}
-                  </span>
-                  {tf.cross === "golden" && (
-                    <span className="text-[10px] font-sans text-positive">
-                      GC
-                    </span>
-                  )}
-                  {tf.cross === "dead" && (
-                    <span className="text-[10px] font-sans text-negative">
-                      DC
-                    </span>
-                  )}
-                </div>
-                <div
-                  className={`text-sm font-sans font-bold tabular-nums ${
-                    tf.signal === "buy"
-                      ? "text-positive"
-                      : tf.signal === "sell"
-                        ? "text-negative"
-                        : "text-muted"
-                  }`}
-                >
-                  {tf.value !== null ? tf.value.toFixed(1) : "—"}
-                </div>
-                <div className="text-[10px] font-sans text-muted capitalize">
-                  {tf.signal}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-[10px] text-muted font-sans">
-          * 실시간 데이터는 /strategy/status 엔드포인트 연동 후 활성화
-        </p>
-      </div>
-    </Panel>
-  );
-}
-
-// ============================================================================
-// 서브 컴포넌트: 신뢰도 스코어 게이지
-// ============================================================================
-
-interface ReliabilityProps {
-  score: number | null;
-  breakdown: Record<string, boolean>;
-}
-
-const RELIABILITY_STATUS = [
-  {
-    min: 7,
-    label: "적극매수",
-    color: "text-positive",
-    bar: "bg-positive",
-    badge: "bg-positive/10 border-positive/40 text-positive",
-  },
-  {
-    min: 4,
-    label: "소극매수",
-    color: "text-warning",
-    bar: "bg-warning",
-    badge: "bg-warning/10 border-warning/40 text-warning",
-  },
-  {
-    min: 0,
-    label: "관망",
-    color: "text-muted",
-    bar: "bg-border",
-    badge: "bg-muted/10 border-border text-muted",
-  },
-  {
-    min: -Infinity,
-    label: "매도검토",
-    color: "text-negative",
-    bar: "bg-negative",
-    badge: "bg-negative/10 border-negative/40 text-negative",
-  },
+const CCI_FRAMES = [
+  { key: "5m", label: "5분" },
+  { key: "15m", label: "15분" },
+  { key: "1h", label: "1시간" },
+  { key: "1d", label: "일봉" },
 ] as const;
 
-function reliabilityStatus(score: number | null) {
-  if (score === null) return null;
-  return (
-    RELIABILITY_STATUS.find((s) => score >= s.min) ??
-    RELIABILITY_STATUS[RELIABILITY_STATUS.length - 1]
-  );
+const CCI_SIGNAL: Record<
+  CciTimeframe["signal"],
+  { label: string; cls: string }
+> = {
+  buy: { label: "매수", cls: "text-up" },
+  sell: { label: "매도", cls: "text-down" },
+  neutral: { label: "중립", cls: "text-muted" },
+};
+
+function parseCci(logs: LogEntry[]): CciTimeframe[] | null {
+  const snap = logs.find((l) => l.event_type === "cci_snapshot");
+  const p = snap?.payload as Record<string, unknown> | null | undefined;
+  if (!p) return null;
+
+  return CCI_FRAMES.map(({ key, label }) => {
+    const data = p[key] as
+      { value: number; signal: string; cross: string | null } | undefined;
+    return {
+      key,
+      label,
+      value: data?.value ?? null,
+      signal: (data?.signal as CciTimeframe["signal"]) ?? "neutral",
+      cross: (data?.cross as CciTimeframe["cross"]) ?? null,
+    };
+  });
 }
 
-function ReliabilityGauge({ score, breakdown }: ReliabilityProps) {
-  const status = reliabilityStatus(score);
-  const color = status?.color ?? "text-muted";
-  const barColor = status?.bar ?? "bg-border";
+const RELIABILITY_MAX = 8;
 
-  const pct =
-    score !== null ? Math.max(0, Math.min(100, (score / 8) * 100)) : 0;
-
-  return (
-    <Panel title="신뢰도 스코어">
-      <div className="p-4 space-y-3">
-        <div className="flex items-end gap-2 flex-wrap">
-          <span
-            className={`text-3xl font-sans font-bold tabular-nums tracking-tight ${color}`}
-          >
-            {score !== null ? score : "—"}
-          </span>
-          <span className="text-muted font-sans text-sm mb-1">/ 8</span>
-          {status && (
-            <span
-              className={`ml-auto text-[10px] font-sans font-semibold px-2 py-1 rounded border ${status.badge}`}
-            >
-              {status.label}
-            </span>
-          )}
-        </div>
-
-        <div
-          role="progressbar"
-          aria-valuenow={score ?? 0}
-          aria-valuemin={0}
-          aria-valuemax={8}
-          aria-label="신뢰도 스코어"
-          className="w-full h-2 bg-surface rounded-full overflow-hidden"
-        >
-          <div
-            className={`h-full rounded-full transition-all ${barColor}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-
-        {Object.keys(breakdown).length > 0 && (
-          <ul className="space-y-1">
-            {Object.entries(breakdown).map(([key, passed]) => (
-              <li
-                key={key}
-                className="flex items-center gap-2 text-xs font-sans"
-              >
-                <span
-                  aria-hidden="true"
-                  className={passed ? "text-positive" : "text-muted"}
-                >
-                  {passed ? "✓" : "○"}
-                </span>
-                <span className="sr-only">{passed ? "통과" : "미통과"}</span>
-                <span className={passed ? "text-white" : "text-muted"}>
-                  {key}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {Object.keys(breakdown).length === 0 && (
-          <p className="text-[10px] text-muted font-sans">
-            * 스코어 데이터 대기 중
-          </p>
-        )}
-      </div>
-    </Panel>
-  );
+/** 점수 구간 → 판정. 매수 쪽은 시세 축 up, 매도 쪽은 down. */
+function reliabilityVerdict(score: number): { label: string; cls: string } {
+  if (score >= 7) return { label: "적극매수", cls: "text-up" };
+  if (score >= 4) return { label: "소극매수", cls: "text-up" };
+  if (score >= 0) return { label: "관망", cls: "text-dim" };
+  return { label: "매도검토", cls: "text-down" };
 }
 
-// ============================================================================
-// 서브 컴포넌트: 포지션 진행 바
-// ============================================================================
+function parseReliability(
+  logs: LogEntry[],
+): { score: number; breakdown: Record<string, boolean> } | null {
+  const snap = logs.find((l) => l.event_type === "reliability_score");
+  const p = snap?.payload as {
+    score: number;
+    breakdown: Record<string, boolean>;
+  } | null;
+  return p ? { score: p.score, breakdown: p.breakdown ?? {} } : null;
+}
 
-function PositionProgressBars({
-  positions,
+function SignalPanel({
+  logs,
   stockNames,
 }: {
-  positions: PositionItem[];
+  logs: LogEntry[];
   stockNames: Map<string, string>;
 }) {
-  // 분할 매수 스텝: 1차 30%, 2차 50%, 3차 20% (스펙 기준 예시)
-  const STEPS = [
-    { label: "1차", pct: 30 },
-    { label: "2차", pct: 50 },
-    { label: "3차", pct: 20 },
-  ];
-
-  if (positions.length === 0) {
-    return (
-      <Panel title="포지션 현황">
-        <p className="p-4 text-xs text-muted font-sans">보유 포지션 없음</p>
-      </Panel>
-    );
-  }
+  const cci = parseCci(logs);
+  const reliability = parseReliability(logs);
+  const verdict = reliability ? reliabilityVerdict(reliability.score) : null;
+  const signals = logs.filter((l) => l.event_type === "signal").slice(0, 6);
 
   return (
-    <Panel title="포지션 현황">
-      <div className="p-4 space-y-3">
-        {positions.slice(0, 5).map((pos) => (
-          <div key={pos.symbol} className="space-y-1">
-            <div className="flex justify-between text-xs font-sans">
-              <span className="text-white truncate">
-                {stockNames.get(pos.symbol) ?? pos.symbol}
+    <Panel title="전략 신호" bodyClassName="flex-none">
+      <div className="grid md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <section
+          aria-label="CCI 멀티 타임프레임"
+          className="border-b border-line p-4 md:border-b-0 md:border-r"
+        >
+          <h3 className="text-xs font-medium text-muted">
+            CCI 멀티 타임프레임
+          </h3>
+          <dl className="num mt-3 grid grid-cols-4 divide-x divide-line">
+            {(
+              cci ??
+              CCI_FRAMES.map((f) => ({
+                ...f,
+                value: null,
+                signal: "neutral" as const,
+                cross: null,
+              }))
+            ).map((tf) => (
+              <div key={tf.key} className="px-3 first:pl-0">
+                <dt className="text-xs text-muted">{tf.label}</dt>
+                <dd
+                  className={cn(
+                    "mt-1 text-xl font-bold tracking-tight",
+                    tf.value === null
+                      ? "text-muted"
+                      : CCI_SIGNAL[tf.signal].cls,
+                  )}
+                >
+                  {tf.value !== null ? tf.value.toFixed(1) : "—"}
+                </dd>
+                <dd className="mt-0.5 text-xs text-dim">
+                  {tf.value === null ? "대기" : CCI_SIGNAL[tf.signal].label}
+                  {tf.cross === "golden" && " · 골든크로스"}
+                  {tf.cross === "dead" && " · 데드크로스"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {!cci && (
+            <p className="mt-3 text-xs leading-relaxed text-muted">
+              전략 엔진이 CCI 스냅샷(cci_snapshot)을 보내면 타임프레임별 값이
+              채워집니다.
+            </p>
+          )}
+        </section>
+
+        <section aria-label="신뢰도 스코어" className="p-4">
+          <h3 className="text-xs font-medium text-muted">신뢰도 스코어</h3>
+          <div className="num mt-3 flex items-baseline gap-2">
+            <span
+              className={cn(
+                "text-xl font-bold tracking-tight",
+                verdict?.cls ?? "text-muted",
+              )}
+            >
+              {reliability ? reliability.score : "—"}
+            </span>
+            <span className="text-xs text-muted">/ {RELIABILITY_MAX}</span>
+            {verdict && (
+              <span
+                className={cn("ml-auto text-data font-semibold", verdict.cls)}
+              >
+                {verdict.label}
               </span>
-              <span className="text-muted flex-shrink-0 tabular-nums">
-                {pos.qty.toLocaleString()}주
-              </span>
-            </div>
-            <div className="flex gap-0.5 h-2">
-              {STEPS.map((step, i) => (
-                <div
-                  key={step.label}
-                  className="h-full rounded-sm"
-                  style={{
-                    width: `${step.pct}%`,
-                    backgroundColor:
-                      i === 0
-                        ? "rgb(34 197 94 / 0.8)"
-                        : i === 1
-                          ? "rgb(34 197 94 / 0.5)"
-                          : "rgb(34 197 94 / 0.25)",
-                  }}
-                  title={`${step.label} ${step.pct}%`}
-                />
-              ))}
-            </div>
-            <div className="flex gap-2 text-[10px] font-sans text-muted">
-              {STEPS.map((s) => (
-                <span key={s.label}>
-                  {s.label} {s.pct}%
-                </span>
-              ))}
-            </div>
+            )}
           </div>
-        ))}
+          <div
+            role="meter"
+            aria-label="신뢰도 스코어"
+            aria-valuenow={reliability?.score ?? 0}
+            aria-valuemin={0}
+            aria-valuemax={RELIABILITY_MAX}
+            className="mt-2 grid grid-cols-8 gap-1"
+          >
+            {Array.from({ length: RELIABILITY_MAX }, (_, i) => (
+              <span
+                key={i}
+                className={cn(
+                  "h-1.5 rounded-sm",
+                  reliability && i < reliability.score ? "bg-ink" : "bg-line",
+                )}
+              />
+            ))}
+          </div>
+          {reliability && Object.keys(reliability.breakdown).length > 0 ? (
+            <ul className="mt-3 space-y-1 text-xs">
+              {Object.entries(reliability.breakdown).map(([key, passed]) => (
+                <li key={key} className="flex items-center gap-2">
+                  {passed ? (
+                    <Check
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 text-ink"
+                    />
+                  ) : (
+                    <Minus
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 text-muted"
+                    />
+                  )}
+                  <span className="sr-only">{passed ? "충족" : "미충족"}</span>
+                  <span className={passed ? "text-ink" : "text-muted"}>
+                    {key}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-xs leading-relaxed text-muted">
+              조건별 충족 여부는 스코어 이벤트(reliability_score)가 오면
+              표시됩니다.
+            </p>
+          )}
+        </section>
       </div>
+
+      <section aria-label="최근 시그널" className="border-t border-line">
+        <h3 className="px-4 pt-3 text-xs font-medium text-muted">
+          최근 시그널
+        </h3>
+        {signals.length === 0 ? (
+          <p className="px-4 pb-4 pt-2 text-xs text-muted">
+            이번 세션에 발생한 시그널이 없습니다.
+          </p>
+        ) : (
+          <ul className="num mt-1 divide-y divide-line/60 pb-1 text-data">
+            {signals.map((l) => {
+              const p = l.payload as {
+                side?: "BUY" | "SELL";
+                symbol?: string;
+                price?: number;
+              } | null;
+              return (
+                <li
+                  key={l._key}
+                  className="flex items-baseline gap-3 px-4 py-1.5"
+                >
+                  <time className="font-mono text-xs text-muted">
+                    {fmtClock(l.timestamp)}
+                  </time>
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      p?.side === "BUY" ? "text-up" : "text-down",
+                    )}
+                  >
+                    {p?.side ? SIDE_LABEL[p.side] : "—"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {p?.symbol ? stockLabel(p.symbol, stockNames) : ""}
+                  </span>
+                  <span className="text-dim">{p?.price?.toLocaleString()}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </Panel>
   );
 }
 
 // ============================================================================
-// 서브 컴포넌트: 백테스트 UI
+// 백테스트
 // ============================================================================
 
 function BacktestPanel() {
@@ -305,6 +404,7 @@ function BacktestPanel() {
   const [result, setResult] = useState<BacktestMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fieldId = useId();
 
   // 언마운트 시 진행 중인 폴링 취소
   useEffect(() => {
@@ -319,7 +419,7 @@ function BacktestPanel() {
     abortRef.current = controller;
 
     setRunning(true);
-    setStatusMsg("백테스트 시작...");
+    setStatusMsg("시작하는 중…");
     setResult(null);
     setError(null);
 
@@ -333,7 +433,7 @@ function BacktestPanel() {
       const res = await pollUntilDone(
         run_id,
         (s: BacktestStatusResponse) => {
-          setStatusMsg(`실행 중... (${s.status})`);
+          setStatusMsg(`실행 중… (${s.status})`);
         },
         1500,
         120_000,
@@ -341,10 +441,9 @@ function BacktestPanel() {
       );
 
       if (res.status === "failed") {
-        setError("백테스트 실패");
+        setError("백테스트가 실패했습니다. 종목코드와 기간을 확인해 주세요.");
       } else if (res.metrics) {
         setResult(res.metrics);
-        setStatusMsg("완료");
       }
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes("취소")) return;
@@ -354,329 +453,176 @@ function BacktestPanel() {
     }
   }
 
+  const metrics: { label: string; value: string; cls: string }[] = result
+    ? [
+        {
+          label: "연환산 수익률",
+          value: `${result.annualized_return >= 0 ? "+" : ""}${(result.annualized_return * 100).toFixed(1)}%`,
+          cls: trendClass(result.annualized_return),
+        },
+        {
+          label: "최대 낙폭 (MDD)",
+          value: `-${Math.abs(result.mdd * 100).toFixed(1)}%`,
+          cls: "text-down",
+        },
+        {
+          label: "샤프 지수",
+          value: result.sharpe_ratio.toFixed(2),
+          cls: "text-ink",
+        },
+        {
+          label: "승률",
+          value: `${(result.win_rate * 100).toFixed(1)}%`,
+          cls: "text-ink",
+        },
+        {
+          label: "손익비",
+          value: result.profit_loss_ratio.toFixed(2),
+          cls: "text-ink",
+        },
+        {
+          label: "총 거래",
+          value: `${result.total_trades}회`,
+          cls: "text-ink",
+        },
+      ]
+    : [];
+
   return (
     <Panel title="백테스트">
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-3 gap-2">
-          <div className="space-y-1">
-            <label className="text-[10px] font-sans text-muted">종목코드</label>
+      <form
+        className="space-y-3 p-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          run();
+        }}
+      >
+        <div>
+          <label
+            htmlFor={`${fieldId}-symbol`}
+            className="mb-1 block text-xs text-muted"
+          >
+            종목코드
+          </label>
+          <input
+            id={`${fieldId}-symbol`}
+            type="text"
+            inputMode="numeric"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value.trim())}
+            className="field font-mono"
+            placeholder="005930"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label
+              htmlFor={`${fieldId}-start`}
+              className="mb-1 block text-xs text-muted"
+            >
+              시작일
+            </label>
             <input
-              type="text"
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
-              placeholder="005930"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-sans text-muted">시작일</label>
-            <input
+              id={`${fieldId}-start`}
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
+              className="field"
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-sans text-muted">종료일</label>
+          <div>
+            <label
+              htmlFor={`${fieldId}-end`}
+              className="mb-1 block text-xs text-muted"
+            >
+              종료일
+            </label>
             <input
+              id={`${fieldId}-end`}
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full bg-surface border border-border rounded px-2 py-1 text-xs font-sans text-white focus:border-accent"
+              className="field"
             />
           </div>
         </div>
 
         <button
-          type="button"
-          onClick={run}
+          type="submit"
           disabled={running || !symbol}
-          className="w-full py-2 rounded bg-accent/10 text-accent border border-accent/30 text-sm font-sans font-semibold
-                   hover:bg-accent/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="btn btn-primary w-full"
         >
-          {running ? (statusMsg ?? "실행 중...") : "백테스트 실행"}
+          {running ? (statusMsg ?? "실행 중…") : "백테스트 실행"}
         </button>
+      </form>
 
-        {error && (
-          <p className="text-xs font-sans text-negative bg-negative/5 border border-negative/20 rounded px-3 py-2">
-            {error}
+      {error && <p className="state-err border-t">{error}</p>}
+
+      {result ? (
+        <dl className="num grid grid-cols-2 border-t border-line">
+          {metrics.map(({ label, value, cls }, i) => (
+            <div
+              key={label}
+              className={cn(
+                "border-b border-line/60 px-4 py-3",
+                i % 2 === 0 && "border-r",
+              )}
+            >
+              <dt className="text-xs text-muted">{label}</dt>
+              <dd className={cn("mt-0.5 text-base font-semibold", cls)}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        !error &&
+        !running && (
+          <p className="border-t border-line px-4 py-4 text-xs leading-relaxed text-muted">
+            현재 전략을 과거 구간에 돌려 수익률·낙폭·승률을 확인합니다. 실계좌
+            주문은 나가지 않습니다.
           </p>
-        )}
-
-        {result && (
-          <dl className="text-xs font-sans">
-            {(
-              [
-                {
-                  label: "승률 %",
-                  value: `${(result.win_rate * 100).toFixed(1)}%`,
-                  tone: "neutral",
-                },
-                {
-                  label: "MDD %",
-                  value: `${(result.mdd * 100).toFixed(1)}%`,
-                  tone: "negative",
-                },
-                {
-                  label: "샤프 지수",
-                  value: result.sharpe_ratio.toFixed(2),
-                  tone: result.sharpe_ratio >= 0 ? "positive" : "negative",
-                },
-                {
-                  label: "연환산 수익률 %",
-                  value: `${(result.annualized_return * 100).toFixed(1)}%`,
-                  tone: result.annualized_return >= 0 ? "positive" : "negative",
-                },
-                {
-                  label: "손익비",
-                  value: result.profit_loss_ratio.toFixed(2),
-                  tone: "neutral",
-                },
-                {
-                  label: "총 거래수",
-                  value: String(result.total_trades),
-                  tone: "neutral",
-                },
-              ] as {
-                label: string;
-                value: string;
-                tone: "positive" | "negative" | "neutral";
-              }[]
-            ).map(({ label, value, tone }, i, arr) => (
-              <div
-                key={label}
-                className={`flex items-center justify-between py-1.5 ${
-                  i === arr.length - 1 ? "" : "border-b border-border"
-                }`}
-              >
-                <dt className="text-muted">{label}</dt>
-                <dd
-                  className={`font-bold ${
-                    tone === "positive"
-                      ? "text-positive"
-                      : tone === "negative"
-                        ? "text-negative"
-                        : "text-white"
-                  }`}
-                >
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </div>
+        )
+      )}
     </Panel>
   );
 }
 
 // ============================================================================
-// 서브 컴포넌트: 시그널 토스트
-// ============================================================================
-
-function SignalToasts({
-  toasts,
-  stockNames,
-}: {
-  toasts: SignalToast[];
-  stockNames: Map<string, string>;
-}) {
-  if (toasts.length === 0) return null;
-
-  return (
-    <div className="fixed top-4 right-4 z-[var(--z-toast)] flex flex-col gap-2 max-w-xs">
-      {toasts.map((t) => (
-        <div
-          key={t.id}
-          className={`flex flex-col gap-1 px-4 py-3 rounded-lg border text-xs font-sans
-                      animate-[fadeIn_0.2s_ease-out] motion-reduce:animate-none motion-reduce:opacity-100 ${
-                        t.side === "BUY"
-                          ? "bg-positive/10 border-positive/60 text-positive"
-                          : "bg-negative/10 border-negative/60 text-negative"
-                      }`}
-        >
-          <div className="font-bold text-sm">
-            {t.side === "BUY" ? "▲ 매수 시그널" : "▼ 매도 시그널"}
-          </div>
-          <div className="text-white">
-            {stockNames.get(t.symbol) ?? t.symbol} @{" "}
-            <span className="tabular-nums">{t.price.toLocaleString()}</span>
-          </div>
-          <div className="text-muted truncate">{t.reason}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ============================================================================
-// 메인 Strategy 페이지
+// 화면
 // ============================================================================
 
 interface Props {
+  status: BotStatus | null;
+  risk: RiskMetrics | null;
   logs: LogEntry[];
-  positions: PositionItem[];
+  connected: boolean;
   stockNames: Map<string, string>;
-  onKill: () => void;
 }
 
-const PLACEHOLDER_CCI: CciTimeframe[] = [
-  { label: "5m", value: null, signal: "neutral", cross: null },
-  { label: "15m", value: null, signal: "neutral", cross: null },
-  { label: "1h", value: null, signal: "neutral", cross: null },
-  { label: "1d", value: null, signal: "neutral", cross: null },
-];
-
-const TOAST_TTL = 8_000;
-
-export function StrategyPage({ logs, positions, stockNames, onKill }: Props) {
-  const [toasts, setToasts] = useState<SignalToast[]>([]);
-  const toastKeyRef = useRef(0);
-  const seenRef = useRef(new Set<string>());
-
-  // 스트림 로그에서 signal 이벤트를 토스트로 변환
-  useEffect(() => {
-    const latest = logs[0];
-    if (!latest) return;
-    if (latest.event_type !== "signal") return;
-
-    const dedupeKey = `${latest._key}`;
-    if (seenRef.current.has(dedupeKey)) return;
-    seenRef.current.add(dedupeKey);
-
-    // M3: as 캐스트 대신 런타임 타입 검증
-    const rawPayload = latest.payload as Record<string, unknown> | null;
-    if (!rawPayload) return;
-
-    const side = rawPayload.side;
-    const symbol = rawPayload.symbol;
-    if (typeof side !== "string" || typeof symbol !== "string") return;
-    if (side !== "BUY" && side !== "SELL") return;
-
-    const toast: SignalToast = {
-      id: toastKeyRef.current++,
-      side,
-      symbol,
-      price: typeof rawPayload.price === "number" ? rawPayload.price : 0,
-      reason: typeof rawPayload.reason === "string" ? rawPayload.reason : "",
-      ts: latest.timestamp,
-    };
-
-    setToasts((prev) => [toast, ...prev].slice(0, 5));
-
-    // H6: setTimeout id를 반환해서 언마운트 시 정리
-    const timerId = setTimeout(
-      () => setToasts((prev) => prev.filter((t) => t.id !== toast.id)),
-      TOAST_TTL,
-    );
-    return () => clearTimeout(timerId);
-  }, [logs]);
-
-  // CCI 스냅샷: 스트림에서 cci_snapshot 이벤트 파싱
-  const cciData = useCallback((): CciTimeframe[] => {
-    const snap = logs.find((l) => l.event_type === "cci_snapshot");
-    if (!snap) return PLACEHOLDER_CCI;
-
-    const p = snap.payload as Record<string, unknown> | null;
-    if (!p) return PLACEHOLDER_CCI;
-
-    return (["5m", "15m", "1h", "1d"] as const).map((tf) => {
-      const data = p[tf] as
-        { value: number; signal: string; cross: string | null } | undefined;
-      return {
-        label: tf,
-        value: data?.value ?? null,
-        signal: (data?.signal as CciTimeframe["signal"]) ?? "neutral",
-        cross: (data?.cross as CciTimeframe["cross"]) ?? null,
-      };
-    });
-  }, [logs]);
-
-  // 신뢰도 스코어: 스트림에서 reliability_score 이벤트 파싱
-  const reliabilityData = useCallback((): {
-    score: number | null;
-    breakdown: Record<string, boolean>;
-  } => {
-    const snap = logs.find((l) => l.event_type === "reliability_score");
-    if (!snap) return { score: null, breakdown: {} };
-
-    const p = snap.payload as {
-      score: number;
-      breakdown: Record<string, boolean>;
-    } | null;
-    if (!p) return { score: null, breakdown: {} };
-    return { score: p.score, breakdown: p.breakdown };
-  }, [logs]);
-
-  const { score, breakdown } = reliabilityData();
-  const cciFrames = cciData();
-
+export function StrategyPage({
+  status,
+  risk,
+  logs,
+  connected,
+  stockNames,
+}: Props) {
   return (
-    <>
-      <SignalToasts toasts={toasts} stockNames={stockNames} />
+    <div className="grid grid-cols-1 gap-3 xl:h-full xl:grid-cols-[340px_minmax(0,1fr)_340px]">
+      <BotStatePanel status={status} risk={risk} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* 왼쪽: CCI + 포지션 */}
-        <div className="space-y-4">
-          <CciPanel timeframes={cciFrames} />
-          <PositionProgressBars positions={positions} stockNames={stockNames} />
-        </div>
-
-        {/* 가운데: 신뢰도 + 백테스트 */}
-        <div className="space-y-4">
-          <ReliabilityGauge score={score} breakdown={breakdown} />
-          <BacktestPanel />
-        </div>
-
-        {/* 오른쪽: 킬스위치 + 최근 시그널 */}
-        <div className="space-y-4">
-          <Panel title="긴급 제어">
-            <div className="p-4">
-              <KillSwitchButton onSuccess={onKill} fullWidth />
-            </div>
-          </Panel>
-
-          <Panel title="최근 시그널">
-            <div className="p-4 space-y-2">
-              {logs.filter((l) => l.event_type === "signal").length === 0 ? (
-                <p className="text-xs text-muted font-sans">대기 중...</p>
-              ) : (
-                logs
-                  .filter((l) => l.event_type === "signal")
-                  .slice(0, 8)
-                  .map((l) => {
-                    const p = l.payload as {
-                      side?: string;
-                      symbol?: string;
-                      price?: number;
-                    } | null;
-                    return (
-                      <div
-                        key={l._key}
-                        className={`flex items-center justify-between text-xs font-sans px-2 py-1 rounded ${
-                          p?.side === "BUY"
-                            ? "text-positive bg-positive/5"
-                            : "text-negative bg-negative/5"
-                        }`}
-                      >
-                        <span className="truncate">
-                          {p?.side === "BUY" ? "▲" : "▼"}{" "}
-                          {p?.symbol
-                            ? (stockNames.get(p.symbol) ?? p.symbol)
-                            : ""}
-                        </span>
-                        <span className="tabular-nums flex-shrink-0">
-                          {p?.price?.toLocaleString()}
-                        </span>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </Panel>
-        </div>
+      <div className="flex min-h-0 flex-col gap-3">
+        <SignalPanel logs={logs} stockNames={stockNames} />
+        <StreamLog
+          logs={logs}
+          connected={connected}
+          stockNames={stockNames}
+          dailyOrderCount={risk?.daily_order_count}
+          className="min-h-64 flex-1"
+        />
       </div>
-    </>
+
+      <BacktestPanel />
+    </div>
   );
 }

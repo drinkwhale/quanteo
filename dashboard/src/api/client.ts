@@ -9,6 +9,7 @@ import type {
   OrderList,
   OrderModifyResponse,
   PositionList,
+  RiskMetrics,
   StockNameList,
   WatchlistResponse,
 } from "./types";
@@ -42,6 +43,7 @@ export const api = {
   // T056 — 체결·마켓·주문관리
   getFills: (count = 100) => request<FillList>(`/trades?count=${count}`),
   getMarketStatus: () => request<MarketStatus>("/market-status"),
+  getRiskMetrics: () => request<RiskMetrics>("/risk-metrics"),
   getBalance: () => request<BalanceInfo>("/balance"),
   getIndices: () => request<IndexQuoteResponse>("/indices"),
   getWatchlist: () => request<WatchlistResponse>("/watchlist"),

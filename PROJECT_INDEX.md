@@ -125,12 +125,17 @@ quanteo/
 │   │   │   ├── types.ts      # BotStatus/PositionItem/OrderItem/StreamMessage 타입
 │   │   │   └── backtest.ts   # 백테스트 API 클라이언트 + pollUntilDone (Phase 13)
 │   │   ├── components/
-│   │   │   ├── StatusBar.tsx      # 봇 상태 상단바 (halt_level·env·uptime)
-│   │   │   ├── PositionsTable.tsx # 포지션 테이블
-│   │   │   ├── OrdersTable.tsx    # 주문내역 테이블 + 취소 버튼
-│   │   │   ├── FillsTable.tsx     # 체결 내역 테이블
-│   │   │   ├── StreamLog.tsx      # 실시간 이벤트 로그 뷰
-│   │   │   └── ControlPanel.tsx   # 일시정지/재개/킬스위치 UI
+│   │   │   ├── AppHeader.tsx      # 고정 관제 바 (화면 전환·장 상태·환경 태그 + BotControls)
+│   │   │   ├── BotControls.tsx    # 봇 제어 단일 진입점 (상태 배지·일시정지/재개·킬스위치·확인 다이얼로그)
+│   │   │   ├── Panel.tsx          # 공용 패널 셸 (title/meta/actions + 내부 스크롤)
+│   │   │   ├── Segmented.tsx      # 공용 세그먼트 토글 (정렬·필터·봉 주기)
+│   │   │   ├── IndicesStrip.tsx   # 지수·환율 띠
+│   │   │   ├── AccountSummary.tsx # 계좌 요약 + 보유 종목 표
+│   │   │   ├── OrdersAndFillsPanel.tsx # 미체결/완료/체결내역 + 주문 취소
+│   │   │   ├── MarketStocksTable.tsx   # 시장 주도주
+│   │   │   ├── StreamLog.tsx      # 봇 활동 (실시간 이벤트 로그)
+│   │   │   ├── SignalToaster.tsx  # 시그널 토스트 (전 화면 공통)
+│   │   │   └── chart/             # PriceChart(lightweight-charts) · SymbolQuickPick
 │   │   ├── hooks/
 │   │   │   ├── useStatus.ts    # 3초 폴링
 │   │   │   ├── usePositions.ts # 5초 폴링
@@ -138,8 +143,10 @@ quanteo/
 │   │   │   ├── useFills.ts     # 10초 폴링
 │   │   │   └── useStream.ts    # WebSocket + 3초 재연결
 │   │   ├── pages/
-│   │   │   └── Strategy.tsx  # 전략 모니터링 (CCI·신뢰도 게이지·시그널 토스트·백테스트 UI·킬스위치)
-│   │   ├── App.tsx           # 4탭 레이아웃: 포지션·주문·체결·전략
+│   │   │   ├── Strategy.tsx      # 전략·봇 (운용 상태 사다리·CCI·신뢰도 스코어·봇 활동·백테스트)
+│   │   │   ├── StockDetail.tsx   # 차트 (종목 바로가기 + 캔들)
+│   │   │   └── WatchlistPage.tsx # 관심종목
+│   │   ├── App.tsx           # 4화면 셸 (#desk 운용 / #chart 차트 / #bot 전략·봇 / #watchlist) — 해시 라우팅
 │   │   └── main.tsx          # React 18 진입점
 │   ├── vite.config.ts        # /api → localhost:8000 proxy
 │   ├── tailwind.config.js    # 다크 트레이딩 테마
