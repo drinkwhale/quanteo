@@ -21,8 +21,14 @@ export function StockDetail({ recentSymbols, stockNames }: StockDetailProps) {
   const [picked, setPicked] = useState<string | null>(null);
   const [interval, setInterval] = useState<"1m" | "1d">("1d");
 
-  // 직접 고르기 전에는 첫 보유 종목을 띄워, 화면에 들어오자마자 차트가 보이게 한다
-  const selected = picked ?? recentSymbols[0] ?? null;
+  // 직접 고르기 전에는 첫 보유 종목을 띄워, 화면에 들어오자마자 차트가 보이게 한다.
+  // 포지션·주문·체결 폴링이 따로 도착하며 목록 순서가 바뀌어도 차트가 저절로
+  // 다른 종목으로 넘어가지 않도록, 자동 선택은 처음 한 번만 한다.
+  const [autoPicked, setAutoPicked] = useState<string | null>(null);
+  if (autoPicked === null && recentSymbols.length > 0) {
+    setAutoPicked(recentSymbols[0]);
+  }
+  const selected = picked ?? autoPicked;
 
   const { candles, isLoading, error } = useCandles(selected, { interval });
 

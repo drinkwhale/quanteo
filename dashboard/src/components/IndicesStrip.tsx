@@ -17,6 +17,7 @@ export function IndicesStrip({ indices, error }: Props) {
     <div
       role="region"
       aria-label="주요 지수·환율"
+      tabIndex={0}
       className="no-scrollbar flex min-h-9 items-center overflow-x-auto border-b border-line px-4 text-xs"
     >
       {error ? (

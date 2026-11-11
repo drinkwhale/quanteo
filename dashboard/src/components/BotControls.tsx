@@ -149,7 +149,7 @@ export function BotControls({ status, onAction }: Props) {
 
       {feedback && (
         <p
-          role="status"
+          role={feedback.ok ? "status" : "alert"}
           className={cn(
             "absolute right-0 top-full z-[var(--z-dropdown)] mt-2 w-max max-w-xs rounded-md border bg-raised px-3 py-2 text-xs shadow-lg shadow-black/40",
             "animate-[rise-in_0.18s_var(--ease-out)]",

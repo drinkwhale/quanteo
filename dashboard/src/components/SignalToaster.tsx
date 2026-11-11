@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry } from "../hooks/useStream";
-import { SIDE_LABEL, stockLabel } from "../lib/format";
+import { fmtPrice, marketOf, SIDE_LABEL, stockLabel } from "../lib/format";
 import { cn } from "../lib/utils";
 
 interface SignalToast {
@@ -94,7 +94,7 @@ export function SignalToaster({ logs, stockNames }: Props) {
           </div>
           <div className="num mt-0.5 text-data text-ink">
             {stockLabel(t.symbol, stockNames)}
-            {t.price > 0 && ` @ ${t.price.toLocaleString()}`}
+            {t.price > 0 && ` @ ${fmtPrice(t.price, marketOf(t.symbol))}`}
           </div>
           {t.reason && (
             <div className="mt-0.5 truncate text-xs text-muted">{t.reason}</div>

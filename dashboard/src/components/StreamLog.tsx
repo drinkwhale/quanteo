@@ -1,5 +1,11 @@
 import type { LogEntry } from "../hooks/useStream";
-import { fmtClock, SIDE_LABEL, stockLabel } from "../lib/format";
+import {
+  fmtClock,
+  fmtPrice,
+  marketOf,
+  SIDE_LABEL,
+  stockLabel,
+} from "../lib/format";
 import { cn } from "../lib/utils";
 import { Panel } from "./Panel";
 
@@ -41,7 +47,8 @@ function Payload({
           {SIDE_LABEL[p.side]}
         </span>{" "}
         <span className="text-ink">{stockLabel(p.symbol, names)}</span>
-        {typeof p.price === "number" && ` @ ${p.price.toLocaleString()}`}
+        {typeof p.price === "number" &&
+          ` @ ${fmtPrice(p.price, marketOf(p.symbol))}`}
         {typeof p.reason === "string" && p.reason && ` · ${p.reason}`}
       </>
     );

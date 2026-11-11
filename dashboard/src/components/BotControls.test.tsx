@@ -102,7 +102,7 @@ describe("BotControls", () => {
     await user.click(confirm);
 
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByRole("alert")).toHaveTextContent(
         "503 Service Unavailable",
       ),
     );

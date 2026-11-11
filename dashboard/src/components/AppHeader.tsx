@@ -57,11 +57,17 @@ export function AppHeader({
           {markets.map((m) => (
             <div key={m.market} className="flex items-center gap-1.5">
               <dt className="text-muted">{m.market}</dt>
-              <dd
-                className={m.is_open ? "font-semibold text-ink" : "text-muted"}
-              >
-                {m.is_open ? "장중" : "휴장"}
-              </dd>
+              {m.is_stale ? (
+                <dd className="font-semibold text-warn">확인 불가</dd>
+              ) : (
+                <dd
+                  className={
+                    m.is_open ? "font-semibold text-ink" : "text-muted"
+                  }
+                >
+                  {m.is_open ? "장중" : "휴장"}
+                </dd>
+              )}
             </div>
           ))}
           {status && (
@@ -70,27 +76,28 @@ export function AppHeader({
               <dd className="text-dim">{fmtUptime(status.uptime_seconds)}</dd>
             </div>
           )}
-          <div className="flex items-center gap-1.5">
-            <dt className="text-muted">스트림</dt>
-            <dd
-              className={cn(
-                "flex items-center gap-1.5",
-                streamConnected ? "text-dim" : "font-semibold text-danger",
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  streamConnected ? "bg-live" : "bg-danger",
-                )}
-              />
-              {streamConnected ? "연결됨" : "끊김"}
-            </dd>
-          </div>
         </dl>
 
         <div className="flex items-center gap-3 max-xl:ml-auto">
+          {/* 연결돼 있으면 넓은 화면에서만, 끊기면 어느 폭에서든 보인다 —
+              시그널 토스트가 조용히 멈춘 걸 차트·관심종목 화면에서도 알 수 있어야 한다 */}
+          <span
+            className={cn(
+              "flex items-center gap-1.5 whitespace-nowrap text-xs",
+              streamConnected
+                ? "text-dim max-xl:hidden"
+                : "font-semibold text-danger",
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                streamConnected ? "bg-live" : "bg-danger",
+              )}
+            />
+            {streamConnected ? "스트림 연결됨" : "스트림 끊김"}
+          </span>
           {status && (
             <span
               title={

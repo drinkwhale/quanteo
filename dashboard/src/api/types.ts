@@ -86,6 +86,8 @@ export interface MarketDayStatus {
   today_date: string;
   open_time: string | null;
   close_time: string | null;
+  // true면 캘린더 조회 실패 — is_open 값을 믿을 수 없다
+  is_stale?: boolean;
 }
 
 export interface MarketStatus {

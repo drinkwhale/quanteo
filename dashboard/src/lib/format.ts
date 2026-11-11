@@ -17,14 +17,16 @@ export function fmtPrice(n: number | string, market: string): string {
   const value = toNumber(n);
   if (market === "overseas")
     return (
-      "$" +
-      value.toLocaleString("en-US", {
+      // 부호는 통화 기호 앞에: "-$12.30" ("$-12.30" 아님)
+      (value < 0 ? "-$" : "$") +
+      Math.abs(value).toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })
     );
-  // 평단가처럼 소수로 내려오는 원화 값이 "241,605.412원"으로 찍히지 않게 정수로 맞춘다
-  return value.toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원";
+  // 원화는 정수로 — 평단가처럼 소수로 내려오는 값이 "241,605.412원"으로 찍히지 않게.
+  // `|| 0`은 -0.4 같은 값이 "-0원"으로 나가는 걸 막는다.
+  return (Math.round(value) || 0).toLocaleString("ko-KR") + "원";
 }
 
 /**

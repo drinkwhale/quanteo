@@ -49,6 +49,8 @@ export function Panel({
       </header>
       {/* relative: 본문 안 sr-only(absolute) 요소가 스크롤 영역 밖으로 빠져나가 문서 높이를 늘리지 않게 가둔다 */}
       <div
+        // 포커스 가능한 자식이 없는 표도 키보드로 스크롤할 수 있게 한다
+        tabIndex={0}
         className={cn("relative min-h-0 flex-1 overflow-auto", bodyClassName)}
       >
         {children}

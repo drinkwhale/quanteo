@@ -26,7 +26,9 @@ import {
   fmtPrice,
   fmtStamp,
   fmtUptime,
+  marketOf,
   SIDE_LABEL,
+  sideClass,
   stockLabel,
   trendClass,
 } from "../lib/format";
@@ -370,17 +372,18 @@ function SignalPanel({
                     {fmtClock(l.timestamp)}
                   </time>
                   <span
-                    className={cn(
-                      "font-semibold",
-                      p?.side === "BUY" ? "text-up" : "text-down",
-                    )}
+                    className={cn("font-semibold", sideClass(p?.side ?? null))}
                   >
                     {p?.side ? SIDE_LABEL[p.side] : "—"}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-ink">
                     {p?.symbol ? stockLabel(p.symbol, stockNames) : ""}
                   </span>
-                  <span className="text-dim">{p?.price?.toLocaleString()}</span>
+                  <span className="text-dim">
+                    {p?.price != null &&
+                      p.symbol &&
+                      fmtPrice(p.price, marketOf(p.symbol))}
+                  </span>
                 </li>
               );
             })}
