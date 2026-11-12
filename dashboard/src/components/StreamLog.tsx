@@ -1,68 +1,134 @@
 import type { LogEntry } from "../hooks/useStream";
+import {
+  fmtClock,
+  fmtPrice,
+  marketOf,
+  SIDE_LABEL,
+  stockLabel,
+} from "../lib/format";
+import { cn } from "../lib/utils";
+import { Panel } from "./Panel";
 
-const EVENT_COLOR: Record<string, string> = {
-  connected: "text-positive",
-  signal: "text-accent",
-  order: "text-warning",
-  fill: "text-positive",
-  risk: "text-negative",
-  error: "text-negative",
-  status: "text-muted",
-};
+/** 이벤트 종류별 색 — 봇 상태 축만 쓴다. 매수/매도 방향은 본문에서 시세 색으로 따로 표시. */
+const EVENT_TONE: readonly (readonly [string, string])[] = [
+  ["error", "text-danger"],
+  ["risk", "text-danger"],
+  ["fill", "text-live"],
+  ["order", "text-warn"],
+  ["signal", "text-ink"],
+];
 
-function colorFor(eventType: string): string {
-  for (const [key, color] of Object.entries(EVENT_COLOR)) {
-    if (eventType.toLowerCase().includes(key)) return color;
+function toneFor(eventType: string): string {
+  const key = eventType.toLowerCase();
+  return EVENT_TONE.find(([k]) => key.includes(k))?.[1] ?? "text-muted";
+}
+
+/** 시그널·주문처럼 방향·종목·가격이 있는 payload는 읽을 수 있는 한 줄로, 나머지는 JSON 그대로. */
+function Payload({
+  payload,
+  names,
+}: {
+  payload: unknown;
+  names: Map<string, string>;
+}) {
+  if (typeof payload !== "object" || payload === null) {
+    return <>{String(payload ?? "")}</>;
   }
-  return "text-muted";
+  const p = payload as Record<string, unknown>;
+  if ((p.side === "BUY" || p.side === "SELL") && typeof p.symbol === "string") {
+    return (
+      <>
+        <span
+          className={cn(
+            "font-semibold",
+            p.side === "BUY" ? "text-up" : "text-down",
+          )}
+        >
+          {SIDE_LABEL[p.side]}
+        </span>{" "}
+        <span className="text-ink">{stockLabel(p.symbol, names)}</span>
+        {typeof p.price === "number" &&
+          ` @ ${fmtPrice(p.price, marketOf(p.symbol))}`}
+        {typeof p.reason === "string" && p.reason && ` · ${p.reason}`}
+      </>
+    );
+  }
+  return <>{JSON.stringify(payload)}</>;
 }
 
 interface Props {
   logs: LogEntry[];
+  connected: boolean;
+  stockNames: Map<string, string>;
+  /** 오늘 Risk Manager를 통과한 주문 수 — 조회 실패 시 null */
+  dailyOrderCount?: number | null;
+  className?: string;
 }
 
-/** Panel 안에 들어가는 본문만 렌더링 — 헤더/연결상태 배지는 상위 Panel(headerExtra)이 담당 */
-export function StreamLog({ logs }: Props) {
+/** 봇 활동 — WebSocket 스트림으로 들어오는 시그널·주문·체결·리스크 이벤트 실시간 로그. */
+export function StreamLog({
+  logs,
+  connected,
+  stockNames,
+  dailyOrderCount,
+  className,
+}: Props) {
   return (
-    <div className="overflow-y-auto max-h-80 p-2 space-y-0.5">
+    <Panel
+      title="봇 활동"
+      meta={
+        dailyOrderCount != null ? `오늘 주문 ${dailyOrderCount}건` : undefined
+      }
+      className={className}
+      actions={
+        <span
+          className={cn(
+            "flex items-center gap-1.5 text-xs",
+            connected ? "text-dim" : "font-semibold text-danger",
+          )}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              connected ? "animate-pulse bg-live" : "bg-danger",
+            )}
+          />
+          {connected ? "실시간" : "재연결 중…"}
+        </span>
+      }
+    >
       {logs.length === 0 ? (
-        <p className="px-2 py-4 text-muted text-xs font-sans text-center">
-          이벤트 대기 중...
+        <p className="state-msg">
+          {connected
+            ? "아직 이벤트가 없습니다. 봇이 시그널·주문·체결을 내면 여기에 실시간으로 쌓입니다."
+            : "스트림 연결이 끊겨 이벤트를 받지 못하고 있습니다. 3초마다 재연결을 시도합니다."}
         </p>
       ) : (
-        logs.map((log) => (
-          <div
-            key={log._key}
-            className="flex gap-3 px-2 py-0.5 hover:bg-surface rounded text-xs font-mono"
-          >
-            <span className="text-muted flex-shrink-0 w-20 truncate tabular-nums">
-              {new Date(log.timestamp).toLocaleTimeString("ko-KR")}
-            </span>
-            <span
-              className={`flex-shrink-0 w-28 truncate font-semibold ${colorFor(log.event_type)}`}
+        <ol className="divide-y divide-line/60 text-xs">
+          {logs.map((log) => (
+            <li
+              key={log._key}
+              className="grid grid-cols-[4.5rem_6.5rem_minmax(0,1fr)] items-baseline gap-2 px-4 py-1.5 hover:bg-raised/60"
             >
-              {log.event_type}
-            </span>
-            <span className="text-muted truncate font-sans">
-              {typeof log.payload === "object"
-                ? JSON.stringify(log.payload)
-                : String(log.payload)}
-            </span>
-          </div>
-        ))
+              <time className="num font-mono text-muted">
+                {fmtClock(log.timestamp)}
+              </time>
+              <span
+                className={cn(
+                  "truncate font-mono font-semibold",
+                  toneFor(log.event_type),
+                )}
+              >
+                {log.event_type}
+              </span>
+              <span className="truncate text-dim">
+                <Payload payload={log.payload} names={stockNames} />
+              </span>
+            </li>
+          ))}
+        </ol>
       )}
-    </div>
-  );
-}
-
-/** StreamLog Panel 헤더에 붙는 연결상태 배지 (headerExtra로 전달) */
-export function StreamConnectionBadge({ connected }: { connected: boolean }) {
-  return (
-    <span className="flex items-center gap-1.5 text-xs font-sans text-muted">
-      <span
-        className={`inline-block w-2 h-2 rounded-full ${connected ? "bg-positive animate-pulse" : "bg-negative"}`}
-      />
-      {connected ? "연결됨" : "재연결 중..."}
-    </span>
+    </Panel>
   );
 }

@@ -86,10 +86,20 @@ export interface MarketDayStatus {
   today_date: string;
   open_time: string | null;
   close_time: string | null;
+  // true면 캘린더 조회 실패 — is_open 값을 믿을 수 없다
+  is_stale?: boolean;
 }
 
 export interface MarketStatus {
   markets: MarketDayStatus[];
+}
+
+// Risk Manager 스냅샷 — buying_power는 브로커 조회 실패 시 null (Decimal이라 문자열로 온다)
+export interface RiskMetrics {
+  halt_level: string;
+  daily_order_count: number;
+  buying_power: number | string | null;
+  buying_power_currency: string | null;
 }
 
 // T056 — 주문 취소·정정 응답

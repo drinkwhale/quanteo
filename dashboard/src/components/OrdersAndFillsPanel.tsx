@@ -1,53 +1,58 @@
-import { useId, useMemo, useState } from "react";
+import { RotateCw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
-import { TIMESTAMP_CELL_CLASS } from "../lib/utils";
-import type { OrderItem, OrderStatus, FillItem } from "../api/types";
-import { StockCell } from "./StockCell";
+import type { FillItem, OrderItem, OrderStatus } from "../api/types";
+import {
+  fmtPrice,
+  fmtStamp,
+  SIDE_LABEL,
+  sideClass,
+  stockLabel,
+} from "../lib/format";
+import { cn } from "../lib/utils";
+import { Panel } from "./Panel";
+import { Segmented } from "./Segmented";
 
-const STATUS_COLOR: Record<OrderStatus, string> = {
-  pending: "text-warning",
-  submitted: "text-accent",
-  partial: "text-accent",
-  filled: "text-positive",
-  cancelled: "text-muted",
-  rejected: "text-negative",
+type Tab = "open" | "done" | "fills";
+
+/** 주문 상태 → 표시. 상태는 "주문이 어디까지 갔나"라 시세 색(빨강/파랑)을 쓰지 않는다. */
+const STATUS_META: Record<
+  OrderStatus,
+  { label: string; tab: Exclude<Tab, "fills">; className: string }
+> = {
+  pending: { label: "대기", tab: "open", className: "text-warn" },
+  submitted: { label: "접수", tab: "open", className: "text-ink" },
+  partial: { label: "부분체결", tab: "open", className: "text-ink" },
+  filled: { label: "체결", tab: "done", className: "text-live" },
+  cancelled: { label: "취소", tab: "done", className: "text-muted" },
+  rejected: { label: "거부", tab: "done", className: "text-danger" },
 };
 
-const CANCELLABLE_STATUSES: ReadonlySet<OrderStatus> = new Set([
-  "pending",
-  "submitted",
-  "partial",
-]);
-
-type OrderTab = "pending" | "completed";
-type MainTab = "orders" | "fills";
-
-const STATUS_TAB: Record<OrderStatus, OrderTab> = {
-  pending: "pending",
-  submitted: "pending",
-  partial: "pending",
-  filled: "completed",
-  cancelled: "completed",
-  rejected: "completed",
-};
-
-type VisibleTab = OrderTab | "conditional";
-
-const ORDER_TAB_LABEL: Record<VisibleTab, string> = {
-  pending: "대기",
-  completed: "완료",
-  conditional: "조건주문",
-};
+function StockName({
+  symbol,
+  names,
+}: {
+  symbol: string;
+  names: Map<string, string>;
+}) {
+  const hasName = names.has(symbol);
+  return (
+    <>
+      <div className="font-semibold text-ink">{stockLabel(symbol, names)}</div>
+      {hasName && <div className="font-mono text-2xs text-muted">{symbol}</div>}
+    </>
+  );
+}
 
 interface Props {
   orders: OrderItem[];
   fills: FillItem[];
   ordersError?: string | null;
   fillsError?: string | null;
-  ordersTotal: number;
   fillsTotal: number;
   onRefetch?: () => void;
   stockNames: Map<string, string>;
+  className?: string;
 }
 
 export function OrdersAndFillsPanel({
@@ -55,19 +60,17 @@ export function OrdersAndFillsPanel({
   fills,
   ordersError,
   fillsError,
-  ordersTotal,
   fillsTotal,
   onRefetch,
   stockNames,
+  className,
 }: Props) {
-  const [mainTab, setMainTab] = useState<MainTab>("orders");
-  const [orderTab, setOrderTab] = useState<VisibleTab>("pending");
+  const [tab, setTab] = useState<Tab>("open");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
-  const tabPanelId = useId();
+  const [cancelling, setCancelling] = useState<string | null>(null);
 
   async function handleCancel(orderId: string) {
-    setLoading(orderId);
+    setCancelling(orderId);
     setActionError(null);
     try {
       await api.cancelOrder(orderId);
@@ -75,264 +78,183 @@ export function OrdersAndFillsPanel({
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : "취소 실패");
     } finally {
-      setLoading(null);
+      setCancelling(null);
     }
   }
 
   const grouped = useMemo(() => {
-    const result: Record<OrderTab, OrderItem[]> = {
-      pending: [],
-      completed: [],
+    const result: Record<Exclude<Tab, "fills">, OrderItem[]> = {
+      open: [],
+      done: [],
     };
     for (const o of orders) {
-      const t = STATUS_TAB[o.status];
-      if (t === undefined) {
+      const meta = STATUS_META[o.status];
+      if (meta === undefined) {
         console.warn(
           `[OrdersAndFillsPanel] 알 수 없는 주문 상태 — 목록에 표시되지 않습니다: status=${o.status} client_order_id=${o.client_order_id}`,
         );
         continue;
       }
-      result[t].push(o);
+      result[meta.tab].push(o);
     }
     return result;
   }, [orders]);
 
-  const orderCounts = useMemo(
-    () => ({
-      pending: grouped.pending.length,
-      completed: grouped.completed.length,
-      conditional: 0,
-    }),
-    [grouped],
-  );
-
-  const visibleOrders = orderTab === "conditional" ? [] : grouped[orderTab];
-
-  const orderEmptyMessage =
-    orderTab === "conditional"
-      ? "조건주문 기능은 아직 지원되지 않음"
-      : "주문 내역 없음";
+  const errorMessage =
+    tab === "fills" ? fillsError : (actionError ?? ordersError);
+  const visibleOrders = tab === "fills" ? [] : grouped[tab];
 
   return (
-    <>
-      {/* 메인 탭 — Orders / Fills */}
-      <div
-        role="tablist"
-        aria-label="주문·체결 탭"
-        className="flex gap-1 px-4 pt-3 border-b border-border"
-      >
-        {(["orders", "fills"] as const).map((tab) => (
+    <Panel
+      title="주문·체결"
+      className={className}
+      actions={
+        <>
+          <Segmented
+            label="주문·체결 구분"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "open", label: "미체결", count: grouped.open.length },
+              { value: "done", label: "완료", count: grouped.done.length },
+              { value: "fills", label: "체결내역", count: fillsTotal },
+            ]}
+          />
           <button
-            key={tab}
             type="button"
-            role="tab"
-            id={`${tabPanelId}-main-tab-${tab}`}
-            aria-selected={mainTab === tab}
-            aria-controls={`${tabPanelId}-main-panel`}
-            onClick={() => setMainTab(tab)}
-            className={`px-3 py-2.5 text-sm font-sans border-b-2 transition-colors ${
-              mainTab === tab
-                ? "bg-transparent text-white border-accent"
-                : "text-muted border-transparent hover:text-white"
-            }`}
+            onClick={onRefetch}
+            className="btn btn-icon h-7 w-7"
+            title="새로고침"
+            aria-label="주문·체결 새로고침"
           >
-            {tab === "orders" ? "주문내역" : "체결내용"}
-            <span className="ml-2 tabular-nums opacity-70">
-              {tab === "orders" ? ordersTotal : fillsTotal}
-            </span>
+            <RotateCw aria-hidden="true" className="h-3.5 w-3.5" />
           </button>
-        ))}
-      </div>
-
-      {/* 에러 메시지 */}
-      {((mainTab === "orders" && (ordersError || actionError)) ||
-        (mainTab === "fills" && fillsError)) && (
-        <p className="px-4 py-2 text-negative text-xs font-sans border-b border-border bg-negative/5">
-          {mainTab === "orders" ? ordersError || actionError : fillsError}
+        </>
+      }
+    >
+      {errorMessage && (
+        <p className="state-err">
+          {tab === "fills" ? "체결 조회 실패" : "주문 조회 실패"} —{" "}
+          {errorMessage}
         </p>
       )}
 
-      <div
-        id={`${tabPanelId}-main-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabPanelId}-main-tab-${mainTab}`}
-        className="flex flex-col"
-      >
-        {/* Orders 탭 콘텐츠 */}
-        {mainTab === "orders" && (
-          <>
-            <div
-              role="tablist"
-              aria-label="주문 상태 필터"
-              className="flex gap-1 px-4 pt-3 border-b border-border"
-            >
-              {(["pending", "completed", "conditional"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  role="tab"
-                  id={`${tabPanelId}-order-tab-${t}`}
-                  aria-selected={orderTab === t}
-                  aria-controls={`${tabPanelId}-order-panel`}
-                  onClick={() => setOrderTab(t)}
-                  className={`px-2.5 py-1 text-xs font-sans rounded border transition-colors ${
-                    orderTab === t
-                      ? "bg-accent/20 text-accent border-accent/40"
-                      : "text-muted border-border hover:text-white"
-                  }`}
-                >
-                  {ORDER_TAB_LABEL[t]}
-                  <span className="ml-1 tabular-nums opacity-70">
-                    {orderCounts[t]}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div
-              id={`${tabPanelId}-order-panel`}
-              role="tabpanel"
-              aria-labelledby={`${tabPanelId}-order-tab-${orderTab}`}
-              className="max-h-[500px] overflow-y-auto"
-            >
-              {visibleOrders.length === 0 ? (
-                <p className="px-4 py-6 text-muted text-sm font-sans text-center">
-                  {orderEmptyMessage}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm font-sans">
-                    <thead className="sticky top-0 bg-surface">
-                      <tr className="text-muted text-xs border-b border-border">
-                        <th className="px-4 py-2 text-left">종목</th>
-                        <th className="px-4 py-2 text-left">방향</th>
-                        <th className="px-4 py-2 text-right">수량</th>
-                        <th className="px-4 py-2 text-right">가격</th>
-                        <th className="px-4 py-2 text-left">상태</th>
-                        <th className="px-4 py-2 text-left">시각</th>
-                        <th className="px-4 py-2 text-center">작업</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleOrders.map((o) => {
-                        const brokerId = o.broker_order_id;
-                        const canCancel =
-                          CANCELLABLE_STATUSES.has(o.status) &&
-                          brokerId != null;
-                        const isLoading = loading === brokerId;
-                        const isBuy = o.side === "BUY";
-
-                        return (
-                          <tr
-                            key={o.client_order_id}
-                            className="border-b border-border last:border-0 hover:bg-surface transition-colors"
+      {tab !== "fills" &&
+        (visibleOrders.length === 0 ? (
+          // 조회가 실패했는데 "주문이 없습니다"라고 하면 거짓말이 된다 — 에러만 보여준다
+          !errorMessage && (
+            <p className="state-msg">
+              {tab === "open"
+                ? "미체결 주문이 없습니다. 봇이 낸 주문이 체결 대기 중이면 여기서 취소할 수 있습니다."
+                : "완료된 주문이 없습니다."}
+            </p>
+          )
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th scope="col">종목</th>
+                <th scope="col">구분</th>
+                <th scope="col" className="r">
+                  수량
+                </th>
+                <th scope="col" className="r">
+                  주문가
+                </th>
+                <th scope="col">상태</th>
+                <th scope="col">주문 시각</th>
+                {tab === "open" && (
+                  <th scope="col" className="r">
+                    <span className="sr-only">작업</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleOrders.map((o) => {
+                const brokerId = o.broker_order_id;
+                const status = STATUS_META[o.status];
+                return (
+                  <tr key={o.client_order_id}>
+                    <td>
+                      <StockName symbol={o.symbol} names={stockNames} />
+                    </td>
+                    <td className={cn("font-semibold", sideClass(o.side))}>
+                      {SIDE_LABEL[o.side]}
+                    </td>
+                    <td className="r text-ink">{o.qty.toLocaleString()}</td>
+                    <td className="r text-ink">
+                      {fmtPrice(o.price, o.market)}
+                    </td>
+                    <td className={cn("font-medium", status.className)}>
+                      {status.label}
+                    </td>
+                    <td className="font-mono text-xs text-muted">
+                      {fmtStamp(o.created_at)}
+                    </td>
+                    {tab === "open" && (
+                      <td className="r">
+                        {brokerId != null && (
+                          <button
+                            type="button"
+                            disabled={cancelling === brokerId}
+                            onClick={() => handleCancel(brokerId)}
+                            className="btn h-7 px-2.5"
                           >
-                            <td className="px-4 py-2">
-                              <StockCell symbol={o.symbol} names={stockNames} />
-                            </td>
-                            <td
-                              className={`px-4 py-2 font-semibold ${isBuy ? "text-positive" : "text-negative"}`}
-                            >
-                              {o.side}
-                            </td>
-                            <td className="px-4 py-2 text-right text-white tabular-nums">
-                              {o.qty.toLocaleString()}
-                            </td>
-                            <td className="px-4 py-2 text-right text-white tabular-nums">
-                              {o.price.toLocaleString("ko-KR")}
-                            </td>
-                            <td
-                              className={`px-4 py-2 uppercase text-xs font-semibold ${STATUS_COLOR[o.status] ?? "text-muted"}`}
-                            >
-                              {o.status}
-                            </td>
-                            <td className={TIMESTAMP_CELL_CLASS}>
-                              {o.created_at}
-                            </td>
-                            <td className="px-4 py-2 text-center">
-                              {canCancel && brokerId && (
-                                <button
-                                  type="button"
-                                  disabled={isLoading}
-                                  onClick={() => handleCancel(brokerId)}
-                                  className="text-xs px-2 py-1 rounded border border-negative/50 text-negative hover:bg-negative/10 disabled:opacity-40 transition-colors font-sans"
-                                >
-                                  {isLoading ? "취소중…" : "취소"}
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+                            {cancelling === brokerId ? "취소 중…" : "주문 취소"}
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ))}
 
-        {/* Fills 탭 콘텐츠 */}
-        {mainTab === "fills" && (
-          <div className="max-h-[500px] overflow-y-auto">
-            {fills.length === 0 ? (
-              <p className="px-4 py-6 text-muted text-sm font-sans text-center">
-                체결 내역 없음
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm font-sans">
-                  <thead className="sticky top-0 bg-surface">
-                    <tr className="text-muted text-xs border-b border-border">
-                      <th className="px-4 py-2 text-left">종목</th>
-                      <th className="px-4 py-2 text-left">방향</th>
-                      <th className="px-4 py-2 text-right">체결가</th>
-                      <th className="px-4 py-2 text-right">수량</th>
-                      <th className="px-4 py-2 text-left">통화</th>
-                      <th className="px-4 py-2 text-left">시각</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fills.map((f, i) => (
-                      <tr
-                        key={`${f.symbol}-${f.timestamp}-${i}`}
-                        className="border-b border-border last:border-0 hover:bg-surface transition-colors"
-                      >
-                        <td className="px-4 py-2">
-                          <StockCell symbol={f.symbol} names={stockNames} />
-                        </td>
-                        <td
-                          className={`px-4 py-2 font-semibold ${
-                            f.side === "BUY"
-                              ? "text-positive"
-                              : f.side === "SELL"
-                                ? "text-negative"
-                                : "text-muted"
-                          }`}
-                        >
-                          {f.side ?? "—"}
-                        </td>
-                        <td className="px-4 py-2 text-right text-white tabular-nums">
-                          {f.price.toLocaleString("ko-KR")}
-                        </td>
-                        <td className="px-4 py-2 text-right text-white tabular-nums">
-                          {f.volume.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-2 text-muted text-xs">
-                          {f.currency}
-                        </td>
-                        <td className={TIMESTAMP_CELL_CLASS}>
-                          {new Date(f.timestamp).toLocaleTimeString("ko-KR")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </>
+      {tab === "fills" &&
+        (fills.length === 0 ? (
+          !errorMessage && <p className="state-msg">체결 내역이 없습니다.</p>
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th scope="col">종목</th>
+                <th scope="col">구분</th>
+                <th scope="col" className="r">
+                  체결가
+                </th>
+                <th scope="col" className="r">
+                  수량
+                </th>
+                <th scope="col">체결 시각</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fills.map((f, i) => (
+                <tr key={`${f.symbol}-${f.timestamp}-${i}`}>
+                  <td>
+                    <StockName symbol={f.symbol} names={stockNames} />
+                  </td>
+                  <td className={cn("font-semibold", sideClass(f.side))}>
+                    {f.side ? SIDE_LABEL[f.side] : "—"}
+                  </td>
+                  <td className="r text-ink">
+                    {fmtPrice(
+                      f.price,
+                      f.currency === "USD" ? "overseas" : "domestic",
+                    )}
+                  </td>
+                  <td className="r text-ink">{f.volume.toLocaleString()}</td>
+                  <td className="font-mono text-xs text-muted">
+                    {fmtStamp(f.timestamp)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+    </Panel>
   );
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
-interface MarketStock {
+export type MarketSort = "trading_value" | "volume" | "uptrend" | "downtrend";
+
+export interface MarketStock {
   symbol: string;
   price: number;
   change_rate: number;
@@ -11,10 +13,8 @@ interface MarketStock {
 
 interface UseMarketStocksResult {
   stocks: MarketStock[];
-  sortBy: "trading_value" | "volume" | "uptrend" | "downtrend";
-  setSortBy: (
-    sort: "trading_value" | "volume" | "uptrend" | "downtrend",
-  ) => void;
+  sortBy: MarketSort;
+  setSortBy: (sort: MarketSort) => void;
   isLoading: boolean;
   error: string | null;
   lastUpdated: string | null;
@@ -24,16 +24,12 @@ export function useMarketStocks(
   pollInterval: number = 30000,
 ): UseMarketStocksResult {
   const [stocks, setStocks] = useState<MarketStock[]>([]);
-  const [sortBy, setSortBy] = useState<
-    "trading_value" | "volume" | "uptrend" | "downtrend"
-  >("trading_value");
+  const [sortBy, setSortBy] = useState<MarketSort>("trading_value");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const fetchMarketStocks = async (
-    sort: "trading_value" | "volume" | "uptrend" | "downtrend",
-  ) => {
+  const fetchMarketStocks = async (sort: MarketSort) => {
     setIsLoading(true);
     setError(null);
 

@@ -1,35 +1,43 @@
-import { useMemo, useState } from "react";
-import { RotateCw } from "lucide-react";
+import { useMemo, useSyncExternalStore } from "react";
+import { api } from "./api/client";
 import { AccountSummary } from "./components/AccountSummary";
-import { ControlPanel } from "./components/ControlPanel";
+import { AppHeader } from "./components/AppHeader";
 import { IndicesStrip } from "./components/IndicesStrip";
 import { MarketStocksTable } from "./components/MarketStocksTable";
 import { OrdersAndFillsPanel } from "./components/OrdersAndFillsPanel";
-import { StatusBar } from "./components/StatusBar";
-import { TabNav } from "./components/TabNav";
+import { SignalToaster } from "./components/SignalToaster";
+import { StreamLog } from "./components/StreamLog";
 import { useBalance } from "./hooks/useBalance";
 import { useFills } from "./hooks/useFills";
-import { useGridLayout } from "./hooks/useGridLayout";
 import { useIndices } from "./hooks/useIndices";
 import { useMarketStocks } from "./hooks/useMarketStocks";
 import { useOrders } from "./hooks/useOrders";
+import { usePoll } from "./hooks/usePoll";
 import { usePositions } from "./hooks/usePositions";
 import { useStatus } from "./hooks/useStatus";
 import { useStockNames } from "./hooks/useStockNames";
 import { useStream } from "./hooks/useStream";
-import { RndPanel } from "./components/RndPanel";
-import { StrategyPage } from "./pages/Strategy";
+import { VIEWS, type ViewId } from "./lib/views";
 import { StockDetail } from "./pages/StockDetail";
+import { StrategyPage } from "./pages/Strategy";
 import { WatchlistPage } from "./pages/WatchlistPage";
 
+// 현재 화면은 URL 해시가 단일 진실 공급원 — 새로고침·뒤로가기·북마크가 그대로 동작한다
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function readView(): ViewId {
+  const hash = window.location.hash.slice(1);
+  return VIEWS.find((v) => v.id === hash)?.id ?? "desk";
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"ops" | "chart" | "watchlist">(
-    "ops",
-  );
-  const { positions, updatePosition, resetLayout, mounted } = useGridLayout();
+  const view = useSyncExternalStore(subscribeHash, readView);
 
   const { status, refetch: refetchStatus } = useStatus(3000);
-  const { positions: portfolioPositions } = usePositions(5000);
+  const { positions } = usePositions(5000);
   const {
     balance,
     error: balanceError,
@@ -42,212 +50,106 @@ export default function App() {
     setSortBy: setMarketSortBy,
     isLoading: marketLoading,
     error: marketError,
+    lastUpdated: marketUpdatedAt,
   } = useMarketStocks(30000);
-  const {
-    orders,
-    total: ordTotal,
-    error: ordError,
-    refetch: refetchOrders,
-  } = useOrders(5000);
+  const { orders, error: ordError, refetch: refetchOrders } = useOrders(5000);
   const { fills, total: fillTotal, error: fillError } = useFills(10000);
   const { logs, connected } = useStream();
+  const marketStatus = usePoll(api.getMarketStatus, 60_000);
+  const risk = usePoll(api.getRiskMetrics, 10_000);
 
-  // 종목 코드 대신 종목명을 보여주기 위한 심볼 → 이름 매핑 (전 패널 공유 캐시)
-  const allSymbols = useMemo(
-    () => [
-      ...portfolioPositions.map((p) => p.symbol),
-      ...orders.map((o) => o.symbol),
-      ...fills.map((f) => f.symbol),
-    ],
-    [portfolioPositions, orders, fills],
+  // 내 종목(보유·주문·체결) — 차트 화면의 바로가기 목록이 된다
+  const mySymbols = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...positions.map((p) => p.symbol),
+          ...orders.map((o) => o.symbol),
+          ...fills.map((f) => f.symbol),
+        ]),
+      ),
+    [positions, orders, fills],
   );
-  const stockNames = useStockNames(allSymbols);
-  const uniqueRecentSymbols = useMemo(
-    () => Array.from(new Set(allSymbols)),
-    [allSymbols],
+  // 종목 코드 대신 종목명을 보여주기 위한 심볼 → 이름 매핑 (전 화면 공유 캐시)
+  const nameSymbols = useMemo(
+    () => [...mySymbols, ...marketStocks.map((s) => s.symbol)],
+    [mySymbols, marketStocks],
   );
-
-  const tabs = [
-    { id: "ops", label: "운용현황" },
-    { id: "chart", label: "종목상세" },
-    { id: "watchlist", label: "관심종목" },
-  ];
+  const stockNames = useStockNames(nameSymbols);
 
   return (
-    <div className="min-h-screen bg-surface text-white flex flex-col">
-      <StatusBar status={status} streamConnected={connected} />
-
-      <TabNav
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(id) => setActiveTab(id as "ops" | "chart" | "watchlist")}
+    <div className="flex h-dvh flex-col">
+      <AppHeader
+        view={view}
+        status={status}
+        markets={marketStatus?.markets ?? []}
+        streamConnected={connected}
+        onAction={refetchStatus}
       />
+      <IndicesStrip indices={indices} error={indicesError} />
+      <SignalToaster logs={logs} stockNames={stockNames} />
 
-      <main className="flex-1 flex flex-col">
-        {/* 리셋 버튼 (우측 상단) */}
-        {activeTab === "ops" && mounted && (
-          <div className="px-4 pt-4 pb-2 flex justify-end">
-            <button
-              onClick={resetLayout}
-              className="px-3 py-1.5 text-xs font-medium bg-muted/10 text-muted hover:bg-muted/20 rounded transition-colors"
-              title="대시보드 레이아웃 리셋"
-            >
-              레이아웃 리셋
-            </button>
+      <main className="min-h-0 flex-1 overflow-auto p-3">
+        {view === "desk" && (
+          // 좌: 내 돈(계좌·주문) / 우: 봇과 시장. xl(1280px) 이상에서는 한 화면에 고정되고
+          // 각 패널이 안에서 스크롤된다. 그 아래에선 세로로 쌓여 페이지가 스크롤된다.
+          <div className="grid grid-cols-1 gap-3 xl:h-full xl:min-h-[640px] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]">
+            <div className="flex min-h-0 flex-col gap-3">
+              <AccountSummary
+                balance={balance}
+                error={balanceError}
+                lastUpdated={balanceUpdatedAt}
+                buyingPower={risk?.buying_power}
+                className="max-xl:max-h-[560px] xl:flex-[5]"
+              />
+              <OrdersAndFillsPanel
+                orders={orders}
+                fills={fills}
+                ordersError={ordError}
+                fillsError={fillError}
+                fillsTotal={fillTotal}
+                onRefetch={refetchOrders}
+                stockNames={stockNames}
+                className="max-xl:max-h-[420px] xl:flex-[2]"
+              />
+            </div>
+            <div className="flex min-h-0 flex-col gap-3">
+              <StreamLog
+                logs={logs}
+                connected={connected}
+                stockNames={stockNames}
+                dailyOrderCount={risk?.daily_order_count}
+                className="max-xl:max-h-[360px] xl:flex-[2]"
+              />
+              <MarketStocksTable
+                stocks={marketStocks}
+                sortBy={marketSortBy}
+                onSortChange={setMarketSortBy}
+                error={marketError}
+                isLoading={marketLoading}
+                lastUpdated={marketUpdatedAt}
+                stockNames={stockNames}
+                className="max-xl:max-h-[480px] xl:flex-[3]"
+              />
+            </div>
           </div>
         )}
 
-        <div
-          className="flex-1 overflow-auto relative"
-          style={{ height: "100%", position: "relative" }}
-        >
-          {activeTab === "ops" && mounted && (
-            <div
-              style={{ position: "relative", width: "100%", height: "100%" }}
-            >
-              {/* 지수·환율 */}
-              <RndPanel
-                id="indices"
-                title="주요 지수·환율"
-                position={positions.indices}
-                onPositionChange={updatePosition}
-              >
-                <IndicesStrip indices={indices} error={indicesError} />
-              </RndPanel>
+        {view === "chart" && (
+          <StockDetail recentSymbols={mySymbols} stockNames={stockNames} />
+        )}
 
-              {/* 주요 종목 */}
-              <RndPanel
-                id="market-stocks"
-                title="주요 종목"
-                position={positions["market-stocks"]}
-                onPositionChange={updatePosition}
-                headerExtra={
-                  <div className="flex gap-1 flex-wrap">
-                    {(
-                      [
-                        { id: "trading_value", label: "거래대금" },
-                        { id: "volume", label: "거래량" },
-                        { id: "uptrend", label: "급상승" },
-                        { id: "downtrend", label: "급하락" },
-                      ] as const
-                    ).map((btn) => (
-                      <button
-                        key={btn.id}
-                        type="button"
-                        onClick={() =>
-                          setMarketSortBy(
-                            btn.id as
-                              | "trading_value"
-                              | "volume"
-                              | "uptrend"
-                              | "downtrend",
-                          )
-                        }
-                        className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                          marketSortBy === btn.id
-                            ? "bg-accent text-surface"
-                            : "bg-muted/10 text-muted hover:bg-muted/20"
-                        }`}
-                      >
-                        {btn.label}
-                      </button>
-                    ))}
-                  </div>
-                }
-              >
-                <MarketStocksTable
-                  stocks={marketStocks}
-                  error={marketError}
-                  isLoading={marketLoading}
-                  stockNames={stockNames}
-                />
-              </RndPanel>
+        {view === "bot" && (
+          <StrategyPage
+            status={status}
+            risk={risk}
+            logs={logs}
+            connected={connected}
+            stockNames={stockNames}
+          />
+        )}
 
-              {/* 계좌요약 */}
-              <RndPanel
-                id="account-summary"
-                title="계좌 요약"
-                position={positions["account-summary"]}
-                onPositionChange={updatePosition}
-              >
-                <AccountSummary
-                  balance={balance}
-                  error={balanceError}
-                  lastUpdated={balanceUpdatedAt}
-                />
-              </RndPanel>
-
-              {/* 주문·체결 */}
-              <RndPanel
-                id="operations"
-                title="주문·체결"
-                position={positions.operations}
-                onPositionChange={updatePosition}
-                headerExtra={
-                  <button
-                    type="button"
-                    onClick={refetchOrders}
-                    className="p-1.5 rounded hover:bg-accent/10 transition-colors"
-                    title="새로고침"
-                    aria-label="주문·체결 새로고침"
-                  >
-                    <RotateCw className="w-4 h-4 text-muted hover:text-accent" />
-                  </button>
-                }
-              >
-                <OrdersAndFillsPanel
-                  orders={orders}
-                  fills={fills}
-                  ordersError={ordError}
-                  fillsError={fillError}
-                  ordersTotal={ordTotal}
-                  fillsTotal={fillTotal}
-                  onRefetch={refetchOrders}
-                  stockNames={stockNames}
-                />
-              </RndPanel>
-
-              {/* 봇 제어 */}
-              <RndPanel
-                id="control"
-                title="봇 제어"
-                position={positions.control}
-                onPositionChange={updatePosition}
-              >
-                <ControlPanel status={status} onAction={refetchStatus} />
-              </RndPanel>
-
-              {/* 전략 분석 */}
-              <RndPanel
-                id="strategy"
-                title="전략 분석"
-                position={positions.strategy}
-                onPositionChange={updatePosition}
-              >
-                <StrategyPage
-                  logs={logs}
-                  positions={portfolioPositions}
-                  stockNames={stockNames}
-                  onKill={refetchStatus}
-                />
-              </RndPanel>
-            </div>
-          )}
-
-          {/* Chart 탭 */}
-          {activeTab === "chart" && (
-            <div className="p-4">
-              <StockDetail recentSymbols={uniqueRecentSymbols} />
-            </div>
-          )}
-
-          {/* 관심종목 탭 */}
-          {activeTab === "watchlist" && (
-            <div className="p-4">
-              <WatchlistPage />
-            </div>
-          )}
-        </div>
+        {view === "watchlist" && <WatchlistPage />}
       </main>
     </div>
   );
